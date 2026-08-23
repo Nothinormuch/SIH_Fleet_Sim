@@ -14,38 +14,50 @@
 const CELL_SRC = 256;          // authoring resolution, one grid cell
 const FREE = 0, RACK = 1, STATION = 2, DOCK = 3;
 
+/* Each asset lists CANDIDATE paths, tried in order.
+ *
+ * Not over-engineering: the asset set has already been reorganised twice by other people
+ * on the team while this file was being written (furniture/ and cargo/ moved under
+ * misc/), and a rename upstream turns into a silently blank tile down here. Listing the
+ * old location as a fallback means a reorg degrades to a console warning instead of a
+ * missing robot, and the renderer keeps working on either layout. */
 const ASSET_PATHS = {
-  tile_aisle:        '/assets/tiles/tile_aisle_ns.png',
-  tile_intersection: '/assets/tiles/tile_intersection.png',
-  tile_station:      '/assets/tiles/tile_pick_station.png',
-  tile_charging:     '/assets/tiles/tile_charging.png',
-  tile_blocked:      '/assets/tiles/tile_blocked.png',
-  tile_fiducial:     '/assets/tiles/tile_fiducial.png',
+  tile_aisle:        ['/assets/tiles/tile_aisle_ns.png'],
+  tile_intersection: ['/assets/tiles/tile_intersection.png'],
+  tile_station:      ['/assets/tiles/tile_pick_station.png'],
+  tile_charging:     ['/assets/tiles/tile_charging.png'],
+  tile_blocked:      ['/assets/tiles/tile_blocked.png'],
+  tile_fiducial:     ['/assets/tiles/tile_fiducial.png'],
 
-  rack:              '/assets/furniture/rack_1x3.png',
-  dock:              '/assets/furniture/charging_dock.png',
-  station:           '/assets/furniture/pick_drop_station.png',
-  // NOT furniture/worker_obstacle.png -- that asset is an open cardboard box despite
-  // its name. This one is keyed out of the human reference card into a real sprite.
-  worker:            '/assets/furniture/worker_human.png',
+  rack:              ['/assets/misc/furniture/rack_1x3.png',
+                      '/assets/furniture/rack_1x3.png'],
+  dock:              ['/assets/misc/furniture/charging_dock.png',
+                      '/assets/furniture/charging_dock.png'],
+  station:           ['/assets/misc/furniture/pick_drop_station.png',
+                      '/assets/furniture/pick_drop_station.png'],
+  // NOT worker_obstacle.png -- that asset is an open cardboard box despite its name.
+  // This one is keyed out of the human reference card into a real sprite with alpha.
+  worker:            ['/assets/misc/furniture/worker_human.png',
+                      '/assets/furniture/worker_human.png'],
 
-  robot_AMR01:       '/assets/robots/robot_amr01_base.png',
-  robot_AMR02:       '/assets/robots/robot_amr02_base.png',
-  robot_AMR03:       '/assets/robots/robot_amr03_base.png',
-  robot_AMR04:       '/assets/robots/robot_amr04_base.png',
+  robot_AMR01:       ['/assets/robots/robot_amr01_base.png'],
+  robot_AMR02:       ['/assets/robots/robot_amr02_base.png'],
+  robot_AMR03:       ['/assets/robots/robot_amr03_base.png'],
+  robot_AMR04:       ['/assets/robots/robot_amr04_base.png'],
 
-  halo_idle:         '/assets/halos/halo_idle.png',
-  halo_moving:       '/assets/halos/halo_moving.png',
-  halo_yield:        '/assets/halos/halo_yield.png',
-  halo_deadlock:     '/assets/halos/halo_deadlock.png',
-  halo_charging:     '/assets/halos/halo_charging.png',
+  halo_idle:         ['/assets/halos/halo_idle.png'],
+  halo_moving:       ['/assets/halos/halo_moving.png'],
+  halo_yield:        ['/assets/halos/halo_yield.png'],
+  halo_deadlock:     ['/assets/halos/halo_deadlock.png'],
+  halo_charging:     ['/assets/halos/halo_charging.png'],
 
-  cargo_tote:        '/assets/cargo/cargo_tote.png',
+  cargo_tote:        ['/assets/misc/cargo/cargo_tote.png',
+                      '/assets/cargo/cargo_tote.png'],
 
-  link_beam:         '/assets/network/net_link_beam.png',
-  pulse:             '/assets/network/broadcast_pulse.png',
-  comms_lost:        '/assets/network/comms_lost.png',
-  deadlock:          '/assets/network/deadlock_detected.png',
+  link_beam:         ['/assets/network/net_link_beam.png'],
+  pulse:             ['/assets/network/broadcast_pulse.png'],
+  comms_lost:        ['/assets/network/comms_lost.png'],
+  deadlock:          ['/assets/network/deadlock_detected.png'],
 };
 
 /* A missing sprite must never take the whole view down with it: the dashboard is more
@@ -53,12 +65,19 @@ const ASSET_PATHS = {
  * genuinely do come and go. Failed loads resolve to null and every draw call checks. */
 function loadAssets() {
   const out = {};
-  const jobs = Object.entries(ASSET_PATHS).map(([key, src]) => new Promise(resolve => {
+  const tryPaths = (key, paths, i) => new Promise(resolve => {
+    if (i >= paths.length) {
+      out[key] = null;
+      console.warn('asset missing, tried:', paths.join(', '));
+      return resolve();
+    }
     const img = new Image();
     img.onload = () => { out[key] = img; resolve(); };
-    img.onerror = () => { out[key] = null; console.warn('asset missing:', src); resolve(); };
-    img.src = src;
-  }));
+    img.onerror = () => resolve(tryPaths(key, paths, i + 1));
+    img.src = paths[i];
+  });
+  const jobs = Object.entries(ASSET_PATHS)
+    .map(([key, paths]) => tryPaths(key, [].concat(paths), 0));
   return Promise.all(jobs).then(() => out);
 }
 
