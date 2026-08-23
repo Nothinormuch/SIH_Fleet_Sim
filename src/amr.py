@@ -57,7 +57,8 @@ from .world import Actuation, Sensors
 POLICY_STOP_WAIT = "stop_and_wait"
 POLICY_CENTRAL = "central"
 POLICY_HIERARCHICAL = "hierarchical"
-POLICIES = (POLICY_STOP_WAIT, POLICY_CENTRAL, POLICY_HIERARCHICAL)
+POLICY_BIOS = "BIOS_1.0.0"
+POLICIES = (POLICY_STOP_WAIT, POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS)
 
 MODE_CENTRAL = "CENTRAL_OK"
 MODE_P2P = "DEGRADED_P2P"
@@ -162,6 +163,14 @@ class AMRBrain:
         self._retreat_since = 0.0
         self._last_progress_t = 0.0
         self._last_cell: Cell | None = None
+        # BIOS_1.0.0: when an unstick step is armed we allow Layer 0 to creep out of
+        # a peer-jam instead of freezing; window closes once the step has landed.
+        self._creep_until = -1e9
+        # BIOS_1.0.0 block token: block id -> (owner, expiry) learned from the wire,
+        # plus the block id we ourselves currently hold.
+        self._claims: dict[int, tuple[str, float]] = {}
+        self._claim_cid: int | None = None
+        self._last_claim_t = -1e9
 
         self._t_route = -1e9
         self._t_reactive = -1e9
@@ -186,7 +195,7 @@ class AMRBrain:
         self._ingest(t, inbox)
         self._expire_peers(t)
 
-        if self.mode == MODE_P2P and self.policy != POLICY_STOP_WAIT:
+        if self.mode == MODE_P2P and self.policy not in (POLICY_STOP_WAIT, POLICY_BIOS):
             self.stats["seconds_degraded"] += 1.0 / self.cfg.rates.world_hz
 
         cell = sensors.cell
@@ -203,6 +212,11 @@ class AMRBrain:
         if t - self._t_reactive >= 1.0 / self.cfg.rates.reactive_hz:
             self._t_reactive = t
             self._traffic_loop(t, sensors, outbox)
+
+        if self.policy == POLICY_BIOS:
+            # Maintain the chokepoint token every control tick so any rival learns
+            # as early as possible and no second robot slips into the single lane.
+            self._bios_claim(t, sensors, self._next_cell(), outbox)
 
         act = self._follow(t, sensors)
         act = self._safety(sensors, act)           # Layer 0 has the last word, always
@@ -248,6 +262,20 @@ class AMRBrain:
         # allowed to argue with it.
         if sensors.clearance_omni_m <= spec.omni_stop_m:
             self.stats["safety_stops"] += 1
+            creeping = (self.policy == POLICY_BIOS and sensors.t < self._creep_until
+                        and act.v > 0.0)
+            if creeping:
+                # BIOS_1.0.0 unstick: the target cell was verified free of peers and
+                # we creep into it to break out of a jam. The forward cone still caps
+                # the speed below (so shelf edge and unexpected obstacles are honoured),
+                # but a known peer sitting within the omni guard no longer glues us in
+                # place forever - which is exactly the "move any free way to get
+                # unstuck" guarantee the policy makes.
+                v_allowed = self._speed_limit_from_traffic(sensors)
+                if v_allowed <= 0.02:
+                    return Actuation(v=0.0, omega=act.omega, safety_stop=True)
+                v = min(act.v, 0.30, v_allowed)
+                return Actuation(v=v, omega=act.omega, safety_stop=False)
             return Actuation(v=0.0, omega=act.omega * 0.3, safety_stop=True)
 
         v_allowed = self._speed_limit_from_traffic(sensors)
@@ -371,6 +399,14 @@ class AMRBrain:
 
         if self.blocked_since is not None:
             waited = t - self.blocked_since
+            # BIOS_1.0.0's defining safeguard: after a short pause the robot stops
+            # trusting any protocol and simply edges into a free neighbouring cell.
+            # Because it is always free and always adjacent, it always moves - so no
+            # robot can ever settle still, which is the liveness guarantee behind
+            # "no deadlock".
+            if self.policy == POLICY_BIOS and waited > self.cfg.traffic.bios_unstick_s:
+                self._bios_unstick(t, sensors, nxt, outbox)
+                return
             # Waiting at a mouth is fine unless we are waiting ON the way out. A robot
             # queued at the entrance stands exactly where the robot inside has to drive
             # to leave, so the two of them wait for each other with no cycle to detect
@@ -481,16 +517,31 @@ class AMRBrain:
         if self.blocks.id_of(here) == cid:
             return None                     # already committed inside this block
 
+        if self.policy == POLICY_BIOS:
+            # The block token: either somebody physically inside, or an unexpired
+            # claim some peer broadcast. Both close the race where two robots at
+            # opposite mouths both see an empty block and both commit.
+            lock = self._bios_lock(cid, t)
+            if lock is not None and lock[0] != self.rid:
+                self._gate_since.pop(cid, None)
+                return lock[0]
+
         entry = self.blocks.nearest_end(cid, nxt)
         ends = self.blocks.ends.get(cid, ())
         my_exit = next((e for e in ends if e != entry), None)
 
         for p in self.peers.values():
             if self.blocks.id_of(p.cell) == cid:
-                if my_exit is not None and self._peer_exit(cid, p) == my_exit:
-                    continue                # travelling our way: follow them through
-                self._gate_since.pop(cid, None)
-                return p.rid
+                if (self.policy == POLICY_BIOS
+                        or my_exit is None
+                        or self._peer_exit(cid, p) != my_exit):
+                    # BIOS_1.0.0 admits a controlled block STRICTLY one at a time.
+                    # A one-lane tunnel cannot take a same-direction convoy: robots
+                    # touch at standstill clearance and any follower freezes the fleet.
+                    # Whoever is inside owns the block until they leave.
+                    self._gate_since.pop(cid, None)
+                    return p.rid
+                continue                # (non-BIOS) travelling our way: follow through
             if not any(self.blocks.id_of(c) == cid for c in p.intent):
                 continue
 
@@ -702,6 +753,131 @@ class AMRBrain:
             self.pidx = 1
             self.stats["retreats"] += 1
             self.blocked_since = None
+
+    def _bios_unstick(self, t: float, sensors: Sensors, contested: Cell,
+                      outbox: list[msg.Message]) -> None:
+        """The BIOS_1.0.0 liveness valve: an actual, guaranteed step sideways/back.
+
+        Where the other policies wait for a plan to clear, this one accepts that no
+        amount of coordination can replace physical space - so when we are stuck, we
+        make some. A single step into any free adjacent cell is always executable:
+        by definition the cell is empty right now, and choosing a cell no peer owns
+        or is about to step into means we never walk into a head-on swap. Repeating
+        this on every stale tick drives a blocked queue apart without ever needing
+        to agree with anyone, which is exactly why it is decentralised.
+
+        We prefer a perpendicular (pull-aside) step over retreating, and a step that
+        keeps moving toward the goal over one that does not; but if the only free
+        cell is behind us, we take it - movement beats posture.
+        """
+        # Restart the clock first so this does not re-fire inside the same tick.
+        self.blocked_since = None
+        self._hold = False
+
+        here = sensors.cell
+        occupied = {p.cell for p in self.peers.values() if p.cell is not None}
+        # Avoid cells a peer is about to occupy in the next ~half second too.
+        for p in self.peers.values():
+            if p.intent:
+                occupied.add(p.intent[0])
+
+        options = []
+        for n in self.env.neighbors(here):
+            if n in occupied:
+                continue
+            nc = self.blocks.id_of(n)
+            # Never creep into a single-lane block somebody else already owns: that
+            # is exactly the pile-up the block token exists to stop.
+            if nc is not None and self._controlled_block(n) is not None:
+                lock = self._bios_lock(nc, sensors.t)
+                if lock is not None and lock[0] != self.rid:
+                    continue
+            options.append(n)
+
+        if not options:
+            # Walled in with no free step: make the contested cell expensive so a
+            # future replan detours, rather than standing still forever.
+            self.penalty[contested] = self.penalty.get(contested, 0.0) + \
+                self.cfg.traffic.replan_penalty
+            self._replan(t, here)
+            return
+
+        # Direction we were trying to travel (from here toward the contested cell).
+        axis = (contested[0] - here[0], contested[1] - here[1])
+        goal = self.goal
+
+        def rank(n: Cell) -> tuple:
+            d = (n[0] - here[0], n[1] - here[1])
+            perpendicular = 1 if (d[0] * axis[0] + d[1] * axis[1]) == 0 else 0
+            closer = 0 if goal is not None and manhattan(n, goal) < manhattan(here, goal) else 1
+            return (perpendicular, closer, manhattan(n, contested))
+
+        options.sort(key=rank)
+        target = options[0]
+
+        self.path = [here, target]
+        self.path_times = []
+        self.pidx = 1
+        self.blocked_on = None
+        self._stall_since = None
+        self.retreat_target = None
+        self.state = self._state_for_task()
+        self.stats["retreats"] += 1
+        # Arm Layer 0's creep so we can actually break out of the stick. Long enough
+        # to cross the target cell at creep speed, not so long we keep driving blind.
+        self._creep_until = sensors.t + 6.0
+
+    def _bios_lock(self, cid: int, t: float) -> tuple[str, float] | None:
+        """Who holds block `cid` right now? (owner, expiry) or None.
+
+        Physical presence outranks a claim: if any peer's reported cell is inside the
+        block they ARE the owner, regardless of what the token table says. Otherwise
+        an unexpired claim we have heard reserves the block until it expires.
+        """
+        for p in self.peers.values():
+            if p.rid != self.rid and self.blocks.id_of(p.cell) == cid:
+                return (p.rid, 1e18)
+        owner, until = self._claims.get(cid, (None, -1e9))
+        if owner is not None and owner != self.rid and until > t:
+            return (owner, until)
+        return None
+
+    def _bios_claim(self, t: float, sensors: Sensors, nxt: Cell,
+                    outbox: list[msg.Message]) -> None:
+        """Take or keep the block token for the controlled block we are in or entering.
+
+        A lock at the mouth is not enough: the token must be *held* while we transit,
+        or the robot behind us cannot tell our intention from our presence. We claim
+        the moment we are cleared to enter (so a rival at the opposite mouth sees the
+        reservation and waits before piling in), keep it re-broadcast while inside,
+        and release it the instant we leave.
+        """
+        here = sensors.cell
+        c_here = self.blocks.id_of(here)
+        c_nxt = self.blocks.id_of(nxt) if nxt is not None else None
+        inside = c_here is not None and self._controlled_block(here) is not None
+        about_to = (c_nxt is not None and c_nxt != c_here
+                    and self._controlled_block(nxt) is not None)
+        cid = c_here if inside else c_nxt
+        take = inside or (about_to and self._bios_lock(cid, t) is None)
+
+        if take and cid is not None:
+            if self._claim_cid != cid:
+                self._claim_cid = cid
+                self._last_claim_t = -1e9     # force an immediate claim broadcast
+            if t - self._last_claim_t >= 0.5:  # keep-alive every ~2 heartbeats
+                self._last_claim_t = t
+                until = t + self.cfg.traffic.bios_claim_ttl_s
+                self._claims[cid] = (self.rid, until)
+                outbox.append(msg.block_claim(
+                    self.rid, self._next_seq(), t, cid, until,
+                    self._pub_priority, self.epoch))
+        elif self._claim_cid is not None:
+            # Left the block (or lost the right to enter): release it for the next robot.
+            outbox.append(msg.block_release(self.rid, self._next_seq(), t, self._claim_cid))
+            self._claims.pop(self._claim_cid, None)
+            self._claim_cid = None
+            self._last_claim_t = -1e9
 
     def _find_cycle(self) -> list[str] | None:
         """Walk the wait-for chain from self; report the cycle if it returns to self."""
@@ -941,7 +1117,11 @@ class AMRBrain:
     def _follow(self, t: float, sensors: Sensors) -> Actuation:
         """Pure-pursuit-ish waypoint follower. Shared by every policy, on purpose."""
         spec = self.cfg.robot
-        if self._hold or not self.path or self.pidx >= len(self.path):
+        # During a BIOS unstick the traffic layer may still be holding, but we armed a
+        # free-cell step that must land or the robot is glued forever - drive through.
+        if self._hold and not (self.policy == POLICY_BIOS and sensors.t < self._creep_until):
+            return Actuation(0.0, 0.0)
+        if not self.path or self.pidx >= len(self.path):
             return Actuation(0.0, 0.0)
 
         pos = (sensors.pose[0], sensors.pose[1])
@@ -1120,6 +1300,18 @@ class AMRBrain:
                 self.taken.add(b["task"])
             elif m.type == msg.MGR_BEACON:
                 self._mgr_seen = t
+            elif m.type in (msg.CLAIM, msg.RELEASE) and b.get("b"):
+                # BIOS_1.0.0 block token. A claim reserves a whole single-lane block
+                # for one robot; it expires by its own timestamp and a release only
+                # helps early. We keep the longest unexpired claim we have heard.
+                cid = int(b["g"])
+                if m.type == msg.RELEASE:
+                    self._claims[cid] = (m.src, 0.0)
+                else:
+                    until = float(b.get("u", 0.0))
+                    owner, cur_until = self._claims.get(cid, (None, -1e9))
+                    if until > cur_until:
+                        self._claims[cid] = (m.src, until)
             elif m.type == msg.PLAN_RSP:
                 # A central route is advice about where to go next; it must not
                 # overwrite a give-way already in progress. Doing so leaves the robot

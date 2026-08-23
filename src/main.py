@@ -30,7 +30,7 @@ from dataclasses import replace
 
 from . import messages as msg
 from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
-                  POLICY_STOP_WAIT, Task)
+                  POLICY_STOP_WAIT, POLICY_BIOS, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
 from .scenarios import SCENARIOS, Scenario
@@ -74,8 +74,9 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
         world.add_human(f"H{j + 1}", walk)
 
     # stop_and_wait has no fleet manager by definition - it is the no-coordination
-    # baseline. The other two both get one; `central` depends on it, `hierarchical`
-    # merely prefers it.
+    # baseline. BIOS_1.0.0 also runs without one, by design: its chokepoint
+    # admission and unstick logic are wholly peer-to-peer. `central` depends on the
+    # manager, `hierarchical` merely prefers it.
     manager = None
     if policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL):
         manager = FleetManager(sc.env, cfg)
@@ -301,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if POLICY_STOP_WAIT in by_policy:
         print()
-        for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL):
+        for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")

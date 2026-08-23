@@ -155,6 +155,13 @@ class TrafficSpec:
     # theirs to reach us, short enough not to dominate travel time through a block.
     gate_commit_s: float = 0.45
     replan_penalty: float = 6.0     # cost added to a contested cell when detouring
+    # BIOS_1.0.0 only: a robot held still longer than this edges into ANY free
+    # adjacent cell so it can never settle permanently. Deliberately short: the
+    # point is a liveness guarantee, not polite traffic theory.
+    bios_unstick_s: float = 2.0
+    # BIOS_1.0.0 block-token lifetime. Held only while physically inside the block
+    # (re-broadcast every heartbeat), this just needs to cover entry + propagation.
+    bios_claim_ttl_s: float = 4.0
 
 
 @dataclass(frozen=True)

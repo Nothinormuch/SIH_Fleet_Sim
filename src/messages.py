@@ -148,6 +148,25 @@ def release(src: str, seq: int, t: float, cell: Cell) -> Message:
     return Message(RELEASE, src, seq, t, {"c": list(cell)})
 
 
+def block_claim(src: str, seq: int, t: float, cid: int, until: float,
+                priority: float, epoch: int) -> Message:
+    """Exclusive reservation of an entire single-lane block, keyed by block id.
+
+    BIOS_1.0.0's chokepoint token. A corridor is one civilization-wide mutex: a
+    following convoy still glues the fleet at standstill clearance in a 1 m tunnel,
+    so we admit exactly ONE robot into a controlled block at a time. Carrying the
+    block id (in ``b``) separates a block-level claim from the single-cell CLAIM.
+    """
+    return Message(CLAIM, src, seq, t, {
+        "b": 1, "g": int(cid), "u": round(until, 2),
+        "pr": round(priority, 4), "e": epoch,
+    })
+
+
+def block_release(src: str, seq: int, t: float, cid: int) -> Message:
+    return Message(RELEASE, src, seq, t, {"b": 1, "g": int(cid)})
+
+
 def yield_to(src: str, seq: int, t: float, cell: Cell, winner: str) -> Message:
     return Message(YIELD, src, seq, t, {"c": list(cell), "to": winner})
 
