@@ -1,0 +1,16 @@
+# Environments
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# PyInstaller build files (for when you make the .exe)
+build/
+dist/
+*.spec
+
+# OS generated files
+.DS_Store
+Thumbs.db
