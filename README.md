@@ -8,7 +8,8 @@ benchmark harness that measures the three coordination policies against each oth
 fixed, seeded scenarios.
 
 ```bash
-python -m pytest tests -q                                   # 19 tests
+python backend/server.py                 # dashboard -> http://127.0.0.1:8000
+python -m pytest tests -q                # 19 tests
 python run.py --scenario crossing_chokepoint --policy all --robots 4 --seeds 3
 python run.py --scenario dense_aisles --policy hierarchical --json out/run.json
 ```
@@ -72,8 +73,19 @@ src/
   metrics.py       Poisson rate intervals, honest policy comparison
   scenarios.py     pinned, seeded benchmark scenarios including a negative control
   main.py          the headless runner and CLI
+backend/
+  server.py        stdlib HTTP server: serves the frontend, runs sims on request
+frontend/
+  index.html       dashboard shell
+  css/style.css    palette shared with the generated asset set
+  js/environment.js  asset loading, world->screen transform, static warehouse layer
+  js/amr.js        robots, status halos, payload, the human worker
+  js/network.js    the coordination layer: intent, peer links, wait-for arrows
+  js/main.js       fetch, interpolated playback, panel binding
+  assets/          generated sprite set (256 px per cell)
 tests/             19 regression tests
 docs/              CRITIQUE.md, FINDINGS.md
+reference/         asset prompt pack and loader spec
 ```
 
 ### The one design decision everything rests on
@@ -131,6 +143,29 @@ policy fails to complete — a policy that does not finish is a different kind o
 not an infinitely slow one, and folding it into a percentage would be the exact
 dishonesty this project is arguing against.
 
-**Not built yet:** the web dashboard, the distributed multi-process runner (the UDP
-transport class exists and is unit-tested; the process launcher is not written), and the
-packet-loss / partition sweep plots.
+## The dashboard
+
+`python backend/server.py` then open <http://127.0.0.1:8000>. Pick a scenario, policy,
+fleet size and seed; the server runs the simulation and returns the map, every telemetry
+frame and the result summary, and the page plays it back with a scrubber.
+
+It draws the things that are otherwise invisible, because a warehouse of moving robots
+looks the same whether it is coordinating or getting lucky:
+
+- **broadcast intent** — the cell horizon each robot publishes in its INTENT message,
+  fading along the horizon as the time windows do
+- **peer links** — who can currently hear whom, straight from each robot's peer table
+- **wait-for arrows** — who is blocked on whom. Two arrows pointing at each other *is*
+  the cycle the distributed deadlock detector searches for
+- **single-file blocks** — the runs of aisle the traffic layer applies block control to
+- **the human worker** — dashed ring, because they publish nothing and cannot be
+  negotiated with. Only the onboard safety layer sees them at all
+
+Playback rather than a live socket: the sim runs far faster than realtime, so streaming
+would mean throttling it back to wall-clock for no benefit, and a recorded run can be
+paused on the frame where two robots negotiate a chokepoint and replayed against a
+different policy on the same seed.
+
+**Not built yet:** the distributed multi-process runner (the UDP transport class exists
+and is unit-tested; the process launcher is not written), and the packet-loss / partition
+sweep plots.

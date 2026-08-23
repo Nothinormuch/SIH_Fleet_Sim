@@ -131,8 +131,15 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
             snap["fleet"] = [
                 {"id": r, "state": b.state, "mode": b.mode,
                  "task": b.task.tid if b.task else None,
+                 "goal": list(b.goal) if b.goal else None,
+                 # The intent horizon, i.e. exactly what this robot is broadcasting.
+                 # The dashboard draws these as reservation cones so the coordination
+                 # is visible rather than implied - decentralisation is invisible on
+                 # screen unless the messages are drawn.
                  "path": [list(c) for c in b.path[b.pidx:b.pidx + 8]],
-                 "blocked_on": b.blocked_on}
+                 "peers": sorted(b.peers.keys()),
+                 "blocked_on": b.blocked_on,
+                 "done": len(b.completed)}
                 for r, b in sorted(brains.items())
             ]
             snap["manager_alive"] = bool(manager and manager.alive)
@@ -198,6 +205,40 @@ def _summarize(sc, policy, seed, cfg, world, net, brains, manager,
         net_loss=cfg.net.loss,
         manager_killed_at=sc.kill_manager_at,
     )
+
+
+def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
+                      seed: int = 0, duration: float | None = None) -> dict:
+    """One run, packaged for the web dashboard: map, every frame, and the summary.
+
+    Playback rather than a live stream, deliberately. The sim runs far faster than
+    realtime, so streaming it would mean throttling it back down to wall-clock for no
+    benefit; and a recorded run can be scrubbed, paused on the interesting frame and
+    replayed against a different policy, which is what anyone evaluating this actually
+    wants to do.
+    """
+    kw: dict = {"seed": seed}
+    if robots is not None:
+        kw["n_robots"] = robots
+    sc = SCENARIOS[scenario](**kw)
+    if duration is not None:
+        sc.duration_s = float(duration)
+
+    frames: list = []
+    result = run_scenario(sc, policy, seed=seed, trace=frames)
+    return {
+        "map": sc.env.to_json(),
+        "meta": {
+            "scenario": sc.name, "policy": policy, "seed": seed,
+            "robots": sc.n_robots, "duration_s": sc.duration_s,
+            "tasks": sc.n_tasks if not sc.use_auction else len(sc.unassigned),
+            "humans": len(sc.humans),
+            "kill_manager_at": sc.kill_manager_at,
+            "cell_m": DEFAULT.cell_m,
+        },
+        "frames": frames,
+        "summary": result.to_dict(),
+    }
 
 
 # ---------------------------------------------------------------------- CLI

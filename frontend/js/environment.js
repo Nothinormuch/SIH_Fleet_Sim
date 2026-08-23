@@ -1,0 +1,282 @@
+/* Asset loading, the world->screen transform, and the static warehouse layer.
+ *
+ * Follows reference/ps26123-sim-asset-loader-spec.md: source art is 256 px per grid
+ * cell, anchors are normalised, and rotation happens in the renderer rather than being
+ * baked into sprite variants.
+ *
+ * The one thing worth stating about the transform: the simulation uses +Y = north, and
+ * canvas uses +Y = down. Everything is drawn through worldToScreen() so that flip lives
+ * in exactly one place. Sprites are authored facing +Y (up), so a robot at heading theta
+ * is drawn rotated by (PI/2 - theta) -- the negation of the maths-convention angle,
+ * because the Y flip turns counter-clockwise in the world into clockwise on screen.
+ */
+
+const CELL_SRC = 256;          // authoring resolution, one grid cell
+const FREE = 0, RACK = 1, STATION = 2, DOCK = 3;
+
+const ASSET_PATHS = {
+  tile_aisle:        '/assets/tiles/tile_aisle_ns.png',
+  tile_intersection: '/assets/tiles/tile_intersection.png',
+  tile_station:      '/assets/tiles/tile_pick_station.png',
+  tile_charging:     '/assets/tiles/tile_charging.png',
+  tile_blocked:      '/assets/tiles/tile_blocked.png',
+  tile_fiducial:     '/assets/tiles/tile_fiducial.png',
+
+  rack:              '/assets/furniture/rack_1x3.png',
+  dock:              '/assets/furniture/charging_dock.png',
+  station:           '/assets/furniture/pick_drop_station.png',
+  // NOT furniture/worker_obstacle.png -- that asset is an open cardboard box despite
+  // its name. This one is keyed out of the human reference card into a real sprite.
+  worker:            '/assets/furniture/worker_human.png',
+
+  robot_AMR01:       '/assets/robots/robot_amr01_base.png',
+  robot_AMR02:       '/assets/robots/robot_amr02_base.png',
+  robot_AMR03:       '/assets/robots/robot_amr03_base.png',
+  robot_AMR04:       '/assets/robots/robot_amr04_base.png',
+
+  halo_idle:         '/assets/halos/halo_idle.png',
+  halo_moving:       '/assets/halos/halo_moving.png',
+  halo_yield:        '/assets/halos/halo_yield.png',
+  halo_deadlock:     '/assets/halos/halo_deadlock.png',
+  halo_charging:     '/assets/halos/halo_charging.png',
+
+  cargo_tote:        '/assets/cargo/cargo_tote.png',
+
+  link_beam:         '/assets/network/net_link_beam.png',
+  pulse:             '/assets/network/broadcast_pulse.png',
+  comms_lost:        '/assets/network/comms_lost.png',
+  deadlock:          '/assets/network/deadlock_detected.png',
+};
+
+/* A missing sprite must never take the whole view down with it: the dashboard is more
+ * useful with one blank tile than with a blank page, and during asset iteration files
+ * genuinely do come and go. Failed loads resolve to null and every draw call checks. */
+function loadAssets() {
+  const out = {};
+  const jobs = Object.entries(ASSET_PATHS).map(([key, src]) => new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => { out[key] = img; resolve(); };
+    img.onerror = () => { out[key] = null; console.warn('asset missing:', src); resolve(); };
+    img.src = src;
+  }));
+  return Promise.all(jobs).then(() => out);
+}
+
+/* ------------------------------------------------------------------ transform */
+
+class View {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.cell = 32;
+    this.ox = 0;
+    this.oy = 0;
+    this.map = null;
+  }
+
+  /* Size the backing store to the CSS box times DPR, then fit the map inside it.
+   * Skipping the DPR step is what makes a canvas dashboard look soft on a laptop. */
+  resize(map) {
+    if (map) this.map = map;
+    const dpr = window.devicePixelRatio || 1;
+    const box = this.canvas.getBoundingClientRect();
+    this.canvas.width = Math.max(1, Math.round(box.width * dpr));
+    this.canvas.height = Math.max(1, Math.round(box.height * dpr));
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.cssW = box.width;
+    this.cssH = box.height;
+    if (!this.map) return;
+
+    const pad = 26;
+    this.cell = Math.max(
+      8,
+      Math.floor(Math.min((box.width - pad * 2) / this.map.width,
+                          (box.height - pad * 2) / this.map.height))
+    );
+    this.ox = (box.width - this.map.width * this.cell) / 2;
+    this.oy = (box.height - this.map.height * this.cell) / 2;
+  }
+
+  /* World metres -> CSS pixels. The Y flip lives here and nowhere else. */
+  worldToScreen(x, y) {
+    return [this.ox + x * this.cell,
+            this.oy + (this.map.height - y) * this.cell];
+  }
+
+  cellRect(cx, cy) {
+    const [sx, sy] = this.worldToScreen(cx, cy + 1);   // top-left in screen terms
+    return [sx, sy, this.cell, this.cell];
+  }
+
+  clear() {
+    const { ctx } = this;
+    ctx.clearRect(0, 0, this.cssW, this.cssH);
+  }
+}
+
+/* Draw a sprite centred on a world point, rotated to a heading (maths convention). */
+function drawSprite(ctx, view, img, wx, wy, headingRad, sizeCells, alpha) {
+  if (!img) return;
+  const [sx, sy] = view.worldToScreen(wx, wy);
+  const s = view.cell * (sizeCells === undefined ? 1 : sizeCells);
+  ctx.save();
+  if (alpha !== undefined) ctx.globalAlpha = alpha;
+  ctx.translate(sx, sy);
+  if (headingRad !== null && headingRad !== undefined) {
+    ctx.rotate(Math.PI / 2 - headingRad);
+  }
+  ctx.drawImage(img, -s / 2, -s / 2, s, s);
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------ map analysis */
+
+function gridAt(map, x, y) {
+  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return RACK;
+  return map.grid[y][x];
+}
+const passable = (map, x, y) => gridAt(map, x, y) !== RACK;
+
+function degree(map, x, y) {
+  let d = 0;
+  if (passable(map, x + 1, y)) d++;
+  if (passable(map, x - 1, y)) d++;
+  if (passable(map, x, y + 1)) d++;
+  if (passable(map, x, y - 1)) d++;
+  return d;
+}
+
+/* Single-file blocks, recomputed client-side with the same rule the agent uses:
+ * maximal connected runs of cells with at most two exits. Only long ones are drawn,
+ * because only long ones are the ones the agent actually applies block control to --
+ * showing the short gaps too would imply a constraint that is not being enforced. */
+function findBlocks(map, minLen) {
+  const key = (x, y) => y * map.width + x;
+  const isCorridor = (x, y) => passable(map, x, y) && degree(map, x, y) <= 2;
+  const seen = new Set();
+  const blocks = [];
+
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      if (!isCorridor(x, y) || seen.has(key(x, y))) continue;
+      const stack = [[x, y]], comp = [];
+      seen.add(key(x, y));
+      while (stack.length) {
+        const [cx, cy] = stack.pop();
+        comp.push([cx, cy]);
+        for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]]) {
+          if (isCorridor(nx, ny) && !seen.has(key(nx, ny))) {
+            seen.add(key(nx, ny));
+            stack.push([nx, ny]);
+          }
+        }
+      }
+      if (comp.length >= minLen) blocks.push(comp);
+    }
+  }
+  return blocks;
+}
+
+/* ------------------------------------------------------------------ static layer */
+
+/* The floor and furniture never change during playback, so they are rendered once to an
+ * offscreen canvas and blitted per frame. At 60 fps with a few hundred cells the
+ * difference between this and redrawing every tile is the whole frame budget. */
+function buildStaticLayer(view, map, imgs) {
+  const dpr = window.devicePixelRatio || 1;
+  const off = document.createElement('canvas');
+  off.width = Math.round(view.cssW * dpr);
+  off.height = Math.round(view.cssH * dpr);
+  const ctx = off.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingQuality = 'high';
+
+  // floor
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      const v = gridAt(map, x, y);
+      if (v === RACK) continue;
+      const [sx, sy, w, h] = view.cellRect(x, y);
+      let img = null, rotate = false;
+      if (v === STATION) img = imgs.tile_station;
+      else if (v === DOCK) img = imgs.tile_charging;
+      else if (degree(map, x, y) >= 3) img = imgs.tile_intersection;
+      else {
+        img = imgs.tile_aisle;
+        // tile_aisle_ns runs north-south; turn it for an east-west corridor
+        rotate = passable(map, x + 1, y) && passable(map, x - 1, y)
+                 && !(passable(map, x, y + 1) && passable(map, x, y - 1));
+      }
+      ctx.save();
+      if (rotate) {
+        ctx.translate(sx + w / 2, sy + h / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.translate(-w / 2, -h / 2);
+        if (img) ctx.drawImage(img, 0, 0, w, h);
+      } else if (img) {
+        ctx.drawImage(img, sx, sy, w, h);
+      }
+      ctx.restore();
+    }
+  }
+
+  drawRacks(ctx, view, map, imgs);
+
+  // Highlight the single-file blocks the traffic layer actually controls.
+  ctx.save();
+  ctx.strokeStyle = 'rgba(245,184,67,.55)';
+  ctx.fillStyle = 'rgba(245,184,67,.07)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 4]);
+  for (const comp of findBlocks(map, 6)) {
+    for (const [cx, cy] of comp) {
+      const [sx, sy, w, h] = view.cellRect(cx, cy);
+      ctx.fillRect(sx, sy, w, h);
+    }
+    // outline only the perimeter edges of the block
+    const inBlock = new Set(comp.map(([x, y]) => y * map.width + x));
+    for (const [cx, cy] of comp) {
+      const [sx, sy, w, h] = view.cellRect(cx, cy);
+      const has = (x, y) => inBlock.has(y * map.width + x);
+      ctx.beginPath();
+      if (!has(cx, cy + 1)) { ctx.moveTo(sx, sy); ctx.lineTo(sx + w, sy); }
+      if (!has(cx, cy - 1)) { ctx.moveTo(sx, sy + h); ctx.lineTo(sx + w, sy + h); }
+      if (!has(cx - 1, cy)) { ctx.moveTo(sx, sy); ctx.lineTo(sx, sy + h); }
+      if (!has(cx + 1, cy)) { ctx.moveTo(sx + w, sy); ctx.lineTo(sx + w, sy + h); }
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  return off;
+}
+
+/* rack_1x3.png is three cells wide, so it three-slices cleanly: left cap, repeating
+ * middle, right cap. Stretching one sprite across a run of arbitrary length instead
+ * would distort the shelving differently in every aisle. */
+function drawRacks(ctx, view, map, imgs) {
+  const img = imgs.rack;
+  const third = CELL_SRC;
+  for (let y = 0; y < map.height; y++) {
+    let x = 0;
+    while (x < map.width) {
+      if (gridAt(map, x, y) !== RACK) { x++; continue; }
+      let end = x;
+      while (end + 1 < map.width && gridAt(map, end + 1, y) === RACK) end++;
+      const len = end - x + 1;
+      for (let i = 0; i < len; i++) {
+        const [sx, sy, w, h] = view.cellRect(x + i, y);
+        if (!img) {
+          ctx.fillStyle = '#1b2531';
+          ctx.fillRect(sx, sy, w, h);
+          ctx.strokeStyle = '#2b3a4b';
+          ctx.strokeRect(sx + .5, sy + .5, w - 1, h - 1);
+          continue;
+        }
+        const slice = (len === 1) ? 1 : (i === 0 ? 0 : (i === len - 1 ? 2 : 1));
+        ctx.drawImage(img, slice * third, 0, third, third, sx, sy, w, h);
+      }
+      x = end + 1;
+    }
+  }
+}
