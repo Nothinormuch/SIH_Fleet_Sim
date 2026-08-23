@@ -1,0 +1,5 @@
+# The simulation core and the benchmark suite are stdlib-only, on purpose:
+# the agent node must drop onto a bare Raspberry Pi image without a build step.
+# Everything below serves the dashboard bridge and the report plots only.
+websockets>=12.0
+matplotlib>=3.8

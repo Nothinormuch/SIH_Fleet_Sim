@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIH26123 · AMR Fleet Coordination</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">
+    <span class="ps">SIH26123</span>
+    <span class="title">Edge-AI Distributed Fleet Coordination · AMR Warehouse</span>
+  </div>
+  <div class="link-state" id="linkState">
+    <span class="dot" id="mgrDot"></span><span id="mgrText">fleet manager</span>
+  </div>
+</header>
+
+<main>
+  <section class="stage">
+    <canvas id="floor"></canvas>
+
+    <div class="overlay-legend">
+      <span><i class="sw sw-intent"></i> broadcast intent</span>
+      <span><i class="sw sw-link"></i> peer link</span>
+      <span><i class="sw sw-block"></i> single-file block</span>
+      <span><i class="sw sw-human"></i> non-broadcasting worker</span>
+    </div>
+
+    <div class="transport">
+      <button id="playBtn" class="primary" title="Play / pause (space)">Play</button>
+      <input type="range" id="scrub" min="0" max="0" value="0" step="1">
+      <span class="clock"><span id="clockNow">0.0</span>s <span class="muted">/</span>
+        <span id="clockEnd">0.0</span>s</span>
+      <label class="speed">speed
+        <select id="speed">
+          <option value="0.5">0.5&times;</option>
+          <option value="1" selected>1&times;</option>
+          <option value="2">2&times;</option>
+          <option value="4">4&times;</option>
+          <option value="8">8&times;</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <aside class="panel">
+
+    <div class="card">
+      <h2>Run</h2>
+      <div class="grid2">
+        <label>Scenario<select id="scenario"></select></label>
+        <label>Policy<select id="policy"></select></label>
+        <label>Robots<input type="number" id="robots" value="4" min="2" max="24"></label>
+        <label>Seed<input type="number" id="seed" value="0" min="0"></label>
+        <label>Duration (s)<input type="number" id="duration" value="120" min="10"
+                                 max="900" step="10"></label>
+        <label class="run-cell"><span>&nbsp;</span>
+          <button id="runBtn" class="primary">Run simulation</button></label>
+      </div>
+      <p class="status" id="status">Pick a scenario and press Run.</p>
+    </div>
+
+    <div class="card">
+      <h2>Fleet</h2>
+      <div id="fleet" class="fleet"></div>
+    </div>
+
+    <div class="card">
+      <h2>Peer Task Auction</h2>
+      <div id="auctionSummary" class="auction-summary"></div>
+      <div id="auctionLog" class="auction-log">
+        <p class="muted">Run a decentralized auction to see the wire events.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Result</h2>
+      <div id="summary" class="summary">
+        <p class="muted">No run yet.</p>
+      </div>
+    </div>
+
+    <div class="card note">
+      <h2>Reading this screen</h2>
+      <p><b>The dashboard is a passive listener.</b> It reads the same messages the
+      robots broadcast to each other and cannot command anything. The problem statement
+      asks for "no central server" and then for a dashboard aggregating the whole fleet
+      &mdash; that is a central aggregator with the same single point of failure, so this
+      one is built to not be one.</p>
+      <p><b>Safety is the bottom layer, not the protocol.</b> The onboard protective stop
+      runs at 50&nbsp;Hz, is sized by its own speed <i>and</i> the closing speed of
+      whatever it sees, and never waits on a packet. The walking worker broadcasts
+      nothing and is the case that proves it.</p>
+    </div>
+
+  </aside>
+</main>
+
+<script src="/js/environment.js"></script>
+<script src="/js/amr.js"></script>
+<script src="/js/network.js"></script>
+<script src="/js/main.js"></script>
+</body>
+</html>
