@@ -1,10 +1,18 @@
 # Environments
 venv/
 env/
+.venv/
+.env
 
 # Python cache
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.coverage
+htmlcov/
 
 # PyInstaller build files (for when you make the .exe)
 build/

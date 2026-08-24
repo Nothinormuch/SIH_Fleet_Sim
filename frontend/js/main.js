@@ -79,21 +79,25 @@ function fill(select, values, preferred) {
 /* ------------------------------------------------------------------ running */
 
 async function run() {
-  const q = new URLSearchParams({
+  const request = {
     scenario: el('scenario').value,
     policy: el('policy').value,
     allocation_policy: el('allocationPolicy').value,
-    robots: el('robots').value,
-    seed: el('seed').value,
-    duration: el('duration').value,
-  });
+    robots: Number(el('robots').value),
+    seed: Number(el('seed').value),
+    duration: Number(el('duration').value),
+  };
   el('runBtn').disabled = true;
   App.playing = false;
   el('playBtn').textContent = 'Play';
   setStatus(`Simulating ${el('duration').value}s of ${el('scenario').value}…`, 'busy');
 
   try {
-    const res = await fetch('/api/run?' + q.toString());
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(request),
+    });
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
 
@@ -291,7 +295,7 @@ function renderFleetPanel(frame) {
   const rows = frame.robots.map(r => {
     const f = info[r.id] || {};
     const colour = robotColour(r.id);
-    const batt = Math.round((r.batt || 0) * 100);
+    const batt = Math.max(0, Math.min(100, Math.round((Number(r.batt) || 0) * 100)));
     const battCls = batt < 15 ? 'crit' : (batt < 35 ? 'low' : '');
     const waiting = f.blocked_on
       ? (f.blocked_on === 'gate' ? 'awaiting block' : 'waiting on ' + f.blocked_on)
@@ -300,18 +304,20 @@ function renderFleetPanel(frame) {
     const priority = pk
       ? ` · P[e${pk[0]} x${pk[1]} w${pk[2]} a${pk[3]} l${pk[4]}]`
       : '';
+    const state = String(f.state || 'idle');
+    const stateClass = /^[a-z0-9_-]+$/i.test(state) ? state : 'idle';
 
     return `
       <div class="robot" style="border-left-color:${colour}">
         <span class="swatch" style="background:${colour}"></span>
         <div>
-          <div class="rid">${r.id}</div>
-          <div class="meta">${waiting}${priority}</div>
+          <div class="rid">${escapeHtml(r.id)}</div>
+          <div class="meta">${escapeHtml(waiting + priority)}</div>
           <div class="batt"><i class="${battCls}" style="width:${batt}%"></i></div>
         </div>
         <div class="right">
-          <span class="state ${f.state || 'idle'}">${(f.state || 'idle').replace(/_/g, ' ')}</span>
-          <div class="meta" style="margin-top:5px">${f.done || 0} done</div>
+          <span class="state ${stateClass}">${escapeHtml(state.replace(/_/g, ' '))}</span>
+          <div class="meta" style="margin-top:5px">${Number(f.done) || 0} done</div>
         </div>
       </div>`;
   });

@@ -1,15 +1,13 @@
 """Debug: trace robots on crossing_chokepoint."""
 import sys
-from dataclasses import replace
 sys.path.insert(0, '.')
 
 from src.scenarios import crossing_chokepoint
-from src.settings import DEFAULT, Config
+from src.settings import DEFAULT
 from src.world import World
 from src.transport import SimNetwork
-from src.amr import AMRBrain, POLICY_STOP_WAIT, POLICY_HIERARCHICAL, POLICY_BIOS
+from src.amr import AMRBrain
 from src.fleet_manager import FleetManager, MANAGER_ID
-from src.metrics import PolicyResult
 
 def run(policy, robots=4, seed=0, duration=120.0, trace_every=1.0):
     sc = crossing_chokepoint(robots, 3, seed)

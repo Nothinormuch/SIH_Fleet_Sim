@@ -144,6 +144,16 @@ class HumanState:
 
 
 @dataclass
+class ObstacleState:
+    """A non-communicating pallet, spill, or dropped box in a free map cell."""
+
+    oid: str
+    x: float
+    y: float
+    radius: float = 0.40
+
+
+@dataclass
 class ContactEvent:
     t: float
     kind: str                        # robot-robot | robot-human | robot-rack
@@ -160,6 +170,7 @@ class World:
         self.t = 0.0
         self.robots: dict[str, RobotState] = {}
         self.humans: dict[str, HumanState] = {}
+        self.obstacles: dict[str, ObstacleState] = {}
         self.contacts: list[ContactEvent] = []
         # pair -> last contact time, so one physical touch is one event, not fifty
         self._contact_cooldown: dict[tuple[str, str], float] = {}
@@ -182,6 +193,18 @@ class World:
         h = HumanState(hid, pts, speed=speed, x=pts[0][0], y=pts[0][1], idx=1 % len(pts))
         self.humans[hid] = h
         return h
+
+    def add_obstacle(self, oid: str, cell: Cell, radius: float = 0.40) -> ObstacleState:
+        if not self.env.passable(cell):
+            raise ValueError(f"dynamic obstacle {oid!r} is not in a passable cell")
+        cm = self.cfg.cell_m
+        obstacle = ObstacleState(
+            oid, (cell[0] + 0.5) * cm, (cell[1] + 0.5) * cm, radius)
+        self.obstacles[oid] = obstacle
+        return obstacle
+
+    def remove_obstacle(self, oid: str) -> None:
+        self.obstacles.pop(oid, None)
 
     # ------------------------------------------------------------------ physics
 
@@ -251,6 +274,9 @@ class World:
         if not (r <= p[0] <= self.env.width * cm - r):
             return True
         if not (r <= p[1] <= self.env.height * cm - r):
+            return True
+        if any(dist(p, (obstacle.x, obstacle.y)) < r + obstacle.radius
+               for obstacle in self.obstacles.values()):
             return True
         return False
 
@@ -334,6 +360,11 @@ class World:
             if d <= spec.sense_radius_m:
                 hv = h.velocity()
                 dets.append(Detection(h.x, h.y, h.radius, d, hv[0], hv[1]))
+        for obstacle in self.obstacles.values():
+            d = dist((st.x, st.y), (obstacle.x, obstacle.y))
+            if d <= spec.sense_radius_m:
+                dets.append(Detection(
+                    obstacle.x, obstacle.y, obstacle.radius, d, 0.0, 0.0))
 
         stat, dyn = self._cone_clearance(st, dets)
         omni = min([d.range_m - spec.radius_m - d.r for d in dets], default=99.0)
@@ -448,5 +479,10 @@ class World:
             ],
             "humans": [{"id": h.hid, "x": round(h.x, 3), "y": round(h.y, 3)}
                        for h in self.humans.values()],
+            "obstacles": [
+                {"id": obstacle.oid, "x": round(obstacle.x, 3),
+                 "y": round(obstacle.y, 3), "r": obstacle.radius}
+                for obstacle in self.obstacles.values()
+            ],
             "contacts": len(self.contacts),
         }

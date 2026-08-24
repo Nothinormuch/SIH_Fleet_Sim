@@ -144,5 +144,5 @@ observed robot/robot, robot/human or robot/rack contacts across 93.3722 robot-ho
 
 See [`SIH_ACCEPTANCE_BENCHMARK.md`](SIH_ACCEPTANCE_BENCHMARK.md) for the censoring proof,
 strict pass conditions, bootstrap intervals, provenance and limitations. The release
-gate also requires all 73 Python regressions, Python bytecode compilation, and frontend
-JavaScript syntax checks to pass.
+gate also requires the current Python regression suite, lint, Python bytecode
+compilation, and frontend JavaScript syntax checks to pass.

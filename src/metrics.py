@@ -117,6 +117,9 @@ class PolicyResult:
     retreats: int = 0
     yields: int = 0
     replans: int = 0
+    dynamic_obstacles_detected: int = 0
+    dynamic_reroutes: int = 0
+    task_reassignments: int = 0
     safety_stop_ticks: int = 0
     seconds_degraded: float = 0.0
 
@@ -138,6 +141,7 @@ class PolicyResult:
 
     net_loss: float = 0.0
     manager_killed_at: float | None = None
+    robot_failures: int = 0
     completed_all: bool = False
 
     def to_dict(self) -> dict:

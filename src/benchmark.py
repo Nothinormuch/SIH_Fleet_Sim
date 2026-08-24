@@ -11,7 +11,6 @@ import argparse
 import csv
 import json
 import subprocess
-import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -220,6 +219,8 @@ def write_csv(payload: dict, path: Path) -> None:
         "makespan_s", "sim_seconds", "contacts_robot_robot",
         "contacts_robot_human", "contacts_robot_rack", "robot_hours",
         "deadlocks_detected", "retreats", "yields", "replans",
+        "dynamic_obstacles_detected", "dynamic_reroutes", "task_reassignments",
+        "robot_failures",
         "msgs_per_robot_s", "bytes_per_robot_s", "plan_cpu_mean_ms",
         "plan_cpu_max_ms", "net_loss",
     ]

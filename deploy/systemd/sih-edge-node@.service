@@ -1,0 +1,30 @@
+[Unit]
+Description=SIH independent edge controller for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sih-fleet
+Group=sih-fleet
+WorkingDirectory=/opt/sih-fleet
+EnvironmentFile=/etc/sih-fleet/%i.env
+ExecStart=/opt/sih-fleet/.venv/bin/python /opt/sih-fleet/edge_node.py \
+  --robot-id %i --robot-index ${ROBOT_INDEX} --robots ${ROBOTS} \
+  --scenario ${SCENARIO} --interface ${NETWORK_INTERFACE} \
+  --peer-port ${PEER_PORT} --sensor-port ${SENSOR_PORT} \
+  --actuator-port ${ACTUATOR_PORT} \
+  --report /var/lib/sih-fleet/%i-report.json
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sih-fleet
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

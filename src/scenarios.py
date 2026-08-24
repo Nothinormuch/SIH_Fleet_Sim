@@ -35,10 +35,20 @@ import random
 from dataclasses import asdict, dataclass, field
 
 from .amr import Task
-from .environment import RACK, Warehouse, chokepoint_warehouse, classic_warehouse, open_floor
+from .environment import (DOCK, FREE, RACK, STATION, Warehouse,
+                          chokepoint_warehouse, classic_warehouse, open_floor)
 from .geometry import Cell, manhattan
 from .settings import Config, NetSpec
 from .task_allocation import ACTIVE_ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED
+
+
+@dataclass(frozen=True)
+class ObstacleEvent:
+    oid: str
+    cell: Cell
+    appear_at: float
+    clear_at: float | None = None
+    radius_m: float = 0.40
 
 
 @dataclass
@@ -56,6 +66,11 @@ class Scenario:
     partition_at: float | None = None
     heal_at: float | None = None
     partition_groups: list[list[str]] = field(default_factory=list)
+    # A failed robot remains a physical stopped obstacle but its brain and radio are
+    # silent. Optional restart creates a fresh brain with no shared process state.
+    robot_fail_at: dict[str, float] = field(default_factory=dict)
+    robot_restart_at: dict[str, float] = field(default_factory=dict)
+    obstacles: list[ObstacleEvent] = field(default_factory=list)
     pose_noise_m: float = 0.02
     use_auction: bool = False
     # Optional unassigned workload. Allocation policies can also flatten the normal
@@ -117,6 +132,9 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
         "partition_at": sc.partition_at,
         "heal_at": sc.heal_at,
         "partition_groups": sc.partition_groups,
+        "robot_fail_at": sc.robot_fail_at,
+        "robot_restart_at": sc.robot_restart_at,
+        "obstacles": [asdict(event) for event in sc.obstacles],
         "pose_noise_m": sc.pose_noise_m,
         "seed": sc.seed,
         "config": asdict(cfg),
@@ -278,20 +296,112 @@ def dead_zone(n_robots: int = 8, tasks_per_robot: int = 4, seed: int = 0,
 
 def open_floor_control(n_robots: int = 8, tasks_per_robot: int = 4,
                        seed: int = 0) -> Scenario:
-    """Negative control: no chokepoints, so every policy should tie.
+    """True negative control: each robot has a physically isolated private lane.
 
-    If the hierarchical policy shows a large win here, the benchmark is measuring an
-    implementation artefact rather than coordination, and the headline number on
-    `crossing_chokepoint` cannot be trusted. Publishing a scenario designed to show no
-    effect is what separates a measurement from a demo.
+    The previous random open floor still created shared destinations, crossings, idle
+    blockers, and auction-allocation differences; it was a contention workload while
+    claiming to measure no contention. Here lanes are disconnected by rack rows and
+    tasks never leave their lane. Route policies may pay small protocol overhead, but
+    no coordination policy can legitimately gain a large traffic advantage.
     """
-    env = open_floor(24, 24)
-    rng = random.Random(seed)
-    free = list(env.free_cells())
-    tasks = [Task(f"T{i:03d}", rng.choice(free), rng.choice(free), 0.0)
-             for i in range(n_robots * tasks_per_robot)]
-    return Scenario("open_floor_control", env, _spread_starts(env, n_robots, rng),
-                    _round_robin(tasks, n_robots), duration_s=600.0, seed=seed)
+    width = 18
+    height = 2 * n_robots + 1
+    grid = [[RACK] * width for _ in range(height)]
+    stations = []
+    docks = []
+    starts = []
+    assignments: list[list[Task]] = []
+    for robot_index in range(n_robots):
+        y = 2 * robot_index + 1
+        grid[y] = [FREE] * width
+        grid[y][1] = STATION
+        grid[y][width - 2] = DOCK
+        stations.append((1, y))
+        docks.append((width - 2, y))
+        starts.append((2, y))
+        queue = []
+        for task_index in range(tasks_per_robot):
+            if task_index % 2 == 0:
+                pick, drop = (3, y), (width - 3, y)
+            else:
+                pick, drop = (width - 3, y), (3, y)
+            queue.append(Task(
+                f"T{robot_index:02d}_{task_index:02d}", pick, drop, 0.0))
+        assignments.append(queue)
+    env = Warehouse(
+        width, height, tuple(tuple(row) for row in grid),
+        tuple(stations), tuple(docks), "isolated_lanes_control")
+    return Scenario("open_floor_control", env, starts, assignments,
+                    duration_s=600.0, pose_noise_m=0.0, seed=seed)
+
+
+def blocked_aisle(n_robots: int = 3, tasks_per_robot: int = 1,
+                  seed: int = 0) -> Scenario:
+    """A dropped pallet appears on one planned route; an alternate route remains."""
+    n_robots = max(3, n_robots)
+    env = open_floor(14, max(9, 2 * n_robots + 3), name="blocked_aisle")
+    starts = [(1, 2 * index + 2) for index in range(n_robots)]
+    assignments = []
+    for index, start in enumerate(starts):
+        tasks = [Task(
+            f"T{index:02d}_{task_index:02d}", start,
+            (env.width - 2, start[1]), 0.0)
+            for task_index in range(tasks_per_robot)]
+        assignments.append(tasks)
+    middle = n_robots // 2
+    obstacle = ObstacleEvent(
+        "dropped-pallet", (5, starts[middle][1]), appear_at=1.0)
+    return Scenario(
+        "blocked_aisle", env, starts, assignments,
+        duration_s=180.0, pose_noise_m=0.0,
+        obstacles=[obstacle], seed=seed)
+
+
+def robot_failure_reassignment(n_robots: int = 3, tasks_per_robot: int = 1,
+                               seed: int = 0) -> Scenario:
+    """Crash an auction winner; its lease expires and a surviving peer finishes."""
+    n_robots = max(3, n_robots)
+    env = open_floor(16, 10, name="robot_failure_reassignment")
+    starts = [(1, 2), (1, 5), (1, 8)]
+    while len(starts) < n_robots:
+        starts.append((2 + len(starts), 1))
+    tasks = [Task(
+        f"T{i:03d}", (3 + i, 2 + (i % 3) * 3),
+        (env.width - 2, 2 + (i % 3) * 3), 0.0)
+        for i in range(max(1, tasks_per_robot))]
+    return Scenario(
+        "robot_failure_reassignment", env, starts[:n_robots],
+        [[] for _ in range(n_robots)],
+        duration_s=180.0, pose_noise_m=0.0, use_auction=True,
+        unassigned=tasks,
+        # AMR01 is deliberately closest to T000 and wins the first auction.
+        robot_fail_at={"AMR01": 2.0},
+        seed=seed,
+    )
+
+
+def partition_recovery(n_robots: int = 4, tasks_per_robot: int = 1,
+                       seed: int = 0) -> Scenario:
+    """Split the peer network into two islands, then heal and require convergence."""
+    n_robots = max(4, n_robots)
+    env = open_floor(18, max(12, n_robots + 6), name="partition_recovery")
+    starts = [(1, 1 + 2 * (index % ((env.height - 2) // 2)))
+              for index in range(n_robots)]
+    tasks = [Task(
+        f"T{i:03d}", (3, starts[i % n_robots][1]),
+        (env.width - 2, starts[i % n_robots][1]), 0.0)
+        for i in range(max(n_robots, n_robots * tasks_per_robot))]
+    ids = [f"AMR{i + 1:02d}" for i in range(n_robots)]
+    split = n_robots // 2
+    return Scenario(
+        "partition_recovery", env, starts,
+        [[] for _ in range(n_robots)],
+        duration_s=240.0, pose_noise_m=0.0, use_auction=True,
+        unassigned=tasks,
+        partition_at=2.0, heal_at=12.0,
+        partition_groups=[ids[:split], ids[split:]],
+        seed=seed,
+    )
 
 
 def auction_test(n_robots: int = 8, n_tasks: int = 32, seed: int = 0) -> Scenario:
@@ -348,6 +458,9 @@ SCENARIOS = {
     "dead_zone_infra": lambda **kw: dead_zone(mesh_radio=False, **kw),
     "dead_zone_mesh": lambda **kw: dead_zone(mesh_radio=True, **kw),
     "open_floor_control": open_floor_control,
+    "blocked_aisle": blocked_aisle,
+    "robot_failure_reassignment": robot_failure_reassignment,
+    "partition_recovery": partition_recovery,
     "auction_test": auction_test,
     "sih_acceptance_overlap": sih_acceptance_overlap,
 }

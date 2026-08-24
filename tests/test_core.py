@@ -8,6 +8,7 @@ protective field must never permit a speed the chassis cannot stop from.
 Run with:  python -m pytest tests -q
 """
 
+import json
 import math
 
 import pytest
@@ -19,14 +20,14 @@ from src.environment import (RACK, chokepoint_warehouse, classic_warehouse,
                              corridors, open_floor)
 from src.fleet_manager import FleetManager
 from src.geometry import segments_min_distance, to_cell, wrap_angle
-from src.messages import (MGR_BEACON, PLAN_RSP, award, bid, decode, encode,
-                          heartbeat, task_new)
+from src.messages import (MGR_BEACON, PLAN_RSP, award, bid, decode,
+                          decode_packet, encode, heartbeat, intent, task_new)
 from src.metrics import poisson_rate_ci
-from src.planner import Reservations, astar, prioritized_plan, space_time_astar
+from src.planner import Reservations, astar, prioritized_plan
 from src.settings import DEFAULT
 from src.task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
                                  ALLOCATION_PREASSIGNED)
-from src.transport import SimNetwork
+from src.transport import ReplayWindow, SimNetwork
 from src.world import Actuation, Detection, Sensors, World
 
 
@@ -146,9 +147,80 @@ def test_task_protocol_carries_epoch_deadline_and_lease():
     claim = award("AMR02", 3, 0.7, "T1", 7.5,
                   epoch=3, lease_until=20.7)
 
-    assert new.body["e"] == 3 and new.body["dl"] == 0.6
+    assert new.body["e"] == 3 and new.body["ttl"] == 0.6
     assert offer.body["e"] == 3
-    assert claim.body["e"] == 3 and claim.body["u"] == 20.7
+    assert claim.body["e"] == 3 and claim.body["ttl"] == 20.0
+
+
+@pytest.mark.parametrize("raw", [b"[]", b"null", b'"HB"', b"{}"])
+def test_wire_decoder_drops_valid_json_with_invalid_shape(raw):
+    message, reason = decode_packet(raw)
+    assert message is None
+    assert reason is not None
+
+
+def test_wire_decoder_validates_message_body_before_ingest():
+    raw = json.dumps({
+        "v": 1, "type": "HB", "src": "A", "seq": 1, "t": 1.0,
+        "body": {},
+    }).encode()
+    message, reason = decode_packet(raw)
+    assert message is None
+    assert reason == "invalid_heartbeat"
+
+
+def test_wire_decoder_rejects_non_finite_signed_payload_without_raising():
+    raw = (b'{"v":1,"type":"HB","src":"A","seq":1,"t":NaN,'
+           b'"body":{},"mac":"' + b"0" * 64 + b'"}')
+    message, reason = decode_packet(raw, secret="fleet-secret", require_auth=True)
+    assert message is None
+    assert reason == "invalid_json"
+
+
+def test_wire_hmac_rejects_tampering_and_unsigned_packets():
+    original = heartbeat("A", 1, 1.0, (1.0, 2.0, 0.0), (1, 2), 1.0,
+                         "p2p", "idle", None)
+    signed = encode(original, secret="fleet-secret", session_id="boot1")
+    assert decode(signed, secret="fleet-secret", require_auth=True) is not None
+
+    tampered = signed.replace(b'"idle"', b'"move"')
+    _message, reason = decode_packet(
+        tampered, secret="fleet-secret", require_auth=True)
+    assert reason == "invalid_auth"
+    _message, reason = decode_packet(
+        encode(original), secret="fleet-secret", require_auth=True)
+    assert reason == "auth_missing"
+
+
+def test_replay_window_accepts_reordering_but_rejects_duplicates_and_old_data():
+    window = ReplayWindow(width=8)
+    assert window.accept(10)
+    assert window.accept(12)
+    assert window.accept(11)
+    assert not window.accept(11)
+    assert not window.accept(1)
+
+
+def test_received_protocol_times_are_derived_from_receiver_clock():
+    env = open_floor(10, 10)
+    brain = AMRBrain("B", env, DEFAULT, policy=POLICY_BIOS_PIBT_V3,
+                     allocation_policy=ALLOCATION_AUCTION)
+    sender_t = 50_000.0
+    receiver_t = 7.0
+    packets = [
+        intent("A", 1, sender_t, [(2, 2)],
+               [(sender_t + 1.0, sender_t + 2.0)], 1.0, 0),
+        task_new("WMS", 2, sender_t, "T1", (1, 1), (2, 2),
+                 bid_until=sender_t + 0.6),
+        award("A", 3, sender_t, "T1", 1.0,
+              lease_until=sender_t + 20.0),
+    ]
+
+    brain._ingest(receiver_t, packets)
+
+    assert brain.peers["A"].windows == [(8.0, 9.0)]
+    assert brain.open_tasks["T1"].bid_deadline == pytest.approx(7.6)
+    assert brain._task_claims["T1"][3] == pytest.approx(27.0)
 
 
 def test_expired_peer_claim_reopens_a_new_auction_epoch():

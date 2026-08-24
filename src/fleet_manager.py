@@ -247,5 +247,7 @@ def _compress(timed: list[tuple[Cell, int]], t_now: float,
 def _plan_rsp_timed(src: str, seq: int, t: float, dst: str, cells: list[Cell],
                     times: list[float], epoch: int) -> msg.Message:
     m = msg.plan_rsp(src, seq, t, dst, cells, epoch)
-    m.body["w"] = [round(x, 2) for x in times]
+    # Timed plans cross process/host boundaries.  Monotonic clock origins differ, so
+    # the wire carries receiver-local offsets rather than manager-absolute timestamps.
+    m.body["w"] = [round(max(0.0, x - t), 2) for x in times]
     return m

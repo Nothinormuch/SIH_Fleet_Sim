@@ -7,13 +7,14 @@ A multi-robot warehouse simulation, a peer-to-peer coordination protocol, and a
 benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 ```bash
-python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m pytest tests -q
-python run.py --scenario open_floor_control --policy BIOS_PIBT.3 --allocation-policy auction --robots 4
-python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
-python run.py --scenario dense_aisles --policy BIOS_PIBT.3 --allocation-policy auction --robots 4
-python run.py --scenario dense_aisles --policy BIOS_PIBT.2 --allocation-policy hungarian --robots 4
-python benchmark.py --seeds 30 --jobs 8       # strict SIH acceptance gate
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+python -m pytest -q
+python backend/server.py                       # http://127.0.0.1:8000
+python edge_demo.py --robots 3 --duration 5    # real processes + signed UDP
+python fault_campaign.py --seeds 30 --jobs 8  # loss, partition, crash recovery
+python benchmark.py --seeds 30 --jobs 8        # strict SIH acceptance gate
 ```
 
 The simulation core and the benchmark have **no third-party dependencies** — stdlib
@@ -91,8 +92,8 @@ src/
   planner.py       A*, space-time A* with reservations, prioritised fleet planning
   priority.py      deterministic next-cell PIBT, inheritance and backtracking
   topology.py      2-core/tree decomposition for temporary exit priority
-  messages.py      the P2P wire protocol (JSON over UDP multicast)
-  transport.py     seeded network model + real UDP multicast socket, one interface
+  messages.py      validated, authenticated P2P wire protocol with relative TTLs
+  transport.py     seeded network model + replay-safe real UDP multicast transport
   world.py         ground truth: kinematics, 360° sensing, swept collision detection
   amr.py           the agent: three control loops. Pure — no I/O, no clock, no globals
   fleet_manager.py the optional central optimiser, and the strong baseline
@@ -102,6 +103,9 @@ src/
   scenarios.py     pinned, seeded benchmark scenarios including a negative control
   benchmark.py     strict paired SIH acceptance gate and JSON/CSV evidence writer
   main.py          the headless runner and CLI
+  edge_runtime.py  50 Hz fail-safe node loop + UDP sensor/actuator adapter
+  distributed_demo.py independent process launcher with physics-only referee
+  fault_campaign.py packet-loss, partition-heal and crashed-winner release gate
 backend/
   server.py        stdlib HTTP server: serves the frontend, runs sims on request
 frontend/
@@ -114,6 +118,8 @@ frontend/
   assets/          generated sprite set (256 px per cell)
 tests/             core, priority, benchmark-integrity and dashboard regression tests
 docs/              acceptance evidence, V3/V2 protocols, V1 design, critique and findings
+deploy/            hardened systemd service for one process per AMR
+config/            non-secret example edge-node environment
 artifacts/benchmarks/ checked-in raw and summarized acceptance evidence
 reference/         asset prompt pack and loader spec
 ```
@@ -180,7 +186,7 @@ See [`docs/SIH_ACCEPTANCE_BENCHMARK.md`](docs/SIH_ACCEPTANCE_BENCHMARK.md) for t
 method, limitations and commands. Raw evidence is checked in as
 [`artifacts/benchmarks/sih-acceptance.json`](artifacts/benchmarks/sih-acceptance.json)
 and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv).
-All 73 Python regressions pass; Python compilation and all frontend JavaScript syntax
+All 91 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
 checks also pass.
 
 ## The dashboard
@@ -204,10 +210,31 @@ looks the same whether it is coordinating or getting lucky:
 - **the human worker** — dashed ring, because they publish nothing and cannot be
   negotiated with. Only the onboard safety layer sees them at all
 
-Playback rather than a live socket: the sim runs far faster than realtime, so streaming
+The run endpoint is POST-only, size- and workload-bounded, and protected by strict
+request validation and browser security headers. Playback rather than a live socket:
+the sim runs far faster than realtime, so streaming
 would mean throttling it back to wall-clock for no benefit, and a recorded run can be
 paused on the frame where two robots negotiate a chokepoint and replayed against a
 different policy on the same seed.
 
-**Not built yet:** the distributed multi-process runner (the UDP transport class exists
-and is unit-tested; the process launcher is not written), and packet-loss sweep plots.
+## Real edge processes and failure campaigns
+
+`python edge_demo.py --robots 3 --duration 5` starts a distinct operating-system process,
+brain, clock epoch, replay window and authenticated multicast socket for every AMR. The
+parent is a physics/lidar referee only; it never forwards peer traffic or chooses routes,
+bids, priorities or motor commands. `edge_node.py` replaces that referee pipe with a
+validated UDP sensor/actuator bridge and fails safe when sensor frames are invalid or
+stale.
+
+`python fault_campaign.py --seeds 30 --jobs 8` is a separate release gate covering
+0/5/10/20% packet loss, partition and healing, and crash of the current auction winner.
+The lease expiry reopens work for surviving robots; a failed chassis remains a sensed
+physical obstacle. Dynamic anonymous obstacles are promoted to expiring local blocked
+cells only after persistent observations, then routes are recalculated.
+
+See [`docs/EDGE_DEPLOYMENT.md`](docs/EDGE_DEPLOYMENT.md) for clean-clone/venv commands,
+[`docs/WIRE_PROTOCOL.md`](docs/WIRE_PROTOCOL.md) for the validated packet contract and
+[`docs/DEMO_AND_JUDGING.md`](docs/DEMO_AND_JUDGING.md) for the live judging sequence.
+The deployment runbook also covers the Raspberry Pi service.
+Actual Pi/Jetson CPU and memory claims still require running the included harness on that
+named device; local Mac timing is intentionally not presented as Pi evidence.

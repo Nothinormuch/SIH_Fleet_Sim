@@ -3,19 +3,72 @@
 from __future__ import annotations
 
 import json
+import http.client
 import math
 from pathlib import Path
 import shutil
 import subprocess
+import threading
+from http.server import ThreadingHTTPServer
 
 import pytest
 
 from src.environment import RACK
 from src.main import run_for_dashboard
+from backend.server import Handler, RequestValidationError, parse_run_request
 
 
 ROOT = Path(__file__).resolve().parent.parent
 NODE = shutil.which("node")
+
+
+def test_run_request_validation_rejects_clamping_and_combined_overload():
+    with pytest.raises(RequestValidationError, match="robots must be between"):
+        parse_run_request({"robots": 101})
+    with pytest.raises(RequestValidationError, match="duration must be between"):
+        parse_run_request({"duration": 901})
+    with pytest.raises(RequestValidationError, match="robot-seconds"):
+        parse_run_request({"robots": 100, "duration": 900})
+    with pytest.raises(RequestValidationError, match="whole numbers"):
+        parse_run_request({"robots": 3.5})
+    with pytest.raises(RequestValidationError, match="numbers"):
+        parse_run_request({"seed": 1e999})
+    with pytest.raises(RequestValidationError, match="JSON object"):
+        parse_run_request([])
+
+    parsed = parse_run_request({"robots": "100", "duration": "120", "seed": "9"})
+    assert parsed["robots"] == 100
+    assert parsed["duration"] == 120.0
+    assert parsed["seed"] == 9
+
+
+def test_dashboard_run_is_post_only_and_security_headers_are_present():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        conn.request("GET", "/api/run")
+        response = conn.getresponse()
+        assert response.status == 405
+        assert response.getheader("Allow") == "POST"
+        assert response.getheader("X-Content-Type-Options") == "nosniff"
+        assert response.getheader("Content-Security-Policy")
+        response.read()
+
+        conn.request(
+            "POST", "/api/run", body="[]",
+            headers={"Content-Type": "application/json"},
+        )
+        response = conn.getresponse()
+        assert response.status == 400
+        assert json.loads(response.read())["error"] == "request body must be a JSON object"
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
 
 
 @pytest.mark.skipif(NODE is None, reason="Node is required for the canvas unit test")

@@ -21,8 +21,12 @@ Design rules, each of which is an answer to something the problem statement gets
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
-from dataclasses import dataclass, field, asdict
+import math
+import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from .geometry import Cell
@@ -45,6 +49,15 @@ PLAN_RSP = "PS"       # manager answers with a timed plan
 ALL_TYPES = (HEARTBEAT, INTENT, CLAIM, RELEASE, YIELD, BID, AWARD,
              TASK_DONE, TASK_NEW, MGR_BEACON, PLAN_REQ, PLAN_RSP)
 
+PROTOCOL_VERSION = 1
+MAX_DATAGRAM_BYTES = 2048
+MAX_ID_LENGTH = 64
+MAX_TASK_ID_LENGTH = 128
+MAX_INTENT_CELLS = 64
+MAX_PLAN_CELLS = 1024
+MAX_RELATIVE_TIME_S = 3600.0
+_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+
 
 @dataclass
 class Message:
@@ -60,32 +73,277 @@ class Message:
     seq: int
     t: float
     body: dict[str, Any] = field(default_factory=dict)
+    # A fresh random session is attached by the real UDP transport.  Sequence replay
+    # protection is keyed by (src, sid), so a legitimately restarted node may start
+    # its counter at one without being mistaken for an attacker replaying old traffic.
+    sid: str = ""
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        out = {
+            "v": PROTOCOL_VERSION,
+            "type": self.type,
+            "src": self.src,
+            "seq": self.seq,
+            "t": self.t,
+            "body": self.body,
+        }
+        if self.sid:
+            out["sid"] = self.sid
+        return out
 
     @staticmethod
     def from_dict(d: dict) -> "Message":
-        return Message(d["type"], d["src"], d["seq"], d["t"], d.get("body", {}))
+        return Message(d["type"], d["src"], d["seq"], d["t"],
+                       d.get("body", {}), d.get("sid", ""))
 
 
-def encode(msg: Message) -> bytes:
+def _key_bytes(secret: bytes | str) -> bytes:
+    return secret if isinstance(secret, bytes) else secret.encode("utf-8")
+
+
+def _canonical(d: dict) -> bytes:
+    return json.dumps(d, sort_keys=True, separators=(",", ":"),
+                      allow_nan=False).encode("utf-8")
+
+
+def encode(msg: Message, secret: bytes | str | None = None,
+           session_id: str | None = None) -> bytes:
     """Compact JSON. Chosen for debuggability: a judge can tcpdump the multicast group
     and read the protocol. A binary packing would be ~3x smaller; the report quotes
-    both the measured JSON size and that factor rather than hiding the overhead."""
-    return json.dumps(msg.to_dict(), separators=(",", ":")).encode("utf-8")
+    both the measured JSON size and that factor rather than hiding the overhead.
+
+    When ``secret`` is supplied, ``mac`` authenticates the exact canonical envelope.
+    This is deliberately a small pre-shared-key mechanism rather than a claim that the
+    prototype implements warehouse PKI.  It prevents an unauthenticated LAN client
+    from forging priority, task-award, or motion-intent packets.
+    """
+    d = msg.to_dict()
+    if session_id:
+        d["sid"] = session_id
+    reason = _validate_dict(d)
+    if reason is not None:
+        raise ValueError(f"invalid outbound message: {reason}")
+    if secret is not None:
+        d["mac"] = hmac.new(_key_bytes(secret), _canonical(d),
+                            hashlib.sha256).hexdigest()
+    wire = json.dumps(d, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    if len(wire) > MAX_DATAGRAM_BYTES:
+        raise ValueError(f"message is {len(wire)} bytes; maximum is {MAX_DATAGRAM_BYTES}")
+    return wire
 
 
-def decode(raw: bytes) -> Message | None:
+def decode_packet(raw: bytes, secret: bytes | str | None = None,
+                  require_auth: bool = False) -> tuple[Message | None, str | None]:
+    """Decode one untrusted datagram and return ``(message, rejection_reason)``.
+
+    Rejection reasons are stable metric labels, not exception text.  The receive loop
+    can therefore report malformed, unauthenticated, and oversized traffic separately
+    without allowing any packet to terminate the safety/control process.
+    """
+    if not isinstance(raw, bytes):
+        return None, "not_bytes"
+    if len(raw) > MAX_DATAGRAM_BYTES:
+        return None, "oversized"
+    try:
+        d = json.loads(
+            raw.decode("utf-8"),
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError(f"invalid JSON number {value}")),
+        )
+    except (ValueError, UnicodeDecodeError):
+        return None, "invalid_json"
+    if not isinstance(d, dict):
+        return None, "invalid_envelope"
+
+    supplied_mac = d.get("mac")
+    if supplied_mac is not None:
+        if not isinstance(supplied_mac, str) or len(supplied_mac) != 64:
+            return None, "invalid_auth"
+        if secret is None:
+            if require_auth:
+                return None, "auth_unconfigured"
+        else:
+            signed = dict(d)
+            signed.pop("mac", None)
+            expected = hmac.new(_key_bytes(secret), _canonical(signed),
+                                hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(supplied_mac, expected):
+                return None, "invalid_auth"
+    elif require_auth:
+        return None, "auth_missing"
+
+    reason = _validate_dict(d)
+    if reason is not None:
+        return None, reason
+    return Message.from_dict(d), None
+
+
+def decode(raw: bytes, secret: bytes | str | None = None,
+           require_auth: bool = False) -> Message | None:
     """Malformed input is dropped, never raised. A node that crashes on a corrupt
     datagram is a node an attacker - or a flaky radio - can switch off."""
-    try:
-        d = json.loads(raw.decode("utf-8"))
-        if d.get("type") not in ALL_TYPES:
-            return None
-        return Message.from_dict(d)
-    except (ValueError, KeyError, UnicodeDecodeError):
-        return None
+    return decode_packet(raw, secret=secret, require_auth=require_auth)[0]
+
+
+def _number(value: Any, minimum: float = -1e9,
+            maximum: float = 1e9) -> bool:
+    return (not isinstance(value, bool)
+            and isinstance(value, (int, float))
+            and math.isfinite(float(value))
+            and minimum <= float(value) <= maximum)
+
+
+def _integer(value: Any, minimum: int = 0,
+             maximum: int = 2 ** 63 - 1) -> bool:
+    return (not isinstance(value, bool) and isinstance(value, int)
+            and minimum <= value <= maximum)
+
+
+def _identifier(value: Any, max_length: int = MAX_ID_LENGTH,
+                optional: bool = False) -> bool:
+    if value is None:
+        return optional
+    return (isinstance(value, str) and 1 <= len(value) <= max_length
+            and _ID_RE.fullmatch(value) is not None)
+
+
+def _cell(value: Any) -> bool:
+    return (isinstance(value, (list, tuple)) and len(value) == 2
+            and all(_integer(v, -1_000_000, 1_000_000) for v in value))
+
+
+def _cells(value: Any, maximum: int) -> bool:
+    return (isinstance(value, list) and len(value) <= maximum
+            and all(_cell(cell) for cell in value))
+
+
+def _relative_time(value: Any) -> bool:
+    return _number(value, 0.0, MAX_RELATIVE_TIME_S)
+
+
+def _task_id(value: Any) -> bool:
+    return _identifier(value, MAX_TASK_ID_LENGTH)
+
+
+def _validate_dict(d: dict) -> str | None:
+    """Validate the complete version-1 envelope and type-specific body shape."""
+    if d.get("v") != PROTOCOL_VERSION:
+        return "unsupported_version"
+    if d.get("type") not in ALL_TYPES:
+        return "unknown_type"
+    if not _identifier(d.get("src")):
+        return "invalid_source"
+    if not _integer(d.get("seq")):
+        return "invalid_sequence"
+    if not _number(d.get("t"), 0.0, 1e15):
+        return "invalid_sender_time"
+    sid = d.get("sid", "")
+    if sid != "" and not _identifier(sid):
+        return "invalid_session"
+    body = d.get("body")
+    if not isinstance(body, dict):
+        return "invalid_body"
+
+    typ = d["type"]
+    if typ == HEARTBEAT:
+        pose = body.get("p")
+        if (not isinstance(pose, list) or len(pose) != 3
+                or not all(_number(v, -1e7, 1e7) for v in pose)
+                or not _cell(body.get("c"))
+                or not _number(body.get("b"), 0.0, 1.0)
+                or not _identifier(body.get("m"))
+                or not _identifier(body.get("s"))
+                or not _identifier(body.get("task"), MAX_TASK_ID_LENGTH, optional=True)
+                or not _number(body.get("pr", 0.0))
+                or not _identifier(body.get("bo"), optional=True)
+                or (body.get("g") is not None and not _cell(body.get("g")))):
+            return "invalid_heartbeat"
+        pk = body.get("pk")
+        if pk is not None and (not isinstance(pk, list) or len(pk) > 8
+                               or any(not isinstance(v, (int, str)) for v in pk)):
+            return "invalid_priority_key"
+    elif typ == INTENT:
+        cells = body.get("cells")
+        windows = body.get("w", [])
+        if (not _cells(cells, MAX_INTENT_CELLS)
+                or not isinstance(windows, list)
+                or len(windows) not in (0, len(cells))
+                or any(not isinstance(w, list) or len(w) != 2
+                       or not _relative_time(w[0]) or not _relative_time(w[1])
+                       or float(w[0]) > float(w[1]) for w in windows)
+                or not _number(body.get("pr", 0.0))
+                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)):
+            return "invalid_intent"
+    elif typ == TASK_NEW:
+        ttl = body.get("ttl")
+        legacy_deadline = body.get("dl")
+        if (not _task_id(body.get("task")) or not _cell(body.get("pk"))
+                or not _cell(body.get("dp"))
+                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)
+                or (ttl is not None and not _relative_time(ttl))
+                or (legacy_deadline is not None
+                    and not _number(legacy_deadline, 0.0, 1e15))):
+            return "invalid_task"
+    elif typ == BID:
+        if (not _task_id(body.get("task"))
+                or not _number(body.get("cost"), 0.0, 1e12)
+                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)):
+            return "invalid_bid"
+    elif typ == AWARD:
+        if (not _task_id(body.get("task"))
+                or not _number(body.get("cost"), 0.0, 1e12)
+                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)
+                or not _identifier(body.get("dst"), optional=True)
+                or not _identifier(body.get("winner"), optional=True)
+                or (body.get("ttl") is not None
+                    and not _relative_time(body.get("ttl")))
+                or (body.get("u") is not None
+                    and not _number(body.get("u"), 0.0, 1e15))):
+            return "invalid_award"
+    elif typ == TASK_DONE:
+        if (not _task_id(body.get("task"))
+                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)):
+            return "invalid_task_done"
+    elif typ in (CLAIM, RELEASE):
+        if body.get("b"):
+            if (body.get("b") != 1 or not _integer(body.get("g"), 0, 2 ** 31 - 1)
+                    or (typ == CLAIM and body.get("ttl") is None
+                        and body.get("u") is None)
+                    or (body.get("ttl") is not None
+                        and not _relative_time(body.get("ttl")))
+                    or (body.get("u") is not None
+                        and not _number(body.get("u"), 0.0, 1e15))
+                    or (typ == CLAIM and not _number(body.get("pr", 0.0)))
+                    or (typ == CLAIM and not _integer(body.get("e", 0), 0,
+                                                      2 ** 31 - 1))):
+                return "invalid_block_claim"
+        elif (not _cell(body.get("c"))
+              or (typ == CLAIM and not _relative_time(body.get("ttl")))
+              or (typ == CLAIM and not _number(body.get("pr"), -1e9, 1e9))
+              or (typ == CLAIM and not _integer(body.get("e"), 0,
+                                                2 ** 31 - 1))):
+            return "invalid_cell_claim"
+    elif typ == YIELD:
+        if not _cell(body.get("c")) or not _identifier(body.get("to")):
+            return "invalid_yield"
+    elif typ == MGR_BEACON:
+        if not _integer(body.get("e"), 0, 2 ** 31 - 1):
+            return "invalid_manager_beacon"
+    elif typ == PLAN_REQ:
+        if (not _cell(body.get("s")) or not _cell(body.get("g"))
+                or not isinstance(body.get("ns", False), bool)):
+            return "invalid_plan_request"
+    elif typ == PLAN_RSP:
+        cells = body.get("cells")
+        windows = body.get("w", [])
+        if (not _identifier(body.get("dst"))
+                or not _cells(cells, MAX_PLAN_CELLS)
+                or not _integer(body.get("e"), 0, 2 ** 31 - 1)
+                or not isinstance(windows, list)
+                or len(windows) not in (0, len(cells))
+                or any(not _relative_time(value) for value in windows)):
+            return "invalid_plan_response"
+    return None
 
 
 # ---------------------------------------------------------------- constructors
@@ -122,10 +380,13 @@ def heartbeat(src: str, seq: int, t: float, pose: tuple[float, float, float],
 
 def task_new(src: str, seq: int, t: float, task_id: str, pick: Cell,
              drop: Cell, epoch: int = 0, bid_until: float | None = None) -> Message:
-    return Message(TASK_NEW, src, seq, t, {
+    body = {
         "task": task_id, "pk": list(pick), "dp": list(drop),
-        "e": int(epoch), "dl": round(bid_until, 3) if bid_until is not None else None,
-    })
+        "e": int(epoch),
+    }
+    if bid_until is not None:
+        body["ttl"] = round(max(0.0, bid_until - t), 3)
+    return Message(TASK_NEW, src, seq, t, body)
 
 
 def intent(src: str, seq: int, t: float, cells: list[Cell],
@@ -137,7 +398,10 @@ def intent(src: str, seq: int, t: float, cells: list[Cell],
     """
     return Message(INTENT, src, seq, t, {
         "cells": [list(c) for c in cells],
-        "w": [[round(a, 2), round(b, 2)] for a, b in windows],
+        # Receiver-local offsets.  Absolute sender timestamps only worked while every
+        # robot shared the simulator clock; separate edge nodes have unrelated epochs.
+        "w": [[round(max(0.0, a - t), 2), round(max(0.0, b - t), 2)]
+              for a, b in windows],
         "pr": round(priority, 4), "e": epoch,
     })
 
@@ -145,7 +409,8 @@ def intent(src: str, seq: int, t: float, cells: list[Cell],
 def claim(src: str, seq: int, t: float, cell: Cell, until: float,
           priority: float, epoch: int) -> Message:
     return Message(CLAIM, src, seq, t, {
-        "c": list(cell), "u": round(until, 2), "pr": round(priority, 4), "e": epoch,
+        "c": list(cell), "ttl": round(max(0.0, until - t), 2),
+        "pr": round(priority, 4), "e": epoch,
     })
 
 
@@ -164,14 +429,11 @@ def block_claim(src: str, seq: int, t: float, cid: int, until: float,
     block id (in ``b``) separates a block-level claim from the single-cell CLAIM.
     """
     body = {
-        "b": 1, "g": int(cid), "u": round(until, 2),
-        "pr": round(priority, 4), "e": epoch,
+        "b": 1, "g": int(cid), "pr": round(priority, 4), "e": epoch,
+        "ttl": round(max(0.0, ttl if ttl is not None else until - t), 2),
     }
-    # Receivers use a duration on their own clock.  ``u`` remains for compatibility
-    # with older traces, but comparing absolute sender timestamps would quietly assume
-    # clock synchronisation that the protocol explicitly does not require.
-    if ttl is not None:
-        body["ttl"] = round(max(0.0, ttl), 2)
+    # Receivers use a duration on their own clock. Absolute sender timestamps would
+    # quietly assume clock synchronisation that the protocol explicitly does not need.
     if priority_key is not None:
         body["pk"] = priority_key
     return Message(CLAIM, src, seq, t, body)
@@ -202,7 +464,7 @@ def award(src: str, seq: int, t: float, task_id: str, cost: float,
         body["dst"] = dst
         body["winner"] = dst
     if lease_until is not None:
-        body["u"] = round(lease_until, 3)
+        body["ttl"] = round(max(0.0, lease_until - t), 3)
     return Message(AWARD, src, seq, t, body)
 
 
