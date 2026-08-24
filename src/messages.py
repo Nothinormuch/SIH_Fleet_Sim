@@ -158,7 +158,7 @@ def block_claim(src: str, seq: int, t: float, cid: int, until: float,
     """Exclusive reservation of an entire single-lane block, keyed by block id.
 
     BIOS_1.0.0's chokepoint token. A corridor is one civilization-wide mutex: a
-    following convoy still glues the fleet at standstill clearance in a 1 m tunnel,
+    following convoy can still glue the fleet at standstill clearance in a narrow tunnel,
     so we admit exactly ONE robot into a controlled block at a time. Carrying the
     block id (in ``b``) separates a block-level claim from the single-cell CLAIM.
     """

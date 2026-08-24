@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import functools
 
-from .environment import Warehouse
+from .environment import Warehouse, corridors
 from .geometry import Cell
 
 
@@ -93,3 +93,110 @@ def analyse_topology(env: Warehouse) -> TopologyMap:
             branch_of[cell] = bid
 
     return TopologyMap(frozenset(core), branch_of, branches, roots)
+
+
+@dataclass(frozen=True)
+class CirculationMap:
+    """Deterministic one-way directions for a grid warehouse's narrow segments.
+
+    Alternating vertical and horizontal aisle directions turn the rack layout into a
+    strongly connected circulation graph.  AMRs may take a longer loop, but can never
+    meet head-on; destination-cell leases serialize merges.
+    """
+
+    enabled: bool
+    upstream: dict[int, Cell]
+    downstream: dict[int, Cell]
+
+    def allows(self, env: Warehouse, a: Cell, b: Cell) -> bool:
+        if a == b or not self.enabled:
+            return True
+        # Strongly connected one-way perimeter orientation for the standard map.
+        # Together with the alternating rack aisles, this removes every head-on edge
+        # while preserving a directed route between every pair of free cells.
+        horizontal = {0: -1, 1: -1, env.height - 2: -1, env.height - 1: 1}
+        vertical = {0: 1, 1: -1, env.width - 3: 1,
+                    env.width - 2: -1, env.width - 1: -1}
+        if a[1] == b[1] and a[1] in horizontal:
+            return (b[0] - a[0]) * horizontal[a[1]] > 0
+        if a[0] == b[0] and a[0] in vertical:
+            return (b[1] - a[1]) * vertical[a[0]] > 0
+        if 2 <= a[0] <= env.width - 3 and a[0] == b[0]:
+            if {a[1], b[1]} == {0, 1}:
+                return (a[1], b[1]) == (0, 1)
+            if {a[1], b[1]} == {env.height - 2, env.height - 1}:
+                return (a[1], b[1]) == (env.height - 1, env.height - 2)
+        # Station/dock transfer rungs alternate direction.  The two corner rungs use
+        # the orientation that closes the outer circulation loop.  This exact directed
+        # graph is strongly connected: every free cell reaches every other free cell,
+        # but no edge also admits its reverse.
+        if a[1] == b[1]:
+            if {a[0], b[0]} == {0, 1}:
+                wanted = ((0, 1) if a[1] == env.height - 1
+                          else ((1, 0) if a[1] % 2 == 0 else (0, 1)))
+                return (a[0], b[0]) == wanted
+            if {a[0], b[0]} == {env.width - 2, env.width - 1}:
+                wanted = ((env.width - 1, env.width - 2) if a[1] == 0
+                          else ((env.width - 2, env.width - 1)
+                                if a[1] % 2 == 0
+                                else (env.width - 1, env.width - 2)))
+                return (a[0], b[0]) == wanted
+            if {a[0], b[0]} == {env.width - 3, env.width - 2}:
+                wanted = ((env.width - 3, env.width - 2)
+                          if a[1] % 2 == 0
+                          else (env.width - 2, env.width - 3))
+                return (a[0], b[0]) == wanted
+        blocks = corridors(env)
+        ca, cb = blocks.id_of(a), blocks.id_of(b)
+        if ca is None and cb is None:
+            return True
+        if ca is not None and ca == cb:
+            end = self.downstream[ca]
+            before = abs(a[0] - end[0]) + abs(a[1] - end[1])
+            after = abs(b[0] - end[0]) + abs(b[1] - end[1])
+            return after < before
+        if ca is None and cb is not None:
+            return b == self.upstream[cb]
+        if ca is not None and cb is None:
+            return a == self.downstream[ca]
+        return False
+
+
+@functools.lru_cache(maxsize=16)
+def directed_circulation(env: Warehouse) -> CirculationMap:
+    """Build an alternating aisle circulation when the topology supports one.
+
+    A single chokepoint is intentionally excluded: making it permanently one-way
+    would make reverse-direction tasks unreachable.  The classic racking map has many
+    parallel vertical and horizontal lanes; alternating both sets is strongly
+    connected and every free cell remains reachable from every other free cell.
+    """
+    blocks = corridors(env)
+    vertical: dict[int, int] = {}
+    horizontal: dict[int, int] = {}
+    for cid, members in blocks.members.items():
+        xs = {c[0] for c in members}
+        ys = {c[1] for c in members}
+        if len(xs) == 1:
+            vertical[cid] = next(iter(xs))
+        elif len(ys) == 1:
+            horizontal[cid] = next(iter(ys))
+
+    vx = sorted(set(vertical.values()))
+    hy = sorted(set(horizontal.values()))
+    if len(vx) < 2 or len(hy) < 2:
+        return CirculationMap(False, {}, {})
+
+    upstream: dict[int, Cell] = {}
+    downstream: dict[int, Cell] = {}
+    for cid, axis in vertical.items():
+        ends = blocks.ends[cid]
+        low, high = min(ends, key=lambda c: c[1]), max(ends, key=lambda c: c[1])
+        upstream[cid], downstream[cid] = ((low, high) if vx.index(axis) % 2 == 0
+                                          else (high, low))
+    for cid, axis in horizontal.items():
+        ends = blocks.ends[cid]
+        low, high = min(ends, key=lambda c: c[0]), max(ends, key=lambda c: c[0])
+        upstream[cid], downstream[cid] = ((low, high) if hy.index(axis) % 2 == 0
+                                          else (high, low))
+    return CirculationMap(True, upstream, downstream)

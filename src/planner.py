@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import heapq
 from itertools import count
-from typing import Iterable, Sequence
+from typing import Callable, Iterable, Sequence
 
 from .environment import Warehouse
 from .geometry import Cell, manhattan
@@ -72,7 +72,8 @@ class Reservations:
 
 def astar(env: Warehouse, start: Cell, goal: Cell,
           extra_cost: dict[Cell, float] | None = None,
-          blocked: Iterable[Cell] = ()) -> Plan:
+          blocked: Iterable[Cell] = (),
+          edge_allowed: Callable[[Cell, Cell], bool] | None = None) -> Plan:
     """Shortest path ignoring time and other robots. The Layer 2 default.
 
     `extra_cost` is how the traffic layer says "this cell is contested, route around
@@ -107,6 +108,8 @@ def astar(env: Warehouse, start: Cell, goal: Cell,
             continue
         closed.add(cur)
         for nxt in env.neighbors(cur):
+            if edge_allowed is not None and not edge_allowed(cur, nxt):
+                continue
             if nxt in blocked_set or nxt in closed:
                 continue
             tentative = g_score[cur] + 1.0 + extra.get(nxt, 0.0)

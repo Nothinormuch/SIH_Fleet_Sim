@@ -377,7 +377,7 @@ class World:
         # actually drive into. A wide cone at a wall-hugging pose always reads a few
         # centimetres, so it would freeze every robot parked beside shelving, which is
         # where picks happen. Lateral clearance is guaranteed by the map instead: a
-        # 1 m cell and a 0.35 m radius leave room to rotate in place.
+        # The configured cell pitch and a 0.35 m radius leave room to rotate in place.
         rays = 3
         for k in range(rays):
             frac = (k / (rays - 1)) * 2 - 1 if rays > 1 else 0.0

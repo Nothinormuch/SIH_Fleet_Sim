@@ -2,12 +2,15 @@
 
 import random
 
-from src.amr import AMRBrain, POLICIES, POLICY_BIOS_PIBT
-from src.environment import FREE, Warehouse, chokepoint_warehouse, open_floor
+from src.amr import (AMRBrain, CELL_ZONE_BASE, POLICIES, POLICY_BIOS_PIBT,
+                     POLICY_BIOS_PIBT_V2)
+from src.environment import (FREE, Warehouse, chokepoint_warehouse,
+                             classic_warehouse, open_floor)
 from src.messages import block_claim, decode, encode
 from src.priority import PriorityKey, pibt_step
 from src.settings import DEFAULT
-from src.topology import analyse_topology
+from src.scenarios import dead_zone
+from src.topology import analyse_topology, directed_circulation
 
 
 def _key(rid: str, age: int) -> PriorityKey:
@@ -112,6 +115,55 @@ def test_block_lease_round_trip_carries_local_ttl_and_frozen_key():
 def test_policy_is_exposed_under_bios_pibt_name():
     assert POLICY_BIOS_PIBT == "BIOS_PIBT.1"
     assert POLICY_BIOS_PIBT in POLICIES
+    assert POLICY_BIOS_PIBT_V2 == "BIOS_PIBT.2"
+    assert POLICY_BIOS_PIBT_V2 in POLICIES
+
+
+def test_v2_circulation_is_strongly_connected_and_has_no_reverse_edge():
+    env = classic_warehouse()
+    circulation = directed_circulation(env)
+    cells = list(env.free_cells())
+    assert circulation.enabled
+
+    for start in cells:
+        seen, stack = {start}, [start]
+        while stack:
+            current = stack.pop()
+            for nxt in env.neighbors(current):
+                if nxt not in seen and circulation.allows(env, current, nxt):
+                    seen.add(nxt)
+                    stack.append(nxt)
+        assert len(seen) == len(cells)
+
+    for cell in cells:
+        for nxt in env.neighbors(cell):
+            assert not (circulation.allows(env, cell, nxt)
+                        and circulation.allows(env, nxt, cell))
+
+
+def test_v2_cell_lease_ids_are_unique_and_recognize_only_their_cell():
+    env = classic_warehouse()
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V2)
+    a, b = (4, 6), (5, 6)
+    za, zb = brain._cell_zone_id(a), brain._cell_zone_id(b)
+
+    assert za >= CELL_ZONE_BASE and zb >= CELL_ZONE_BASE and za != zb
+    assert brain._zone_contains(za, a)
+    assert not brain._zone_contains(za, b)
+
+
+def test_cell_pitch_has_positive_standstill_clearance_budget():
+    spec = DEFAULT.robot
+    assert DEFAULT.cell_m > 2 * spec.radius_m + spec.omni_stop_m
+
+
+def test_hundred_robot_scenario_scales_floor_capacity():
+    small = dead_zone(n_robots=24, seed=20, mesh_radio=True)
+    large = dead_zone(n_robots=100, seed=20, mesh_radio=True)
+
+    assert large.n_robots == 100
+    assert large.env.width > small.env.width and large.env.height > small.env.height
+    assert len(set(large.starts)) == 100
 
 
 def test_coordination_looks_past_current_centering_waypoint():

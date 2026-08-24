@@ -14,7 +14,7 @@ and backtracking when a pushed robot cannot vacate its cell.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Callable, Mapping
 
 from .environment import Warehouse
 from .geometry import Cell, manhattan
@@ -63,11 +63,13 @@ class StepDecision:
 
 
 def _candidates(env: Warehouse, rid: str, positions: Mapping[str, Cell],
-                goals: Mapping[str, Cell], preferred: Mapping[str, Cell]) -> list[Cell]:
+                goals: Mapping[str, Cell], preferred: Mapping[str, Cell],
+                edge_allowed: Callable[[Cell, Cell], bool] | None = None) -> list[Cell]:
     current = positions[rid]
     goal = goals.get(rid, current)
     wanted = preferred.get(rid)
-    cells = [current, *env.neighbors(current)]
+    cells = [current, *(c for c in env.neighbors(current)
+                        if edge_allowed is None or edge_allowed(current, c))]
 
     # Prefer the robot's existing A* waypoint, then progress toward its goal.  Waiting
     # loses deterministic ties so an inherited robot actively looks for room to vacate.
@@ -82,7 +84,8 @@ def _candidates(env: Warehouse, rid: str, positions: Mapping[str, Cell],
 def pibt_step(env: Warehouse, positions: Mapping[str, Cell],
               goals: Mapping[str, Cell], priorities: Mapping[str, PriorityKey],
               preferred: Mapping[str, Cell] | None = None,
-              max_depth: int = 64) -> StepDecision:
+              max_depth: int = 64,
+              edge_allowed: Callable[[Cell, Cell], bool] | None = None) -> StepDecision:
     """Resolve a collision-free next cell for every known robot.
 
     ``positions`` is the locally reconstructed fleet snapshot.  When a high-priority
@@ -121,7 +124,7 @@ def pibt_step(env: Warehouse, positions: Mapping[str, Cell],
                 inherited_from[rid] = parent
 
         current = positions[rid]
-        for target in _candidates(env, rid, positions, goals, preferred):
+        for target in _candidates(env, rid, positions, goals, preferred, edge_allowed):
             next_owner = reserved.get(target)
             if next_owner is not None and next_owner != rid:
                 continue

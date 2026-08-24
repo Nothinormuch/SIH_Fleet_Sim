@@ -8,8 +8,8 @@ benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 ```bash
 python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m pytest tests -q                # 30 tests
-python run.py --scenario open_floor_control --policy BIOS_PIBT.1 --robots 4
+python -m pytest tests -q                # 34 tests
+python run.py --scenario open_floor_control --policy BIOS_PIBT.2 --robots 4
 python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
 ```
 
@@ -18,21 +18,20 @@ only, so a robot node drops onto a bare Raspberry Pi image with no build step.
 
 ## Decentralized priority algorithm
 
-The `BIOS_PIBT.1` policy is the focus of this branch. Every AMR broadcasts a
-frozen lexicographic priority plus its next-cell intent, reconstructs a local fleet
-snapshot, and runs the same deterministic **Priority Inheritance with Backtracking
-(PIBT)** resolver. No process assigns moves and the dashboard is a passive observer.
+The default high-density policy is `BIOS_PIBT.2`. Every AMR broadcasts a
+frozen lexicographic priority plus its next-cell intent. On grid-like rack maps it
+plans on a strongly connected one-way circulation graph and takes an expiring,
+two-phase peer lease on every destination cell. This prevents head-on entry and restores
+one-robot-per-cell ownership before a queue forms. Merge contenders use the same frozen
+total order; no process assigns moves and the dashboard is a passive observer.
 
-When a high-priority AMR needs an occupied cell, the occupant inherits that priority
-and searches for a free adjacent move. If the chain cannot be displaced safely, the
-resolver backtracks and tries the requester's next candidate. Vertex conflicts and
-two-robot edge swaps are rejected. Long single-file aisles additionally use expiring
-peer leases, while a topology pre-pass gives temporary exit priority to robots leaving
-tree-shaped warehouse branches.
+Maps that cannot be oriented without losing reachability retain the V1 PIBT/block-lease
+fallback. Local 50 Hz protective stopping remains authoritative for every policy.
 
-See [`docs/DECENTRALIZED_PRIORITY.md`](docs/DECENTRALIZED_PRIORITY.md) for the priority
-order, message fields, pseudocode, research basis, tests, current benchmark evidence,
-and the remaining continuous-control limitation.
+See [`docs/BIOS_PIBT_2_PROTOCOL.md`](docs/BIOS_PIBT_2_PROTOCOL.md) for the exact
+protocol, state machine, conditional liveness argument and current benchmark evidence.
+Version 1 remains documented in
+[`docs/DECENTRALIZED_PRIORITY.md`](docs/DECENTRALIZED_PRIORITY.md).
 
 ---
 
@@ -102,8 +101,8 @@ frontend/
   js/network.js    the coordination layer: intent, peer links, wait-for arrows
   js/main.js       fetch, interpolated playback, panel binding
   assets/          generated sprite set (256 px per cell)
-tests/             26 regression tests
-docs/              DECENTRALIZED_PRIORITY.md, CRITIQUE.md, FINDINGS.md
+tests/             34 regression tests
+docs/              BIOS_PIBT_2_PROTOCOL.md plus V1 design, critique and findings
 reference/         asset prompt pack and loader spec
 ```
 
@@ -136,7 +135,8 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `central` | Fleet manager plans everything with prioritised space-time A*. Robots follow the schedule; no peer negotiation. | **The strong baseline the statement omits** — what every deployed fleet actually runs. Beating only stop-and-wait proves nothing. |
 | `hierarchical` | Central plans when reachable, P2P negotiation when not, Layer 0 always. | The proposal. Full decentralisation as a fallback, not an ideal. |
 | `BIOS_1.0.0` | Decentralized block leases plus an aggressive local unstick manoeuvre. | Existing experimental liveness policy retained for comparison. |
-| `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities, temporary branch-exit priority and expiring corridor leases. | The new edge-only priority policy implemented on this branch. |
+| `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
+| `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | Default high-density decentralized policy. |
 
 `--seeds N` pools runs so the safety statistics have enough exposure to mean something.
 
@@ -151,7 +151,14 @@ model including the dead-zone result, the Poisson statistics, the end-to-end
 single-robot path, priority serialization, deterministic PIBT inheritance, backtracking,
 rotation handling, and tree-appendage detection.
 
-**Current development result (three seeds, four robots):** `BIOS_PIBT.1` completes all
+**High-density development result:** on `dead_zone_mesh`, 24 robots, seed 20 and a
+300 s cutoff, V1 completes 14/96 tasks with 174 detected wait cycles and 64 retreats;
+V2 completes 18/96 with zero robot/rack contacts, zero detected cycles and zero
+retreats. That is 28.6% more completed work at the cutoff, not a makespan comparison;
+neither run completes all tasks. See the V2 protocol document for assumptions and the
+extended trace.
+
+**V1 four-robot result (three seeds):** `BIOS_PIBT.1` completes all
 16 `open_floor_control` tasks in every seed (183.2–230.6 s). At the pinned cutoffs it
 completes 15/16, 15/16 and 16/16 tasks in `dense_aisles`, and 10/12, 6/12 and 10/12 in
 the deliberately extreme `crossing_chokepoint` case. There are zero inter-robot contacts
