@@ -17,18 +17,17 @@ only loop a fleet manager ever owned is Layer 2, running at 0.1-1 Hz, where a 4 
 round trip is worth 5 mm of robot travel. Latency is not what causes warehouse
 collisions. Localisation error is.
 
-So full decentralisation is implemented here as a **degraded mode**, not as a superior
-architecture: the honest engineering answer is a hierarchy that keeps optimal global
-plans when the network is healthy and stays safe and productive when it is not. That
-is what `POLICY_HIERARCHICAL` does, and the benchmark measures the cost of the fallback
-rather than pretending there is none.
+The repository keeps both choices explicit: `POLICY_HIERARCHICAL` is the optional
+central-plus-peer baseline, while `POLICY_DECENTRALIZED` removes the manager from the
+task and route path entirely. The benchmark can therefore measure the cost of giving
+up global coordination instead of quietly substituting a central server.
 
-WHY ALL THREE POLICIES SHARE THIS CLASS
+WHY ALL POLICIES SHARE THIS CLASS
 =======================================
-`stop_and_wait`, `central` and `hierarchical` are fields, not separate implementations.
-They share one trajectory follower, one safety layer and one physics interface, so a
-throughput difference between them is caused by coordination and nothing else. Three
-separately tuned controllers would make any speedup number meaningless.
+Policies are fields, not separate implementations. They share one trajectory follower,
+one safety layer and one physics interface, so a throughput difference between them is
+caused by coordination and nothing else. Separately tuned controllers would make any
+speedup number meaningless.
 
 THE AGENT DOES NO I/O
 =====================
@@ -51,6 +50,7 @@ from .geometry import (Cell, angle_diff, bearing, cell_center, clamp, dist,
 from .planner import astar
 from .priority import PriorityKey, pibt_step
 from .settings import Config
+from .task_allocation import ALLOCATION_AUCTION, validate_allocation_policy
 from .topology import analyse_topology, directed_circulation
 from .world import Actuation, Sensors
 
@@ -62,9 +62,12 @@ POLICY_HIERARCHICAL = "hierarchical"
 POLICY_BIOS = "BIOS_1.0.0"
 POLICY_BIOS_PIBT = "BIOS_PIBT.1"
 POLICY_BIOS_PIBT_V2 = "BIOS_PIBT.2"
+POLICY_DECENTRALIZED = "decentralized"
 PIBT_POLICIES = (POLICY_BIOS_PIBT, POLICY_BIOS_PIBT_V2)
+DECENTRAL_POLICIES = (POLICY_BIOS, POLICY_DECENTRALIZED, *PIBT_POLICIES)
+CENTRAL_POLICIES = (POLICY_CENTRAL,)
 POLICIES = (POLICY_STOP_WAIT, POLICY_CENTRAL, POLICY_HIERARCHICAL,
-            POLICY_BIOS, *PIBT_POLICIES)
+            POLICY_BIOS, POLICY_DECENTRALIZED, *PIBT_POLICIES)
 
 MODE_CENTRAL = "CENTRAL_OK"
 MODE_P2P = "DEGRADED_P2P"
@@ -85,6 +88,8 @@ class Task:
     pick: Cell
     drop: Cell
     announced_t: float = 0.0
+    auction_epoch: int = 0
+    bid_deadline: float = 0.0
 
 
 @dataclass
@@ -108,13 +113,16 @@ class AMRBrain:
     """One robot's entire decision-making. Pure: no sockets, no clocks, no globals."""
 
     def __init__(self, rid: str, env: Warehouse, cfg: Config,
-                 policy: str = POLICY_HIERARCHICAL, home: Cell = (0, 0)) -> None:
+                 policy: str = POLICY_HIERARCHICAL, home: Cell = (0, 0),
+                 allocation_policy: str | None = None) -> None:
         if policy not in POLICIES:
             raise ValueError(f"unknown policy {policy!r}")
+        validate_allocation_policy(allocation_policy)
         self.rid = rid
         self.env = env
         self.cfg = cfg
         self.policy = policy
+        self.allocation_policy = allocation_policy
         self.home = home
         # Single-file blocks, shared and cached across the fleet. Acquiring a whole
         # block before entering is what stops two robots meeting halfway down a
@@ -136,21 +144,28 @@ class AMRBrain:
         self.epoch = 0
 
         self.open_tasks: dict[str, Task] = {}
-        self.taken: set[str] = set()
+        self.completed_tasks: set[str] = set()
+        # task_id -> (auction epoch, bid cost, owner, lease expiry)
+        self._task_claims: dict[str, tuple[int, float, str, float]] = {}
+        # Manager-directed awards can arrive before their TASK_NEW packet because
+        # both travel over a lossy, delayed network. Keep the destination marker until
+        # the task is visible and the task loop can accept it with the current pose.
+        self._awarded: set[str] = set()
         # A pre-assigned work queue. The headline benchmark uses this so that task
-        # allocation is IDENTICAL across all policies - otherwise a makespan
+        # allocation is IDENTICAL across the route-coordination policies - otherwise a makespan
         # difference could be caused by who got which job rather than by how the
         # fleet handles traffic, and the 20% claim would be unattributable.
         self.queue: list[Task] = []
-        # The distributed auction is exercised by its own scenario instead, where
-        # allocation is the thing under test.
-        self.use_auction = False
+        # Compatibility flag for callers from the earlier scenario-based runner. New
+        # code should pass allocation_policy explicitly instead.
+        self.use_auction = allocation_policy == ALLOCATION_AUCTION
         self.completed: list[tuple[str, float, float]] = []   # (tid, start_t, done_t)
         self._task_started_t = 0.0
 
         self.peers: dict[str, Peer] = {}
-        self._bids: dict[str, list[tuple[float, str]]] = {}
+        self._bids: dict[str, dict[tuple[int, str], float]] = {}
         self._bid_opened: dict[str, float] = {}
+        self._last_lease_broadcast = -1e9
 
         # Cells this robot has learned to avoid, with a decaying penalty. Contested
         # cells become expensive, never impassable - marking them impassable is how a
@@ -220,9 +235,10 @@ class AMRBrain:
         outbox: list[msg.Message] = []
         self._ingest(t, inbox)
         self._expire_peers(t)
+        self._expire_task_claims(t)
 
-        if self.mode == MODE_P2P and self.policy not in (
-                POLICY_STOP_WAIT, POLICY_BIOS, *PIBT_POLICIES):
+        if self.mode == MODE_P2P and self.policy not in (POLICY_STOP_WAIT,
+                                                          *DECENTRAL_POLICIES):
             self.stats["seconds_degraded"] += 1.0 / self.cfg.rates.world_hz
 
         cell = sensors.cell
@@ -241,7 +257,7 @@ class AMRBrain:
             self._t_reactive = t
             self._traffic_loop(t, sensors, outbox)
 
-        if self.policy in (POLICY_BIOS, *PIBT_POLICIES):
+        if self.policy in DECENTRAL_POLICIES:
             # Maintain the chokepoint token every control tick so any rival learns
             # as early as possible and no second robot slips into the single lane.
             self._bios_claim(t, sensors, self._next_cell(), outbox)
@@ -340,7 +356,7 @@ class AMRBrain:
         """Decide whether to enter the next cell. Advisory information only."""
         self._hold = False
 
-        if self.policy == POLICY_CENTRAL:
+        if self.policy in CENTRAL_POLICIES:
             # A purely centralised fleet does exactly what the manager scheduled, plus
             # Layer 0. No peer negotiation is layered on top - adding it would quietly
             # hand the baseline some of our own mechanism and flatter our result.
@@ -483,7 +499,7 @@ class AMRBrain:
             # Because it is always free and always adjacent, it always moves - so no
             # robot can ever settle still, which is the liveness guarantee behind
             # "no deadlock".
-            if self.policy == POLICY_BIOS and waited > self.cfg.traffic.bios_unstick_s:
+            if self.policy in DECENTRAL_POLICIES and waited > self.cfg.traffic.bios_unstick_s:
                 self._bios_unstick(t, sensors, nxt, outbox)
                 return
             # Waiting at a mouth is fine unless we are waiting ON the way out. A robot
@@ -634,7 +650,7 @@ class AMRBrain:
         if self.blocks.id_of(here) == cid:
             return None                     # already committed inside this block
 
-        if self.policy in (POLICY_BIOS, *PIBT_POLICIES):
+        if self.policy in DECENTRAL_POLICIES:
             # The block token: either somebody physically inside, or an unexpired
             # claim some peer broadcast. Both close the race where two robots at
             # opposite mouths both see an empty block and both commit.
@@ -666,7 +682,7 @@ class AMRBrain:
 
         for p in self.peers.values():
             if self.blocks.id_of(p.cell) == cid:
-                if (self.policy == POLICY_BIOS
+                if (self.policy in DECENTRAL_POLICIES
                         or my_exit is None
                         or self._peer_exit(cid, p) != my_exit):
                     # BIOS_1.0.0 admits a controlled block STRICTLY one at a time.
@@ -1383,7 +1399,7 @@ class AMRBrain:
             if self.penalty[c] < 0.1:
                 del self.penalty[c]
 
-        if self.policy == POLICY_CENTRAL:
+        if self.policy in CENTRAL_POLICIES:
             if self.mode != MODE_CENTRAL:
                 # The single point of failure, demonstrated rather than argued. A
                 # purely centralised fleet with an unreachable manager does not
@@ -1491,6 +1507,10 @@ class AMRBrain:
 
     # ================================================================== tasks
 
+    def _auction_enabled(self) -> bool:
+        """Whether this robot owns the peer-auction allocation responsibility."""
+        return self.allocation_policy == ALLOCATION_AUCTION or self.use_auction
+
     def _task_loop(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
         if self.task is None and sensors.battery_frac < 0.15 and self.env.docks:
@@ -1504,9 +1524,14 @@ class AMRBrain:
                 return
 
         if self.task is None:
-            if self.queue:
+            assigned = next((tid for tid in sorted(self._awarded)
+                             if tid in self.open_tasks), None)
+            if assigned is not None:
+                self._awarded.remove(assigned)
+                self._accept_task(t, self.open_tasks[assigned], sensors.cell)
+            elif self.queue:
                 self._accept_task(t, self.queue.pop(0), sensors.cell)
-            elif self.use_auction:
+            elif self._auction_enabled():
                 self._run_auction(t, sensors, outbox)
             elif self.goal is not None and self._arrived(sensors, self.goal):
                 self.goal = None            # parked clear of the working aisles
@@ -1521,8 +1546,15 @@ class AMRBrain:
             self._replan(t, sensors.cell)
         elif self.goal == self.task.drop and self._arrived(sensors, self.task.drop):
             self.completed.append((self.task.tid, self._task_started_t, t))
-            outbox.append(msg.task_done(self.rid, self._next_seq(), t, self.task.tid))
+            outbox.append(msg.task_done(
+                self.rid, self._next_seq(), t, self.task.tid,
+                epoch=self.task.auction_epoch))
             self.open_tasks.pop(self.task.tid, None)
+            self.completed_tasks.add(self.task.tid)
+            self._task_claims.pop(self.task.tid, None)
+            self._bids.pop(self.task.tid, None)
+            self._bid_opened.pop(self.task.tid, None)
+            self._awarded.discard(self.task.tid)
             self.task = None
             self.state = ST_IDLE
             # Clear the station. A drop point is a shared resource, and a robot that
@@ -1564,43 +1596,140 @@ class AMRBrain:
 
     def _run_auction(self, t: float, sensors: Sensors,
                      outbox: list[msg.Message]) -> None:
-        """Single-item sequential auction over multicast.
+        """Run one deterministic, single-task auction without an auctioneer.
 
-        When the manager is reachable it assigns work directly and this never fires.
-        When it is not, robots bid on what they can see. The failure mode is honest and
-        stated: a partitioned robot bids only against the peers it can hear, so two
-        partitions can both award the same task. Deterministic (cost, rid) tie-breaking
-        makes the duplicate converge to one owner once the partition heals rather than
-        leaving the fleet permanently inconsistent.
+        Every robot sees the same task epoch and deadline, records the bids it has
+        heard, and applies the same ``(cost, robot_id)`` ordering. A lease makes a
+        missing winner or a crashed winner recoverable; a network partition may create
+        temporary duplicate winners, but the higher epoch and deterministic claim
+        ordering converge when the partition heals.
         """
-        available = [tk for tid, tk in self.open_tasks.items() if tid not in self.taken]
+        available = []
+        for task in self.open_tasks.values():
+            if task.tid in self.completed_tasks:
+                continue
+            claim = self._task_claims.get(task.tid)
+            if claim is not None and claim[3] > t:
+                continue
+            if self.task is not None and self.task.tid == task.tid:
+                continue
+            available.append(task)
         if not available:
             return
-        available.sort(key=lambda k: (k.announced_t, k.tid))
-        target = available[0]
+
+        target = min(available, key=lambda k: (k.announced_t, k.tid))
+        if target.bid_deadline <= 0.0:
+            target.bid_deadline = t + self.cfg.traffic.auction_bid_window_s
 
         opened = self._bid_opened.get(target.tid)
         if opened is None:
-            cost = float(manhattan(sensors.cell, target.pick) +
-                         manhattan(target.pick, target.drop))
             self._bid_opened[target.tid] = t
-            self._bids.setdefault(target.tid, []).append((cost, self.rid))
-            outbox.append(msg.bid(self.rid, self._next_seq(), t, target.tid, cost))
+            cost = self._bid_cost(target, sensors)
+            self._bids.setdefault(target.tid, {})[
+                (target.auction_epoch, self.rid)] = cost
+            outbox.append(msg.bid(
+                self.rid, self._next_seq(), t, target.tid, cost,
+                epoch=target.auction_epoch))
             return
 
-        if t - opened < 0.6:                     # collect rival bids before deciding
-            return
-        bids = sorted(self._bids.get(target.tid, []))
-        if not bids or bids[0][1] != self.rid:
-            self._bid_opened.pop(target.tid, None)
+        if t < target.bid_deadline:
             return
 
-        self._accept_task(t, target, sensors.cell)
-        outbox.append(msg.award(self.rid, self._next_seq(), t, target.tid, bids[0][0]))
+        bids = [
+            (cost, rid)
+            for (epoch, rid), cost in self._bids.get(target.tid, {}).items()
+            if epoch == target.auction_epoch
+        ]
+        if not bids:
+            self._restart_auction(target, t)
+            return
 
-    def _accept_task(self, t: float, task: Task, here: Cell) -> None:
+        winner_cost, winner = min(bids, key=lambda item: (item[0], item[1]))
+        lease_until = t + self.cfg.traffic.auction_lease_s
+        claim = (target.auction_epoch, winner_cost, winner, lease_until)
+        self._record_task_claim(target.tid, claim)
+        self._bid_opened.pop(target.tid, None)
+
+        if winner == self.rid:
+            self._accept_task(t, target, sensors.cell,
+                              lease_until=lease_until,
+                              bid_cost=winner_cost)
+            outbox.append(msg.award(
+                self.rid, self._next_seq(), t, target.tid, winner_cost,
+                epoch=target.auction_epoch, lease_until=lease_until))
+
+    def _bid_cost(self, task: Task, sensors: Sensors) -> float:
+        """Estimate total local work using the same A* model as navigation."""
+        to_pick = astar(self.env, sensors.cell, task.pick, extra_cost=self.penalty)
+        to_drop = astar(self.env, task.pick, task.drop, extra_cost=self.penalty)
+        if not to_pick or not to_drop:
+            return 1e9
+        distance = (max(0, len(to_pick) - 1) + max(0, len(to_drop) - 1))
+        battery_penalty = max(0.0, 0.25 - sensors.battery_frac) * 20.0
+        return float(distance) + battery_penalty
+
+    def _record_task_claim(self, tid: str,
+                           claim: tuple[int, float, str, float]) -> bool:
+        old = self._task_claims.get(tid)
+        if old is not None:
+            same_owner = (old[0], old[1], old[2]) == (claim[0], claim[1], claim[2])
+            if old[3] > claim[3] and not same_owner:
+                return False
+            if not same_owner and not self._claim_wins(claim, old):
+                return False
+            if (old[2] == self.rid and claim[2] != self.rid
+                    and self.task is not None and self.task.tid == tid):
+                self._drop_current_task()
+        self._task_claims[tid] = claim
+        return True
+
+    @staticmethod
+    def _claim_wins(new: tuple[int, float, str, float],
+                    old: tuple[int, float, str, float]) -> bool:
+        if new[0] != old[0]:
+            return new[0] > old[0]
+        return (new[1], new[2]) < (old[1], old[2])
+
+    def _restart_auction(self, task: Task, t: float) -> None:
+        task.auction_epoch += 1
+        task.bid_deadline = t + self.cfg.traffic.auction_bid_window_s
+        self._bid_opened.pop(task.tid, None)
+        self._bids.pop(task.tid, None)
+        self._task_claims.pop(task.tid, None)
+        self._awarded.discard(task.tid)
+
+    def _expire_task_claims(self, t: float) -> None:
+        for tid, claim in list(self._task_claims.items()):
+            if claim[3] > t:
+                continue
+            if self.task is not None and self.task.tid == tid \
+                    and claim[2] == self.rid:
+                self._drop_current_task()
+            self._task_claims.pop(tid, None)
+            task = self.open_tasks.get(tid)
+            if task is not None and tid not in self.completed_tasks:
+                self._restart_auction(task, t)
+
+    def _drop_current_task(self) -> None:
+        self.task = None
+        self.goal = None
+        self.path = []
+        self.path_times = []
+        self.pidx = 0
+        self.state = ST_IDLE
+        self._task_started_t = 0.0
+
+    def _accept_task(self, t: float, task: Task, here: Cell,
+                     lease_until: float | None = None,
+                     bid_cost: float | None = None) -> None:
         self.task = task
-        self.taken.add(task.tid)
+        if lease_until is not None:
+            if bid_cost is None:
+                bid_cost = self._bids.get(task.tid, {}).get(
+                    (task.auction_epoch, self.rid), 1e9)
+            self._record_task_claim(
+                task.tid, (task.auction_epoch, bid_cost, self.rid, lease_until))
+        self._awarded.discard(task.tid)
         self._task_started_t = t
         self.state = ST_TO_PICK
         self.goal = task.pick
@@ -1789,7 +1918,7 @@ class AMRBrain:
 
     def _broadcast(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
-        if self.policy in (POLICY_STOP_WAIT, POLICY_CENTRAL):
+        if self.policy in (POLICY_STOP_WAIT, *CENTRAL_POLICIES):
             # Heartbeats only. The dashboard has to work for every baseline or the
             # comparison quietly becomes "with telemetry vs without", and the manager
             # needs poses to plan. Neither baseline shares *intent* with peers - that
@@ -1798,6 +1927,7 @@ class AMRBrain:
                 self.rid, self._next_seq(), t, sensors.pose, sensors.cell,
                 sensors.battery_frac, self.mode, self.state,
                 self.task.tid if self.task else None))
+            self._broadcast_auction_lease(t, outbox)
             return
 
         # Latch the key at the moment we publish it, so peers and we are comparing
@@ -1816,10 +1946,30 @@ class AMRBrain:
             goal=self.goal,
             priority_key=wire_key))
 
+        self._broadcast_auction_lease(t, outbox)
+
         cells, windows = self._intent_horizon(t)
         if cells:
             outbox.append(msg.intent(self.rid, self._next_seq(), t, cells, windows,
                                      self._pub_priority, self.epoch))
+
+    def _broadcast_auction_lease(self, t: float,
+                                  outbox: list[msg.Message]) -> None:
+        """Renew a peer-auction award independently of the motion policy."""
+        if (not self._auction_enabled() or self.task is None
+                or t - self._last_lease_broadcast < 1.0 /
+                self.cfg.rates.heartbeat_hz):
+            return
+        claim = self._task_claims.get(self.task.tid)
+        if claim is None or claim[2] != self.rid:
+            return
+        self._last_lease_broadcast = t
+        lease_until = t + self.cfg.traffic.auction_lease_s
+        self._task_claims[self.task.tid] = (
+            claim[0], claim[1], self.rid, lease_until)
+        outbox.append(msg.award(
+            self.rid, self._next_seq(), t, self.task.tid, claim[1],
+            epoch=claim[0], lease_until=lease_until))
 
     def _intent_horizon(self, t: float) -> tuple[list[Cell], list[tuple[float, float]]]:
         h = self.cfg.traffic.intent_horizon
@@ -1867,26 +2017,66 @@ class AMRBrain:
                 p.last_seen = t
             elif m.type == msg.TASK_NEW:
                 tid = b["task"]
-                if tid not in self.open_tasks and tid not in self.taken:
-                    self.open_tasks[tid] = Task(tid, msg.as_cell(b["pk"]),
-                                                msg.as_cell(b["dp"]), m.t)
+                if tid in self.completed_tasks:
+                    continue
+                epoch = int(b.get("e", 0))
+                deadline = b.get("dl")
+                if deadline is None:
+                    deadline = t + self.cfg.traffic.auction_bid_window_s
+                current = self.open_tasks.get(tid)
+                if current is None:
+                    self.open_tasks[tid] = Task(
+                        tid, msg.as_cell(b["pk"]), msg.as_cell(b["dp"]),
+                        m.t, epoch, float(deadline))
+                elif epoch > current.auction_epoch:
+                    current.auction_epoch = epoch
+                    current.bid_deadline = float(deadline)
+                    self._bids.pop(tid, None)
+                    self._bid_opened.pop(tid, None)
             elif m.type == msg.BID:
-                self._bids.setdefault(b["task"], []).append((b["cost"], m.src))
+                tid = b["task"]
+                epoch = int(b.get("e", 0))
+                task = self.open_tasks.get(tid)
+                if task is not None and epoch < task.auction_epoch:
+                    continue
+                if task is not None and epoch > task.auction_epoch:
+                    task.auction_epoch = epoch
+                    task.bid_deadline = t + self.cfg.traffic.auction_bid_window_s
+                    self._bids.pop(tid, None)
+                    self._bid_opened.pop(tid, None)
+                self._bids.setdefault(tid, {})[(epoch, m.src)] = float(b["cost"])
             elif m.type == msg.AWARD:
                 tid = b["task"]
-                self.taken.add(tid)
-                if self.task is not None and self.task.tid == tid:
-                    # Duplicate award across a partition. Deterministic tiebreak, and
-                    # both sides compute the same answer, so it converges without a
-                    # round of agreement.
-                    mine = float(manhattan(self.home, self.task.pick))
-                    if (b["cost"], m.src) < (mine, self.rid):
-                        self.task = None
-                        self.goal = None
-                        self.state = ST_IDLE
+                epoch = int(b.get("e", 0))
+                owner = str(b.get("winner") or b.get("dst") or m.src)
+                cost = float(b.get("cost", 1e9))
+                lease_until = float(b.get(
+                    "u", t + self.cfg.traffic.auction_lease_s))
+                task = self.open_tasks.get(tid)
+                if task is not None and epoch < task.auction_epoch:
+                    continue
+                if task is not None and epoch > task.auction_epoch:
+                    task.auction_epoch = epoch
+                    task.bid_deadline = t
+                    self._bids.pop(tid, None)
+                    self._bid_opened.pop(tid, None)
+                # A directed award is from the optional manager and is consumed by
+                # the destination robot. Only peer-auction awards create expiring
+                # claims; otherwise a central assignment could vanish mid-task when
+                # the manager's one-shot message is older than the lease.
+                if b.get("dst") is None:
+                    self._record_task_claim(
+                        tid, (epoch, cost, owner, lease_until))
+                if b.get("dst") == self.rid:
+                    self._awarded.add(tid)
             elif m.type == msg.TASK_DONE:
-                self.open_tasks.pop(b["task"], None)
-                self.taken.add(b["task"])
+                tid = b["task"]
+                self.open_tasks.pop(tid, None)
+                self.completed_tasks.add(tid)
+                self._task_claims.pop(tid, None)
+                self._bids.pop(tid, None)
+                self._bid_opened.pop(tid, None)
+                self._awarded.discard(tid)
             elif m.type == msg.MGR_BEACON:
                 self._mgr_seen = t
             elif m.type in (msg.CLAIM, msg.RELEASE) and b.get("b"):

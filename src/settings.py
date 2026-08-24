@@ -166,6 +166,10 @@ class TrafficSpec:
     # bounded defensively even though a physical conflict chain cannot exceed N.
     priority_age_quantum_s: float = 1.0
     priority_max_depth: int = 64
+    # Distributed task allocation. The task injector publishes the deadline so every
+    # robot can close the same auction without an auctioneer choosing the winner.
+    auction_bid_window_s: float = 0.6
+    auction_lease_s: float = 20.0
 
 
 @dataclass(frozen=True)
