@@ -91,10 +91,11 @@ The command writes:
 - `artifacts/benchmarks/sih-acceptance.csv`: 180 raw policy-run rows for independent
   analysis
 
-The checked-in JSON records `git_commit` as the repository `HEAD` and
-`source_tree_dirty: true` because this evidence was generated from the implementation
-changes in the working tree on branch `codex/sih-acceptance-benchmark`. Commit or tag
-the final tree and rerun the command when immutable release provenance is required.
+The checked-in JSON records `git_commit` as
+`cffd62a8da5beaba3ae0fe1a6036710def80384a` and `source_tree_dirty: false`.
+The full matrix was reproduced after the implementation commit from a clean
+benchmark-relevant source, test, and documentation tree. The later evidence-only
+commit does not change the code revision exercised by the benchmark.
 
 This is simulation evidence under the pinned assumptions, not a hardware safety
 certification and not proof of progress during permanent partitions or physical robot
