@@ -39,6 +39,8 @@
     health: 0,
     spawned: 1,
     active: 0,
+    auctionEvents: [],
+    auctionLastMs: 0,
   };
 
   const byId = id => document.getElementById(id);
@@ -328,6 +330,24 @@
           '<span class="hud-alloc-method" data-hud="allocMethod">—</span>' +
         '</div>' +
       '</div>' +
+    '</article>' +
+    '<article class="hud-block hud-auction">' +
+      '<span class="hud-eb">Task Auction</span>' +
+      '<div class="hud-auction-stats">' +
+        '<div class="hud-auction-row">' +
+          '<span class="hud-auction-label">Bids</span>' +
+          '<span class="hud-auction-val" data-hud="auctionBids">0</span>' +
+        '</div>' +
+        '<div class="hud-auction-row">' +
+          '<span class="hud-auction-label">Awards</span>' +
+          '<span class="hud-auction-val" data-hud="auctionAwards">0</span>' +
+        '</div>' +
+        '<div class="hud-auction-row">' +
+          '<span class="hud-auction-label">Rate</span>' +
+          '<span class="hud-auction-val" data-hud="auctionRate">0/s</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="hud-auction-live" data-hud="auctionLive"></div>' +
     '</article>';
 
   function build() {
@@ -352,6 +372,10 @@
     el.allocCompleted = qs('[data-hud="allocCompleted"]');
     el.allocThroughput = qs('[data-hud="allocThroughput"]');
     el.allocMethod = qs('[data-hud="allocMethod"]');
+    el.auctionBids = qs('[data-hud="auctionBids"]');
+    el.auctionAwards = qs('[data-hud="auctionAwards"]');
+    el.auctionRate = qs('[data-hud="auctionRate"]');
+    el.auctionLive = qs('[data-hud="auctionLive"]');
 
     el.jobsArc.style.strokeDasharray = RING_C.toFixed(2);
     el.jobsArc.style.strokeDashoffset = RING_C.toFixed(2);
@@ -460,6 +484,40 @@
                                                       alloc === 'hungarian' ? 'Manager' : 'Preassigned';
   }
 
+  function updateAuction(now) {
+    if (!el.auctionLive || !S.lastFrame) return;
+
+    // Count auction events in current frame
+    const frameEvents = (S.lastFrame.auction_events || []);
+    const bids = frameEvents.filter(e => e.event === 'BID').length;
+    const awards = frameEvents.filter(e => e.event === 'AWARD').length;
+
+    // Track auction rate (events per second)
+    const timeDelta = now - S.auctionLastMs;
+    const rate = timeDelta > 0 ? (frameEvents.length / (timeDelta / 1000)).toFixed(1) : 0;
+    S.auctionLastMs = now;
+
+    if (el.auctionBids) el.auctionBids.textContent = fmt(bids, 0);
+    if (el.auctionAwards) el.auctionAwards.textContent = fmt(awards, 0);
+    if (el.auctionRate) el.auctionRate.textContent = rate + '/s';
+
+    // Show live auction events (last 3-4 events)
+    let html = '';
+    const recent = frameEvents.slice(-4);
+    for (const evt of recent) {
+      const eventType = evt.event || '?';
+      const bidder = evt.robot || evt.bidder || '—';
+      const taskId = evt.task || evt.task_id || '?';
+      const color = eventType === 'AWARD' ? '#39ff8a' : eventType === 'BID' ? '#00f0ff' : '#f5b843';
+      html += `<div class="hud-auction-event" style="color: ${color}">
+        <span class="hud-auction-type">${eventType}</span>
+        <span class="hud-auction-who">${bidder}</span>
+        <span class="hud-auction-task">T${taskId}</span>
+      </div>`;
+    }
+    el.auctionLive.innerHTML = html || '<div style="color: rgba(255,255,255,.3); font-size: 9px;">No auctions</div>';
+  }
+
   function loop(now) {
     raf = requestAnimationFrame(loop);
     if (!root) return;
@@ -470,6 +528,7 @@
     updateHealth();
     updateFleet();
     updateAllocation();
+    updateAuction(now);
     paintMinimap(now);
   }
 

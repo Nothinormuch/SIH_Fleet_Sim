@@ -383,7 +383,7 @@
 .hud-fleet {
   --glow: #00f0ff;
   --glow-rgb: 0,240,255;
-  bottom: 14px;
+  top: 100px;
   left: 14px;
   width: 180px;
   max-height: 160px;
@@ -430,14 +430,15 @@
   font-weight: 700;
 }
 
-/* ----------------------------------------------------------------- allocation panel (right sidebar) */
+/* ----------------------------------------------------------------- allocation panel (vertical center right) */
 
 .hud-allocation {
   --glow: #39ff8a;
   --glow-rgb: 57,255,138;
-  bottom: 14px;
+  top: 50%;
   right: 14px;
   width: 180px;
+  transform: translateY(-50%);
 }
 
 .hud-alloc-detail {
@@ -484,12 +485,92 @@
   text-align: right;
 }
 
-/* Scrollbar styling for fleet panel */
-.hud-fleet::-webkit-scrollbar {
+/* ----------------------------------------------------------------- task auction panel */
+
+.hud-auction {
+  --glow: #ff2ff6;
+  --glow-rgb: 255,47,246;
+  bottom: 14px;
+  right: 14px;
+  width: 200px;
+  max-height: 180px;
+}
+
+.hud-auction-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.hud-auction-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 3px;
+  background: rgba(255,47,246,.06);
+  border: 1px solid rgba(255,47,246,.15);
+}
+
+.hud-auction-row:hover {
+  background: rgba(255,47,246,.1);
+}
+
+.hud-auction-label {
+  font: 600 8px/1 var(--hud-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: rgba(255,200,240,.8);
+}
+
+.hud-auction-val {
+  font: 700 11px/1 var(--hud-mono);
+  color: #ff2ff6;
+  text-shadow: 0 0 8px rgba(255,47,246,.6);
+}
+
+.hud-auction-live {
+  margin-top: 8px;
+  padding: 6px 4px;
+  border-top: 1px solid rgba(255,47,246,.2);
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.hud-auction-event {
+  display: flex;
+  gap: 6px;
+  font: 500 8px/1.3 var(--hud-mono);
+  padding: 2px 0;
+  margin: 1px 0;
+}
+
+.hud-auction-type {
+  font-weight: 700;
+  min-width: 40px;
+}
+
+.hud-auction-who {
+  flex: 1;
+  text-align: center;
+  opacity: 0.9;
+}
+
+.hud-auction-task {
+  font-weight: 600;
+  text-align: right;
+  min-width: 20px;
+}
+
+/* Scrollbars */
+.hud-fleet::-webkit-scrollbar,
+.hud-auction-live::-webkit-scrollbar {
   width: 4px;
 }
 
-.hud-fleet::-webkit-scrollbar-track {
+.hud-fleet::-webkit-scrollbar-track,
+.hud-auction-live::-webkit-scrollbar-track {
   background: rgba(0,240,255,.05);
   border-radius: 2px;
 }
@@ -501,4 +582,13 @@
 
 .hud-fleet::-webkit-scrollbar-thumb:hover {
   background: rgba(0,240,255,.6);
+}
+
+.hud-auction-live::-webkit-scrollbar-thumb {
+  background: rgba(255,47,246,.4);
+  border-radius: 2px;
+}
+
+.hud-auction-live::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,47,246,.6);
 }
