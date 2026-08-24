@@ -130,6 +130,14 @@ class TrainConfig:
     sigma_min: float = 0.05
     alpha: float = 0.25              # step size
     seed: int = 0                    # RNG for the search itself, not for the sim
+    # Spread of the initial weights. Zero is a PLATEAU for an argmax policy: every logit
+    # is equal, the first legal verb always wins, and small updates never flip the
+    # decision - measured at thirteen generations before the iterate moved at all. It is
+    # still the default because the shipped model is the best genome ever SCORED, which
+    # comes from the sampled population and improved throughout anyway. Raise it to break
+    # the tie symmetry; left as a knob rather than re-defaulted because no run has been
+    # measured with it yet, and an unvalidated fix is worse than a documented limitation.
+    init_scale: float = 0.0
     workers: int = 0                 # 0 = auto
     # (sim seed, episode length). The mixed lengths are deliberate: at 120 s the fleet
     # is still dispersed (1.6-2.0 detections/tick) and at 240 s it is saturated at 3.0,
@@ -217,6 +225,16 @@ class _Pool:
                 self.close()
         return [_run_episode(j) for j in jobs]
 
+    def map_eval(self, jobs: list[tuple]) -> list[dict]:
+        if self._ex is not None:
+            try:
+                return list(self._ex.map(_eval_job, jobs, chunksize=1))
+            except (BrokenExecutor, OSError) as exc:
+                self.serial = True
+                self.reason = f"{type(exc).__name__}: {exc}"
+                self.close()
+        return [_eval_job(j) for j in jobs]
+
     def close(self) -> None:
         if self._ex is not None:
             self._ex.shutdown(wait=False, cancel_futures=True)
@@ -294,11 +312,11 @@ def evolve(cfg: TrainConfig,
     n = cfg.n_params
     half = max(1, cfg.population // 2)
 
-    # Start from zero rather than from noise. An all-zero network emits equal logits and
-    # therefore always picks the first legal verb, which is a defined, harmless policy -
-    # whereas a random start is a random policy, and generation 1 would be spent
-    # climbing back out of whatever hole it landed in.
-    theta = [0.0] * n
+    # An all-zero network emits equal logits and therefore always picks the first legal
+    # verb: a defined, harmless policy, and a flat one. See TrainConfig.init_scale for
+    # what that cost and why it is still the default.
+    theta = ([0.0] * n if cfg.init_scale <= 0.0
+             else [rng.gauss(0.0, cfg.init_scale) for _ in range(n)])
     sigma = cfg.sigma
     best_w, best_f = list(theta), -math.inf
     history: list[dict] = []
@@ -412,6 +430,107 @@ def evaluate(model: PolicyNet | None, scenario: str, robots: int, duration: floa
     return out
 
 
+def _eval_job(job: tuple) -> dict:
+    """One (policy, seed) evaluation run. Top level so the pool can pickle it."""
+    policy, weights, n_hidden, scenario, robots, seed, duration = job
+    net = (PolicyNet(weights, N_FEATURES, n_hidden, N_ACTIONS)
+           if weights is not None else None)
+    sc = replace(SCENARIOS[scenario](n_robots=robots), duration_s=duration)
+    r = run_scenario(sc, policy, seed=seed, policy_model=net)
+    return {
+        "policy": policy, "seed": seed,
+        "tasks": r.tasks_completed, "announced": r.tasks_announced,
+        "progress": r.progress_cells, "rr": r.contacts_robot_robot,
+        "rh": r.contacts_robot_human, "rack": r.contacts_robot_rack,
+        "min_sep": r.min_separation_m, "unstick": r.bios4_unstick,
+        "replans": r.replans, "retreats": r.retreats,
+        "completed_all": r.completed_all, "makespan": r.makespan_s,
+    }
+
+
+def compare_on_holdout(model: PolicyNet, scenario: str, robots: int, duration: float,
+                       seeds: Sequence[int] = EVAL_SEEDS,
+                       policies: Sequence[str] = ("stop_and_wait", "central",
+                                                  "hierarchical", "BIOS_1.0.0",
+                                                  "BIOS_4"),
+                       workers: int = 0) -> dict:
+    """Run every policy over the held-out seeds and pool the results.
+
+    Pooled, not best-of: one seed is an anecdote, which is the same reason
+    `metrics.safety_report` exists. A learned policy that wins on one seed and loses on
+    three has not beaten anything, and reporting the win would be the exact mistake this
+    project's own methodology is built to avoid.
+    """
+    jobs = []
+    for pol in policies:
+        w = model.w if (pol == "BIOS_4" and model is not None) else None
+        hid = model.n_hidden if model is not None else 16
+        for seed in seeds:
+            jobs.append((pol, w, hid, scenario, robots, seed, duration))
+
+    pool = _Pool(workers)
+    try:
+        rows = pool.map_eval(jobs)
+    finally:
+        pool.close()
+
+    out: dict = {"scenario": scenario, "robots": robots, "duration_s": duration,
+                 "seeds": list(seeds), "policies": {}}
+    for pol in policies:
+        mine = [r for r in rows if r["policy"] == pol]
+        n = max(1, len(mine))
+        out["policies"][pol] = {
+            "runs": len(mine),
+            "tasks_total": sum(r["tasks"] for r in mine),
+            "tasks_mean": round(sum(r["tasks"] for r in mine) / n, 2),
+            "tasks_per_seed": {r["seed"]: r["tasks"] for r in sorted(mine, key=lambda r: r["seed"])},
+            "announced": mine[0]["announced"] if mine else 0,
+            "progress_mean": round(sum(r["progress"] for r in mine) / n, 1),
+            "rr": sum(r["rr"] for r in mine),
+            "rh": sum(r["rh"] for r in mine),
+            "rack": sum(r["rack"] for r in mine),
+            "min_sep": round(min((r["min_sep"] for r in mine if r["min_sep"] > 0),
+                                 default=0.0), 3),
+            "unstick": sum(r["unstick"] for r in mine),
+            "replans": sum(r["replans"] for r in mine),
+        }
+    return out
+
+
+def format_comparison(rep: dict, baseline: str = "BIOS_1.0.0",
+                      subject: str = "BIOS_4") -> str:
+    lines = [
+        f"  held-out evaluation: {rep['scenario']}, {rep['robots']} robots, "
+        f"{rep['duration_s']:.0f}s, seeds {rep['seeds']}",
+        f"  {'policy':<14} {'tasks':>12} {'mean':>6} {'prog':>6} {'r-r':>4} "
+        f"{'r-h':>4} {'rack':>5} {'minsep':>7} {'unstick':>8}",
+    ]
+    for pol, d in rep["policies"].items():
+        total = f"{d['tasks_total']}/{d['announced'] * d['runs']}"
+        lines.append(
+            f"  {pol:<14} {total:>12} {d['tasks_mean']:>6.2f} {d['progress_mean']:>6.0f} "
+            f"{d['rr']:>4} {d['rh']:>4} {d['rack']:>5} {d['min_sep']:>7.3f} "
+            f"{d['unstick']:>8}")
+
+    a, b = rep["policies"].get(subject), rep["policies"].get(baseline)
+    if a and b:
+        lines.append("")
+        # State the verdict rather than leaving a table for someone to read hopefully.
+        if a["rr"] or a["rh"]:
+            lines.append(f"  VERDICT: {subject} FAILS - it made contact. Task count is "
+                         f"irrelevant until that is zero.")
+        elif a["tasks_total"] > b["tasks_total"]:
+            lines.append(f"  VERDICT: {subject} beats {baseline} "
+                         f"({a['tasks_total']} vs {b['tasks_total']} tasks) at zero contacts.")
+        elif a["tasks_total"] == b["tasks_total"]:
+            lines.append(f"  VERDICT: {subject} MATCHES {baseline} "
+                         f"({a['tasks_total']} tasks), zero contacts. Not a win.")
+        else:
+            lines.append(f"  VERDICT: {subject} LOSES to {baseline} "
+                         f"({a['tasks_total']} vs {b['tasks_total']} tasks).")
+    return "\n".join(lines)
+
+
 # --------------------------------------------------------------------------- CLI
 
 
@@ -428,7 +547,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=0, help="0 = one per core, minus a few")
     ap.add_argument("--out", default="models/bios4.json")
+    ap.add_argument("--evaluate", metavar="MODEL",
+                    help="skip training; report MODEL against every baseline on the "
+                         "held-out seeds")
+    ap.add_argument("--eval-duration", type=float, default=420.0)
     args = ap.parse_args(argv)
+
+    if args.evaluate:
+        from .bios4 import model_from_json
+        model = model_from_json(Path(args.evaluate).read_text(encoding="utf-8"))
+        print(f"  model {args.evaluate}: {model.meta.get('algorithm', 'unknown')}, "
+              f"fitness {model.meta.get('fitness')}, "
+              f"trained on seeds {model.meta.get('train_seeds')}", file=sys.stderr)
+        rep = compare_on_holdout(model, args.scenario, args.robots,
+                                 args.eval_duration, workers=args.workers)
+        print(format_comparison(rep), file=sys.stderr)
+        print(json.dumps(rep, indent=1))
+        return 0
 
     cfg = TrainConfig(scenario=args.scenario, robots=args.robots,
                       population=args.population, generations=args.generations,
