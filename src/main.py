@@ -9,7 +9,7 @@ and nothing happened".
 The loop is a fixed-step 50 Hz integration, and the ordering inside each tick matters:
 
     1. scripted world events   (kill the manager, split the network)
-    2. WMS announcements       (auction scenarios only)
+    2. WMS announcements       (allocation policies, or auction workloads)
     3. fleet manager tick      (advice, never commands)
     4. every robot tick        (sense -> brain -> actuate, in sorted id order)
     5. world integration       (physics, then collision checks)
@@ -35,11 +35,38 @@ from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
 from .scenarios import SCENARIOS, Scenario
 from .settings import Config, DEFAULT
+from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
+                               ALLOCATION_POLICIES,
+                               validate_allocation_policy)
 from .transport import SimNetwork
 from .world import World
 
 WMS_ID = "WMS"
 AUCTION_MESSAGE_TYPES = (msg.TASK_NEW, msg.BID, msg.AWARD, msg.TASK_DONE)
+
+
+def _resolve_allocation_policy(sc: Scenario,
+                               allocation_policy: str | None) -> str | None:
+    """Resolve legacy scenario behavior while keeping the public choice separate."""
+    if allocation_policy is None and sc.use_auction:
+        allocation_policy = ALLOCATION_AUCTION
+    validate_allocation_policy(allocation_policy)
+    return allocation_policy
+
+
+def _announced_tasks(sc: Scenario, allocation_policy: str | None) -> list[Task]:
+    """Return the workload that this policy must allocate.
+
+    Scenarios normally contain round-robin queues so route policies can be compared
+    without task allocation affecting the result. An explicit allocation policy ignores
+    those queues and announces the same tasks to the WMS/robots instead. The old
+    `use_auction` scenario flag is supported only as a backwards-compatible default.
+    """
+    if allocation_policy in ALLOCATION_POLICIES:
+        if sc.unassigned:
+            return list(sc.unassigned)
+        return [task for queue in sc.assignments for task in queue]
+    return []
 
 
 def _auction_event(message: msg.Message) -> dict:
@@ -59,7 +86,8 @@ def _auction_event(message: msg.Message) -> dict:
 
 def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                  cfg: Config | None = None, trace: list | None = None,
-                 verbose: bool = False) -> PolicyResult:
+                 verbose: bool = False,
+                 allocation_policy: str | None = None) -> PolicyResult:
     """Run one (scenario, policy, seed) and return everything it produced.
 
     Pass a list as `trace` to collect per-frame snapshots for the dashboard; leave it
@@ -67,6 +95,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     """
     if policy not in POLICIES:
         raise ValueError(f"unknown policy {policy!r}")
+    allocation_policy = _resolve_allocation_policy(sc, allocation_policy)
 
     cfg = cfg or DEFAULT
     cfg = replace(cfg, net=sc.net, seed=seed)
@@ -75,30 +104,35 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     world = World(sc.env, cfg, seed=seed)
     net = SimNetwork(cfg, seed=seed)
     net.register(WMS_ID)
+    announced_tasks = _announced_tasks(sc, allocation_policy)
+    uses_allocation = bool(announced_tasks)
 
     brains: dict[str, AMRBrain] = {}
     for i, start in enumerate(sc.starts):
         rid = f"AMR{i + 1:02d}"
         world.add_robot(rid, start, 0.0)
-        b = AMRBrain(rid, sc.env, cfg, policy=policy, home=start)
-        b.queue = list(sc.assignments[i]) if i < len(sc.assignments) else []
-        b.use_auction = sc.use_auction
+        b = AMRBrain(rid, sc.env, cfg, policy=policy, home=start,
+                     allocation_policy=allocation_policy)
+        b.queue = ([] if uses_allocation else
+                   list(sc.assignments[i]) if i < len(sc.assignments) else [])
         brains[rid] = b
         net.register(rid)
 
     for j, walk in enumerate(sc.humans):
         world.add_human(f"H{j + 1}", walk)
 
-    # stop_and_wait has no fleet manager by definition - it is the no-coordination
-    # baseline. BIOS_1.0.0 also runs without one, by design: its chokepoint
-    # admission and unstick logic are wholly peer-to-peer. `central` depends on the
-    # manager, `hierarchical` merely prefers it.
+    # The route policy may need a manager for space-time plans, while Hungarian needs
+    # one only for task assignment. These responsibilities are intentionally separate.
     manager = None
-    if policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL):
-        manager = FleetManager(sc.env, cfg)
+    if policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL) \
+            or allocation_policy == ALLOCATION_HUNGARIAN:
+        manager_allocation = (ALLOCATION_HUNGARIAN
+                              if allocation_policy == ALLOCATION_HUNGARIAN else None)
+        manager = FleetManager(sc.env, cfg,
+                               allocation_policy=manager_allocation)
         net.register(MANAGER_ID)
 
-    total_tasks = sc.n_tasks if not sc.use_auction else len(sc.unassigned)
+    total_tasks = len(announced_tasks) if uses_allocation else sc.n_tasks
     announced = False
     makespan = None
     steps = int(sc.duration_s / dt)
@@ -118,9 +152,9 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
         if sc.heal_at is not None and t >= sc.heal_at and net.partition is not None:
             net.set_partition(None)
 
-        if sc.use_auction and not announced:
+        if uses_allocation and not announced:
             announced = True
-            for tk in sc.unassigned:
+            for tk in announced_tasks:
                 seq += 1
                 announcement = msg.task_new(
                     WMS_ID, seq, t, tk.tid, tk.pick, tk.drop, epoch=0,
@@ -179,12 +213,12 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
             break
 
     world.finalize()
-    return _summarize(sc, policy, seed, cfg, world, net, brains, manager,
-                      total_tasks, makespan)
+    return _summarize(sc, policy, allocation_policy, seed, cfg, world, net,
+                      brains, manager, total_tasks, makespan)
 
 
-def _summarize(sc, policy, seed, cfg, world, net, brains, manager,
-               total_tasks, makespan) -> PolicyResult:
+def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
+               manager, total_tasks, makespan) -> PolicyResult:
     sim_s = world.t
     n = len(brains)
     robot_hours = n * sim_s / 3600.0
@@ -201,7 +235,8 @@ def _summarize(sc, policy, seed, cfg, world, net, brains, manager,
                    [manager.stats["plan_cpu_max_s"] if manager else 0.0])
 
     return PolicyResult(
-        policy=policy, scenario=sc.name, seed=seed,
+        policy=policy, allocation_policy=allocation_policy,
+        scenario=sc.name, seed=seed,
         sim_seconds=round(sim_s, 2), robots=n,
         tasks_completed=done, tasks_announced=total_tasks,
         # A run that did not finish has no makespan. Recording the wall-clock cutoff as
@@ -236,7 +271,8 @@ def _summarize(sc, policy, seed, cfg, world, net, brains, manager,
 
 
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
-                      seed: int = 0, duration: float | None = None) -> dict:
+                      seed: int = 0, duration: float | None = None,
+                      allocation_policy: str = ALLOCATION_AUCTION) -> dict:
     """One run, packaged for the web dashboard: map, every frame, and the summary.
 
     Playback rather than a live stream, deliberately. The sim runs far faster than
@@ -253,13 +289,15 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         sc.duration_s = float(duration)
 
     frames: list = []
-    result = run_scenario(sc, policy, seed=seed, trace=frames)
+    result = run_scenario(sc, policy, seed=seed, trace=frames,
+                          allocation_policy=allocation_policy)
     return {
         "map": sc.env.to_json(),
         "meta": {
-            "scenario": sc.name, "policy": policy, "seed": seed,
+            "scenario": sc.name, "policy": policy,
+            "allocation_policy": allocation_policy, "seed": seed,
             "robots": sc.n_robots, "duration_s": sc.duration_s,
-            "tasks": sc.n_tasks if not sc.use_auction else len(sc.unassigned),
+            "tasks": len(_announced_tasks(sc, allocation_policy)) or sc.n_tasks,
             "humans": len(sc.humans),
             "kill_manager_at": sc.kill_manager_at,
             "cell_m": DEFAULT.cell_m,
@@ -274,7 +312,8 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
 
 def _fmt(r: PolicyResult) -> str:
     ok = "done" if r.completed_all else "TIMEOUT"
-    return (f"{r.policy:<14} {r.scenario:<20} seed={r.seed} "
+    alloc = r.allocation_policy or "preassigned"
+    return (f"route={r.policy:<14} alloc={alloc:<10} {r.scenario:<20} seed={r.seed} "
             f"{ok:>7} makespan={r.makespan_s:7.1f}s "
             f"tasks={r.tasks_completed}/{r.tasks_announced} "
             f"rr={r.contacts_robot_robot} rh={r.contacts_robot_human} "
@@ -289,7 +328,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--scenario", default="crossing_chokepoint",
                     choices=sorted(SCENARIOS))
     ap.add_argument("--policy", default="all",
-                    choices=sorted(POLICIES) + ["all"])
+                    choices=sorted(POLICIES) + ["all"],
+                    help="route/traffic policy")
+    ap.add_argument("--allocation-policy", choices=sorted(ALLOCATION_POLICIES),
+                    default=None,
+                    help="task allocator: auction or hungarian; default keeps the scenario workload")
     ap.add_argument("--robots", type=int, default=None)
     ap.add_argument("--seeds", type=int, default=1,
                     help="run seeds 0..N-1 and pool them for the safety statistics")
@@ -312,7 +355,8 @@ def main(argv: list[str] | None = None) -> int:
             sc = SCENARIOS[args.scenario](**kw)
             if args.loss is not None:
                 sc.net = replace(sc.net, loss=args.loss)
-            r = run_scenario(sc, policy, seed=seed, verbose=args.verbose)
+            r = run_scenario(sc, policy, seed=seed, verbose=args.verbose,
+                             allocation_policy=args.allocation_policy)
             runs.append(r)
             print(_fmt(r))
         by_policy[policy] = runs
@@ -337,7 +381,6 @@ def main(argv: list[str] | None = None) -> int:
     if POLICY_CENTRAL in by_policy and POLICY_HIERARCHICAL in by_policy:
         c = compare(by_policy[POLICY_CENTRAL], by_policy[POLICY_HIERARCHICAL])
         print(f"VS CENTRAL RESERVATION  hierarchical: {json.dumps(c)}")
-
     if args.json:
         payload = {p: [r.to_dict() for r in runs] for p, runs in by_policy.items()}
         with open(args.json, "w", encoding="utf-8") as fh:

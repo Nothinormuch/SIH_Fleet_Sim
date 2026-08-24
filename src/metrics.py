@@ -94,6 +94,7 @@ class PolicyResult:
     policy: str
     scenario: str
     seed: int
+    allocation_policy: str | None = None
     sim_seconds: float = 0.0
     robots: int = 0
 

@@ -9,9 +9,11 @@ fixed, seeded scenarios.
 
 ```bash
 python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m pytest tests -q                # 19 tests
+python -m pytest tests -q
 python run.py --scenario crossing_chokepoint --policy all --robots 4 --seeds 3
 python run.py --scenario dense_aisles --policy hierarchical --json out/run.json
+python run.py --scenario dense_aisles --policy decentralized --allocation-policy auction --robots 4
+python run.py --scenario dense_aisles --policy decentralized --allocation-policy hungarian --robots 4
 ```
 
 The simulation core and the benchmark have **no third-party dependencies** — stdlib
@@ -72,6 +74,7 @@ src/
   fleet_manager.py the optional central optimiser, and the strong baseline
   metrics.py       Poisson rate intervals, honest policy comparison
   scenarios.py     pinned, seeded benchmark scenarios including a negative control
+  task_allocation.py two task-allocation choices, kept separate from motion policy
   main.py          the headless runner and CLI
 backend/
   server.py        stdlib HTTP server: serves the frontend, runs sims on request
@@ -105,7 +108,7 @@ Transport and world are injected. That single constraint buys three things at on
 
 ---
 
-## Available policies
+## Route and traffic policies
 
 All policies are fields on one class, sharing one trajectory follower, one safety layer
 and one physics interface, so differences are caused by coordination rather than by
@@ -114,16 +117,26 @@ separate controllers.
 | Policy | What it is | Why it is here |
 | --- | --- | --- |
 | `stop_and_wait` | Textbook: follow your own shortest path, stop when the next cell is occupied. | The weak baseline the statement names. Implemented faithfully, not as a straw man. |
-| `central` | Fleet manager assigns work with the Hungarian algorithm and plans routes with prioritised space-time A*. Robots follow the schedule; no peer negotiation. | **The strong baseline the statement omits** — what every deployed fleet actually runs. Beating only stop-and-wait proves nothing. |
+| `central` | Fleet manager plans routes with prioritised space-time A*. Robots follow the schedule; no peer negotiation. | **The strong route baseline the statement omits.** |
 | `hierarchical` | Central plans when reachable, P2P negotiation when not, Layer 0 always. | The proposal. Full decentralisation as a fallback, not an ideal. |
 | `BIOS_1.0.0` | Peer-only traffic coordination with block tokens, intent exchange and local recovery. | The earlier manager-free policy, retained as a comparison point. |
-| `decentralized` | Robots announce tasks, bid over multicast, deterministically select a winner, renew a lease, and run local A*. No fleet manager. | The strict robot-only policy. It trades global optimality for no central coordinator and failure recovery through re-auction. |
+| `decentralized` | Peer traffic coordination with local A* and no route manager. | The manager-free route option. |
 
-The decentralized task protocol is a market-based peer protocol: `TASK_NEW` carries a
-task epoch and bid deadline, `BID` carries a robot's local A* cost, and `AWARD` carries
-the deterministic winner and a lease expiry. Duplicate and late packets are idempotent;
-an expired lease reopens the task for a new auction epoch. The WMS is only a task injector
-and never assigns a robot or a route.
+## Task allocation policies
+
+Task allocation is selected independently from route and deadlock handling. The
+dashboard exposes exactly these two choices:
+
+| Allocation | Operation |
+| --- | --- |
+| `auction` | WMS announces tasks only; idle robots calculate local cost, broadcast `BID`, independently select `(cost, robot_id)`, and execute the winning `AWARD`. |
+| `hungarian` | WMS announces tasks; the fleet manager builds a robot-to-task cost matrix and uses the Hungarian algorithm to send directed awards. |
+
+The auction protocol is a market-based peer protocol: `TASK_NEW` carries a task epoch
+and bid deadline, `BID` carries a robot's local cost, and `AWARD` carries the
+deterministic winner and a lease expiry. Duplicate and late packets are idempotent; an
+expired lease reopens the task for a new auction epoch. The WMS is only a task injector
+and never assigns a robot or a route. The allocation choice works with every scenario.
 
 `--seeds N` pools runs so the safety statistics have enough exposure to mean something.
 
@@ -153,9 +166,10 @@ dishonesty this project is arguing against.
 
 ## The dashboard
 
-`python backend/server.py` then open <http://127.0.0.1:8000>. Pick a scenario, policy,
-fleet size and seed; the server runs the simulation and returns the map, every telemetry
-frame and the result summary, and the page plays it back with a scrubber.
+`python backend/server.py` then open <http://127.0.0.1:8000>. Pick a scenario, route
+policy, task allocation policy, fleet size and seed; the server runs the simulation and
+returns the map, every telemetry frame and the result summary, and the page plays it
+back with a scrubber.
 
 It draws the things that are otherwise invisible, because a warehouse of moving robots
 looks the same whether it is coordinating or getting lucky:
@@ -166,8 +180,8 @@ looks the same whether it is coordinating or getting lucky:
 - **wait-for arrows** — who is blocked on whom. Two arrows pointing at each other *is*
   the cycle the distributed deadlock detector searches for
 - **single-file blocks** — the runs of aisle the traffic layer applies block control to
-- **peer task auction** — the actual `TASK_NEW`, `BID`, `AWARD` and `TASK_DONE` datagrams,
-  with the WMS shown as an announcer rather than a winner selector
+- **task allocation** — the actual `TASK_NEW`, `BID`, `AWARD` and `TASK_DONE` datagrams,
+  with the WMS shown as an announcer rather than a winner selector for `auction`
 - **the human worker** — dashed ring, because they publish nothing and cannot be
   negotiated with. Only the onboard safety layer sees them at all
 

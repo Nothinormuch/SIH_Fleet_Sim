@@ -23,6 +23,7 @@ from src.messages import award, bid, decode, encode, heartbeat, task_new
 from src.metrics import poisson_rate_ci
 from src.planner import Reservations, astar, prioritized_plan, space_time_astar
 from src.settings import DEFAULT
+from src.task_allocation import ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN
 from src.transport import SimNetwork
 from src.world import Actuation, Sensors, World
 
@@ -136,13 +137,39 @@ def test_expired_peer_claim_reopens_a_new_auction_epoch():
 def test_decentralized_dashboard_run_has_no_fleet_manager():
     from src.main import run_for_dashboard
 
-    payload = run_for_dashboard("auction_test", POLICY_DECENTRALIZED,
+    payload = run_for_dashboard("dense_aisles", POLICY_DECENTRALIZED,
                                 robots=2, seed=0, duration=1.0)
     assert payload["meta"]["policy"] == POLICY_DECENTRALIZED
+    assert payload["meta"]["allocation_policy"] == ALLOCATION_AUCTION
     assert not any(frame["manager_alive"] for frame in payload["frames"])
     events = [event for frame in payload["frames"]
               for event in frame.get("auction_events", [])]
     assert {event["type"] for event in events} >= {"TN", "BD", "AW"}
+
+
+def test_allocation_is_selected_by_policy_on_a_normal_scenario():
+    from src.main import run_for_dashboard
+
+    auction = run_for_dashboard(
+        "dense_aisles", POLICY_DECENTRALIZED, allocation_policy=ALLOCATION_AUCTION,
+        robots=2, seed=0, duration=2.0)
+    auction_events = [event for frame in auction["frames"]
+                      for event in frame.get("auction_events", [])]
+    assert auction["meta"]["tasks"] == 8
+    assert auction["meta"]["allocation_policy"] == ALLOCATION_AUCTION
+    assert not any(frame["manager_alive"] for frame in auction["frames"])
+    assert {event["type"] for event in auction_events} >= {"TN", "BD", "AW"}
+
+    hungarian_run = run_for_dashboard(
+        "dense_aisles", POLICY_DECENTRALIZED,
+        allocation_policy=ALLOCATION_HUNGARIAN, robots=2, seed=0, duration=2.0)
+    hungarian_events = [event for frame in hungarian_run["frames"]
+                        for event in frame.get("auction_events", [])]
+    assert hungarian_run["meta"]["tasks"] == 8
+    assert hungarian_run["meta"]["allocation_policy"] == ALLOCATION_HUNGARIAN
+    assert any(frame["manager_alive"] for frame in hungarian_run["frames"])
+    assert {event["type"] for event in hungarian_events} >= {"TN", "AW"}
+    assert not any(event["type"] == "BD" for event in hungarian_events)
 
 
 def test_astar_respects_racks():

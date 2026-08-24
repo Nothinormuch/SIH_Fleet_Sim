@@ -52,7 +52,8 @@
       <h2>Run</h2>
       <div class="grid2">
         <label>Scenario<select id="scenario"></select></label>
-        <label>Policy<select id="policy"></select></label>
+        <label>Route policy<select id="policy"></select></label>
+        <label>Task allocation<select id="allocationPolicy"></select></label>
         <label>Robots<input type="number" id="robots" value="4" min="2" max="24"></label>
         <label>Seed<input type="number" id="seed" value="0" min="0"></label>
         <label>Duration (s)<input type="number" id="duration" value="120" min="10"
@@ -69,15 +70,15 @@
     </div>
 
     <div class="card">
-      <h2>Peer Task Auction</h2>
+      <h2>Task Allocation</h2>
       <div id="auctionSummary" class="auction-summary"></div>
       <div id="auctionLog" class="auction-log">
-        <p class="muted">Run a decentralized auction to see the wire events.</p>
+        <p class="muted">Run a simulation to see task-allocation messages.</p>
       </div>
     </div>
 
     <div class="card">
-      <h2>Result</h2>
+      <h2>Run Summary</h2>
       <div id="summary" class="summary">
         <p class="muted">No run yet.</p>
       </div>

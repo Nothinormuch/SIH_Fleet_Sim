@@ -29,9 +29,10 @@ async function boot() {
 
   try {
     const r = await fetch('/api/scenarios');
-    const { scenarios, policies } = await r.json();
+    const { scenarios, policies, allocation_policies } = await r.json();
     fill(el('scenario'), scenarios, 'crossing_chokepoint');
     fill(el('policy'), policies, 'hierarchical');
+    fill(el('allocationPolicy'), allocation_policies, 'auction');
   } catch (e) {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
   }
@@ -81,6 +82,7 @@ async function run() {
   const q = new URLSearchParams({
     scenario: el('scenario').value,
     policy: el('policy').value,
+    allocation_policy: el('allocationPolicy').value,
     robots: el('robots').value,
     seed: el('seed').value,
     duration: el('duration').value,
@@ -235,20 +237,31 @@ function draw() {
   updateManagerDot(frame);
   renderFleetPanel(frame);
   renderAuctionPanel(frame);
+  updateSummaryProgress(frame);
 }
 
 function updateManagerDot(frame) {
   const dot = el('mgrDot');
   const text = el('mgrText');
-  const policy = App.data.meta.policy;
-  if (policy === 'decentralized') {
-    dot.className = 'dot p2p';
-    text.textContent = 'WMS injector · peer auction';
+  const routePolicy = App.data.meta.policy;
+  const allocation = App.data.meta.allocation_policy;
+  if (allocation === 'auction') {
+    dot.className = 'dot ' + (frame.manager_alive ? 'up' : 'p2p');
+    text.textContent = frame.manager_alive
+      ? 'peer auction · route manager reachable'
+      : 'WMS injector · peer auction';
     return;
   }
-  if (policy === 'stop_and_wait' || policy === 'BIOS_1.0.0') {
+  if (allocation === 'hungarian') {
+    dot.className = 'dot ' + (frame.manager_alive ? 'up' : 'down');
+    text.textContent = frame.manager_alive
+      ? 'Hungarian task allocator reachable'
+      : 'Hungarian task allocator DOWN';
+    return;
+  }
+  if (routePolicy === 'stop_and_wait' || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot';
-    text.textContent = policy === 'BIOS_1.0.0'
+    text.textContent = routePolicy === 'BIOS_1.0.0'
       ? 'no fleet manager · peer traffic'
       : 'no fleet manager (baseline)';
     return;
@@ -316,7 +329,7 @@ function renderAuctionPanel(frame) {
   const log = el('auctionLog');
   if (!summary || !log) return;
 
-  const policy = App.data.meta.policy;
+  const allocation = App.data.meta.allocation_policy;
   const events = App.auctionEvents.filter(e => e.t <= frame.t + 1e-6);
   const visibleEvents = uniqueAuctionEvents(events);
   const counts = { TN: 0, BD: 0, AW: 0, TD: 0 };
@@ -324,19 +337,18 @@ function renderAuctionPanel(frame) {
     if (counts[event.type] !== undefined) counts[event.type]++;
   }
   const renewals = events.filter(e => e.type === 'AW').length - counts.AW;
-  summary.innerHTML = policy === 'decentralized'
+  summary.innerHTML = allocation === 'auction'
     ? `<span class="auction-proof">WMS announces only</span>
        <span>${counts.TN} tasks · ${counts.BD} bids · ${counts.AW} awards ·
        ${renewals} lease renewals · ${counts.TD} done</span>`
-    : policy === 'BIOS_1.0.0'
-    ? `<span class="auction-proof">BIOS peer auction</span>
-       <span>${counts.TN} tasks · ${counts.BD} bids · ${counts.AW} awards ·
-       ${renewals} lease renewals</span>`
-    : `<span>${escapeHtml(policy)} task messages</span>
-       <span>${counts.TN} announced · ${counts.AW} awards</span>`;
+    : allocation === 'hungarian'
+    ? `<span class="auction-proof">WMS -> Hungarian manager</span>
+       <span>${counts.TN} announced · ${counts.AW} assignments · ${counts.TD} done</span>`
+    : `<span>pre-assigned workload</span>
+       <span>${counts.TD} done</span>`;
 
   if (!visibleEvents.length) {
-    log.innerHTML = '<p class="muted">No auction messages yet.</p>';
+    log.innerHTML = '<p class="muted">No task-allocation messages yet.</p>';
     return;
   }
 
@@ -367,39 +379,54 @@ function renderSummary(s, meta) {
   const finished = s.completed_all;
 
   el('summary').innerHTML = `
+    <div class="summary-live">
+      <span>Playback progress</span>
+      <strong id="progressTasks">0 / ${meta.tasks}</strong>
+      <small id="progressTime">t = 0.0 s</small>
+    </div>
+
+    <p class="summary-final-label">
+      Final result after complete simulation
+    </p>
+
     <dl>
       <dt>Tasks completed</dt>
-      <dd class="${finished ? 'good' : ''}">${s.tasks_completed} / ${s.tasks_announced}</dd>
+      <dd>${s.tasks_completed} / ${s.tasks_announced}</dd>
+
       <dt>${finished ? 'Makespan' : 'Ran for'}</dt>
       <dd>${s.makespan_s.toFixed(1)} s${finished ? '' : ' (timeout)'}</dd>
-      <dt>Robot&ndash;robot contacts</dt>
-      <dd class="${s.contacts_robot_robot ? 'bad' : 'good'}">${s.contacts_robot_robot}</dd>
-      <dt>Robot&ndash;human contacts</dt>
-      <dd class="${s.contacts_robot_human ? 'bad' : 'good'}">${s.contacts_robot_human}</dd>
+
+      <dt>Robot-robot contacts</dt>
+      <dd>${s.contacts_robot_robot}</dd>
+
+      <dt>Robot-human contacts</dt>
+      <dd>${s.contacts_robot_human}</dd>
+
       <dt>Worst separation</dt>
       <dd>${s.min_separation_m.toFixed(2)} m</dd>
+
       <dt>Deadlocks broken</dt>
       <dd>${s.deadlocks_detected}</dd>
-      <dt>Give-way manoeuvres</dt>
-      <dd>${s.retreats}</dd>
-      <dt>Messages / robot / s</dt>
-      <dd>${s.msgs_per_robot_s.toFixed(1)}</dd>
-      <dt>Bytes / robot / s</dt>
-      <dd>${s.bytes_per_robot_s.toFixed(0)}</dd>
-      <dt>Planner CPU (mean / max)</dt>
-      <dd>${s.plan_cpu_mean_ms.toFixed(2)} / ${s.plan_cpu_max_ms.toFixed(1)} ms</dd>
-      <dt>Time in degraded mode</dt>
-      <dd>${s.seconds_degraded.toFixed(0)} s</dd>
     </dl>
-    <p class="caveat">
-      ${contacts === 0
-        ? `Zero contacts over ${(s.robot_hours * 1000).toFixed(1)} milli-robot-hours bounds
-           the collision <i>rate</i>; it does not establish zero. Pool seeds with
-           <code>run.py --seeds N</code> for an interval worth quoting.`
-        : `${contacts} contact(s) recorded. A contact is a physical overlap in the
-           ground-truth world, checked swept rather than at frame endpoints.`}
-      ${finished ? '' : ' This run did not complete its task set, so its duration is a timeout and not a makespan &mdash; the two are not comparable.'}
-    </p>`;
+  `;
+}
+
+function updateSummaryProgress(frame) {
+  const done = (frame.fleet || [])
+    .reduce((sum, robot) => sum + (robot.done || 0), 0);
+
+  const total = App.data.meta.tasks;
+
+  const taskElement = el('progressTasks');
+  const timeElement = el('progressTime');
+
+  if (taskElement) {
+    taskElement.textContent = `${done} / ${total}`;
+  }
+
+  if (timeElement) {
+    timeElement.textContent = `t = ${frame.t.toFixed(1)} s`;
+  }
 }
 
 boot();

@@ -9,8 +9,9 @@ the task mix - so a number quoted without a pinned scenario means nothing, and c
 manufactured to order by choosing a friendly map.
 
 Every scenario here therefore fixes the map, the start cells, the exact task stream and
-the RNG seed. The same task list is handed to every policy, pre-assigned identically, so
-the only variable between runs is how the fleet handles conflict.
+the RNG seed. Route-policy comparisons use identical pre-assigned queues; when one of
+the task-allocation policies is selected, the same queues are flattened and announced
+so the selected allocator becomes the only allocation variable.
 
 `open_floor_control` exists to keep us honest: a map with no chokepoints where every
 policy should tie. If our policy "wins" there too, the harness is measuring something
@@ -42,7 +43,8 @@ class Scenario:
     name: str
     env: Warehouse
     starts: list[Cell]
-    # rid index -> ordered task queue. Pre-assigned so allocation is not a variable.
+    # rid index -> ordered task queue for route-only comparisons. Allocation policies
+    # flatten these queues and announce the tasks instead.
     assignments: list[list[Task]]
     humans: list[list[Cell]] = field(default_factory=list)
     duration_s: float = 300.0
@@ -53,8 +55,8 @@ class Scenario:
     partition_groups: list[list[str]] = field(default_factory=list)
     pose_noise_m: float = 0.02
     use_auction: bool = False
-    # Tasks the WMS announces over multicast instead of pre-assigning. Only the
-    # auction scenario uses these; everywhere else allocation is held constant.
+    # Optional unassigned workload. Allocation policies can also flatten the normal
+    # round-robin queues, so task allocation is selected by policy rather than map.
     unassigned: list[Task] = field(default_factory=list)
     seed: int = 0
 
@@ -230,25 +232,6 @@ def open_floor_control(n_robots: int = 8, tasks_per_robot: int = 4,
                     _round_robin(tasks, n_robots), duration_s=600.0, seed=seed)
 
 
-def auction_test(n_robots: int = 8, n_tasks: int = 32, seed: int = 0) -> Scenario:
-    """Task allocation under test: nothing pre-assigned, robots bid over multicast.
-
-    Pairs with `manager_dies` to cover requirement 3 of the statement - automatic
-    re-assignment when a robot is blocked or the manager is gone.
-    """
-    env = classic_warehouse()
-    rng = random.Random(seed)
-    picks = _aisle_cells(env)
-    drops = list(env.stations) + list(env.docks)
-    tasks = [Task(f"T{i:03d}", rng.choice(picks), rng.choice(drops), 0.0)
-             for i in range(n_tasks)]
-    sc = Scenario("auction_test", env, _spread_starts(env, n_robots, rng),
-                  [[] for _ in range(n_robots)], duration_s=600.0,
-                  kill_manager_at=45.0, use_auction=True, seed=seed)
-    sc.unassigned = tasks                          # announced by the WMS at t=0
-    return sc
-
-
 SCENARIOS = {
     "crossing_chokepoint": crossing_chokepoint,
     "dense_aisles": dense_aisles,
@@ -257,5 +240,4 @@ SCENARIOS = {
     "dead_zone_infra": lambda **kw: dead_zone(mesh_radio=False, **kw),
     "dead_zone_mesh": lambda **kw: dead_zone(mesh_radio=True, **kw),
     "open_floor_control": open_floor_control,
-    "auction_test": auction_test,
 }

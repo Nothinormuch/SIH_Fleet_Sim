@@ -245,6 +245,38 @@ select { cursor: pointer; }
 /* ------------------------------------------------------------------ summary */
 
 .summary { font-size: 12px; }
+.summary-live {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  margin-bottom: 11px;
+  padding: 8px 9px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+}
+
+.summary-live span {
+  color: var(--ink-dim);
+}
+
+.summary-live strong {
+  font: 600 13px/1.3 var(--mono);
+  color: var(--accent);
+  text-align: right;
+}
+
+.summary-live small {
+  grid-column: 1 / -1;
+  color: var(--ink-faint);
+}
+
+.summary-final-label {
+  margin: 0 0 7px;
+  color: var(--ink-faint);
+  font: 500 10px/1.2 var(--mono);
+  text-transform: uppercase;
+}
 .summary dl { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; margin: 0; }
 .summary dt { color: var(--ink-faint); }
 .summary dd { margin: 0; font: 500 12px/1.4 var(--mono); text-align: right; }

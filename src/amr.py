@@ -49,6 +49,7 @@ from .geometry import (Cell, angle_diff, bearing, cell_center, clamp, dist,
                        manhattan, to_cell)
 from .planner import astar
 from .settings import Config
+from .task_allocation import ALLOCATION_AUCTION, validate_allocation_policy
 from .world import Actuation, Sensors
 
 # ---------------------------------------------------------------------- constants
@@ -59,6 +60,7 @@ POLICY_HIERARCHICAL = "hierarchical"
 POLICY_BIOS = "BIOS_1.0.0"
 POLICY_DECENTRALIZED = "decentralized"
 DECENTRAL_POLICIES = (POLICY_BIOS, POLICY_DECENTRALIZED)
+CENTRAL_POLICIES = (POLICY_CENTRAL,)
 POLICIES = (POLICY_STOP_WAIT, POLICY_CENTRAL, POLICY_HIERARCHICAL,
             POLICY_BIOS, POLICY_DECENTRALIZED)
 
@@ -103,13 +105,16 @@ class AMRBrain:
     """One robot's entire decision-making. Pure: no sockets, no clocks, no globals."""
 
     def __init__(self, rid: str, env: Warehouse, cfg: Config,
-                 policy: str = POLICY_HIERARCHICAL, home: Cell = (0, 0)) -> None:
+                 policy: str = POLICY_HIERARCHICAL, home: Cell = (0, 0),
+                 allocation_policy: str | None = None) -> None:
         if policy not in POLICIES:
             raise ValueError(f"unknown policy {policy!r}")
+        validate_allocation_policy(allocation_policy)
         self.rid = rid
         self.env = env
         self.cfg = cfg
         self.policy = policy
+        self.allocation_policy = allocation_policy
         self.home = home
         # Single-file blocks, shared and cached across the fleet. Acquiring a whole
         # block before entering is what stops two robots meeting halfway down a
@@ -141,9 +146,9 @@ class AMRBrain:
         # difference could be caused by who got which job rather than by how the
         # fleet handles traffic, and the 20% claim would be unattributable.
         self.queue: list[Task] = []
-        # The distributed auction is exercised by its own scenario instead, where
-        # allocation is the thing under test.
-        self.use_auction = False
+        # Compatibility flag for callers from the earlier scenario-based runner. New
+        # code should pass allocation_policy explicitly instead.
+        self.use_auction = allocation_policy == ALLOCATION_AUCTION
         self.completed: list[tuple[str, float, float]] = []   # (tid, start_t, done_t)
         self._task_started_t = 0.0
 
@@ -324,7 +329,7 @@ class AMRBrain:
         """Decide whether to enter the next cell. Advisory information only."""
         self._hold = False
 
-        if self.policy == POLICY_CENTRAL:
+        if self.policy in CENTRAL_POLICIES:
             # A purely centralised fleet does exactly what the manager scheduled, plus
             # Layer 0. No peer negotiation is layered on top - adding it would quietly
             # hand the baseline some of our own mechanism and flatter our result.
@@ -951,7 +956,7 @@ class AMRBrain:
             if self.penalty[c] < 0.1:
                 del self.penalty[c]
 
-        if self.policy == POLICY_CENTRAL:
+        if self.policy in CENTRAL_POLICIES:
             if self.mode != MODE_CENTRAL:
                 # The single point of failure, demonstrated rather than argued. A
                 # purely centralised fleet with an unreachable manager does not
@@ -1024,6 +1029,10 @@ class AMRBrain:
 
     # ================================================================== tasks
 
+    def _auction_enabled(self) -> bool:
+        """Whether this robot owns the peer-auction allocation responsibility."""
+        return self.allocation_policy == ALLOCATION_AUCTION or self.use_auction
+
     def _task_loop(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
         if self.task is None and sensors.battery_frac < 0.15 and self.env.docks:
@@ -1044,9 +1053,7 @@ class AMRBrain:
                 self._accept_task(t, self.open_tasks[assigned], sensors.cell)
             elif self.queue:
                 self._accept_task(t, self.queue.pop(0), sensors.cell)
-            elif self.use_auction and (
-                    self.policy in DECENTRAL_POLICIES
-                    or self.policy == POLICY_HIERARCHICAL):
+            elif self._auction_enabled():
                 self._run_auction(t, sensors, outbox)
             elif self.goal is not None and sensors.cell == self.goal:
                 self.goal = None            # parked clear of the working aisles
@@ -1343,7 +1350,7 @@ class AMRBrain:
 
     def _broadcast(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
-        if self.policy in (POLICY_STOP_WAIT, POLICY_CENTRAL):
+        if self.policy in (POLICY_STOP_WAIT, *CENTRAL_POLICIES):
             # Heartbeats only. The dashboard has to work for every baseline or the
             # comparison quietly becomes "with telemetry vs without", and the manager
             # needs poses to plan. Neither baseline shares *intent* with peers - that
@@ -1352,6 +1359,7 @@ class AMRBrain:
                 self.rid, self._next_seq(), t, sensors.pose, sensors.cell,
                 sensors.battery_frac, self.mode, self.state,
                 self.task.tid if self.task else None))
+            self._broadcast_auction_lease(t, outbox)
             return
 
         # Latch the key at the moment we publish it, so peers and we are comparing
@@ -1365,25 +1373,30 @@ class AMRBrain:
             blocked_on=self.blocked_on if self.blocked_on != "gate" else None,
             goal=self.goal))
 
-        if (self.use_auction
-                and self.policy in (*DECENTRAL_POLICIES, POLICY_HIERARCHICAL)
-                and self.task is not None
-                and t - self._last_lease_broadcast >= 1.0 /
-                self.cfg.rates.heartbeat_hz):
-            claim = self._task_claims.get(self.task.tid)
-            if claim is not None and claim[2] == self.rid:
-                self._last_lease_broadcast = t
-                lease_until = t + self.cfg.traffic.auction_lease_s
-                self._task_claims[self.task.tid] = (
-                    claim[0], claim[1], self.rid, lease_until)
-                outbox.append(msg.award(
-                    self.rid, self._next_seq(), t, self.task.tid, claim[1],
-                    epoch=claim[0], lease_until=lease_until))
+        self._broadcast_auction_lease(t, outbox)
 
         cells, windows = self._intent_horizon(t)
         if cells:
             outbox.append(msg.intent(self.rid, self._next_seq(), t, cells, windows,
                                      self._pub_priority, self.epoch))
+
+    def _broadcast_auction_lease(self, t: float,
+                                  outbox: list[msg.Message]) -> None:
+        """Renew a peer-auction award independently of the motion policy."""
+        if (not self._auction_enabled() or self.task is None
+                or t - self._last_lease_broadcast < 1.0 /
+                self.cfg.rates.heartbeat_hz):
+            return
+        claim = self._task_claims.get(self.task.tid)
+        if claim is None or claim[2] != self.rid:
+            return
+        self._last_lease_broadcast = t
+        lease_until = t + self.cfg.traffic.auction_lease_s
+        self._task_claims[self.task.tid] = (
+            claim[0], claim[1], self.rid, lease_until)
+        outbox.append(msg.award(
+            self.rid, self._next_seq(), t, self.task.tid, claim[1],
+            epoch=claim[0], lease_until=lease_until))
 
     def _intent_horizon(self, t: float) -> tuple[list[Cell], list[tuple[float, float]]]:
         h = self.cfg.traffic.intent_horizon
