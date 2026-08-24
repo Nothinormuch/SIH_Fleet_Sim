@@ -189,7 +189,9 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                 if trace is not None and m.type in AUCTION_MESSAGE_TYPES:
                     auction_events.append(_auction_event(m))
             cmds[rid] = act
-            st.carrying = brains[rid].task.tid if brains[rid].task else None
+            # Payload is physically on the chassis ONLY after arrival at pick location (in to_drop state)
+            b = brains[rid]
+            st.carrying = b.task.tid if (b.task and b.goal == b.task.drop) else None
 
         world.step(dt, cmds)
 
@@ -200,6 +202,9 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                 {"id": r, "state": b.state, "mode": b.mode,
                  "task": b.task.tid if b.task else None,
                  "goal": list(b.goal) if b.goal else None,
+                 "pick": list(b.task.pick) if b.task else None,
+                 "drop": list(b.task.drop) if b.task else None,
+                 "carry": b.task.tid if (b.task and b.goal == b.task.drop) else None,
                  # The intent horizon, i.e. exactly what this robot is broadcasting.
                  # The dashboard draws these as reservation cones so the coordination
                  # is visible rather than implied - decentralisation is invisible on

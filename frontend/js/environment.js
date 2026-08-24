@@ -88,10 +88,18 @@ class View {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.cell = 32;
+    this.baseCell = 32;
     this.ox = 0;
     this.oy = 0;
+    this.baseOx = 0;
+    this.baseOy = 0;
     this.map = null;
     this.metersPerCell = 1;
+    this.cameraMode = 'overview'; // 'overview' | 'follow' | 'pov'
+    this.targetId = null;
+    this.zoom = 2.8;
+    this.camRotation = 0;
+    this.currentCam = { x: 0, y: 0, th: 0 };
   }
 
   /* Size the backing store to the CSS box times DPR, then fit the map inside it.
@@ -101,7 +109,7 @@ class View {
     if (Number.isFinite(metersPerCell) && metersPerCell > 0) {
       this.metersPerCell = metersPerCell;
     }
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
     const box = this.canvas.getBoundingClientRect();
     this.canvas.width = Math.max(1, Math.round(box.width * dpr));
     this.canvas.height = Math.max(1, Math.round(box.height * dpr));
@@ -111,13 +119,66 @@ class View {
     if (!this.map) return;
 
     const pad = 26;
-    this.cell = Math.max(
+    this.baseCell = Math.max(
       8,
       Math.floor(Math.min((box.width - pad * 2) / this.map.width,
                           (box.height - pad * 2) / this.map.height))
     );
-    this.ox = (box.width - this.map.width * this.cell) / 2;
-    this.oy = (box.height - this.map.height * this.cell) / 2;
+    this.baseOx = (box.width - this.map.width * this.baseCell) / 2;
+    this.baseOy = (box.height - this.map.height * this.baseCell) / 2;
+    this.updateCameraTransform();
+  }
+
+  setCamera(mode, targetId, zoom) {
+    if (mode !== undefined) this.cameraMode = mode;
+    if (targetId !== undefined) this.targetId = targetId;
+    if (zoom !== undefined) this.zoom = zoom;
+    this.updateCameraTransform();
+  }
+
+  updateCameraTransform(targetPos) {
+    if (!this.map) return;
+    if (targetPos) {
+      this.currentCam.x = targetPos.x;
+      this.currentCam.y = targetPos.y;
+      this.currentCam.th = targetPos.th;
+    }
+
+    if (this.cameraMode === 'overview' || !this.targetId || !targetPos) {
+      this.cell = this.baseCell;
+      this.ox = this.baseOx;
+      this.oy = this.baseOy;
+      this.camRotation = 0;
+      return;
+    }
+
+    // Follow or POV close-up camera
+    this.cell = Math.round(this.baseCell * (this.zoom || 2.8));
+    const cx = this.currentCam.x / this.metersPerCell;
+    const cy = this.currentCam.y / this.metersPerCell;
+    this.ox = this.cssW / 2 - cx * this.cell;
+    this.oy = this.cssH / 2 - (this.map.height - cy) * this.cell;
+
+    if (this.cameraMode === 'pov') {
+      // Rotate viewport around center so robot is facing +Y (up)
+      this.camRotation = this.currentCam.th - Math.PI / 2;
+    } else {
+      this.camRotation = 0;
+    }
+  }
+
+  screenToWorld(sx, sy) {
+    let px = sx, py = sy;
+    if (this.camRotation !== 0) {
+      const cx = this.cssW / 2, cy = this.cssH / 2;
+      const cos = Math.cos(-this.camRotation), sin = Math.sin(-this.camRotation);
+      const dx = px - cx, dy = py - cy;
+      px = cx + (dx * cos - dy * sin);
+      py = cy + (dx * sin + dy * cos);
+    }
+    const gridX = (px - this.ox) / this.cell;
+    const gridY = this.map.height - ((py - this.oy) / this.cell);
+    return [gridX * this.metersPerCell, gridY * this.metersPerCell];
   }
 
   /* Grid cells -> CSS pixels. Static fixtures and intent paths use cell units. */
@@ -215,24 +276,20 @@ function findBlocks(map, minLen) {
 
 /* ------------------------------------------------------------------ static layer */
 
-/* The floor and furniture never change during playback, so they are rendered once to an
- * offscreen canvas and blitted per frame. At 60 fps with a few hundred cells the
- * difference between this and redrawing every tile is the whole frame budget. */
-function buildStaticLayer(view, map, imgs) {
-  const dpr = window.devicePixelRatio || 1;
-  const off = document.createElement('canvas');
-  off.width = Math.round(view.cssW * dpr);
-  off.height = Math.round(view.cssH * dpr);
-  const ctx = off.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.imageSmoothingQuality = 'high';
-
-  // floor
+/* Render floor, tiles, racks and blocks directly to any canvas context using current view transform */
+function renderStaticFloor(ctx, view, map, imgs) {
+  // Floor panels and navigation tiles
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
       const v = gridAt(map, x, y);
       if (v === RACK) continue;
       const [sx, sy, w, h] = view.cellRect(x, y);
+
+      // Skip offscreen tiles in zoomed camera mode
+      if (sx + w < -100 || sx > view.cssW + 100 || sy + h < -100 || sy > view.cssH + 100) {
+        if (view.camRotation === 0) continue;
+      }
+
       let img = null, rotate = false;
       if (v === STATION) img = imgs.tile_station;
       else if (v === DOCK) img = imgs.tile_charging;
@@ -277,13 +334,26 @@ function buildStaticLayer(view, map, imgs) {
       ctx.beginPath();
       if (!has(cx, cy + 1)) { ctx.moveTo(sx, sy); ctx.lineTo(sx + w, sy); }
       if (!has(cx, cy - 1)) { ctx.moveTo(sx, sy + h); ctx.lineTo(sx + w, sy + h); }
-      if (!has(cx - 1, cy)) { ctx.moveTo(sx, sy); ctx.lineTo(sx, sy + h); }
+      if (!has(cx - 1, cy)) { ctx.moveTo(sx, sy); ctx.lineTo(sx + w, sy); }
       if (!has(cx + 1, cy)) { ctx.moveTo(sx + w, sy); ctx.lineTo(sx + w, sy + h); }
       ctx.stroke();
     }
   }
   ctx.restore();
+}
 
+/* The floor and furniture never change during playback, so they are rendered once to an
+ * offscreen canvas and blitted per frame in overview mode. */
+function buildStaticLayer(view, map, imgs) {
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  const off = typeof document !== 'undefined' ? document.createElement('canvas') : { getContext: () => ({ setTransform: () => {} }) };
+  off.width = Math.round(view.cssW * dpr);
+  off.height = Math.round(view.cssH * dpr);
+  const ctx = off.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingQuality = 'high';
+
+  renderStaticFloor(ctx, view, map, imgs);
   return off;
 }
 
