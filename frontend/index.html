@@ -61,6 +61,30 @@
           <button id="runBtn" class="primary">Run simulation</button></label>
       </div>
       <p class="status" id="status">Pick a scenario and press Run.</p>
+
+      <!-- Only meaningful for BIOS_4, so it is hidden until BIOS_4 is selected. A
+           model picker permanently on screen next to four policies that cannot use
+           one is an invitation to wonder which of them it applies to. -->
+      <div id="bios4" class="bios4" hidden>
+        <div class="bios4-row">
+          <button id="trainBtn">Train model</button>
+          <button id="uploadBtn">Upload model</button>
+          <input type="file" id="modelFile" accept="application/json,.json" hidden>
+        </div>
+        <div class="bios4-row bios4-params">
+          <label>pop<input type="number" id="population" value="24" min="4" max="64"></label>
+          <label>gens<input type="number" id="generations" value="30" min="1" max="200"></label>
+        </div>
+        <div id="trainProgress" hidden>
+          <div class="bios4-bar"><div id="trainBar"></div></div>
+          <!-- Best fitness per generation. A number that only goes up tells you
+               nothing about whether the search is working; the shape does. -->
+          <canvas id="trainChart" width="280" height="56"></canvas>
+          <p class="status" id="trainStatus"></p>
+          <button id="cancelBtn" class="ghost" hidden>Cancel</button>
+        </div>
+        <p class="status" id="modelStatus">No model loaded.</p>
+      </div>
     </div>
 
     <div class="card">

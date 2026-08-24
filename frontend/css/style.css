@@ -237,3 +237,27 @@ select { cursor: pointer; }
   main { grid-template-columns: 1fr; grid-template-rows: minmax(0,1fr) auto; }
   .panel { border-left: none; border-top: 1px solid var(--line); max-height: 46vh; }
 }
+
+
+/* ------------------------------------------------------------ BIOS_4 panel */
+/* Revealed only when BIOS_4 is the selected policy - see main.js:syncPolicyUI. A
+   model picker permanently on screen next to four policies that cannot use one is an
+   invitation to wonder which of them it applies to. */
+
+.bios4 { margin-top: 10px; border-top: 1px solid var(--line, #2a2f3a); padding-top: 10px; }
+.bios4-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.bios4-row button { flex: 1; }
+.bios4-params label { flex: 1; display: flex; align-items: center; gap: 4px;
+                      font-size: 11px; opacity: .75; }
+.bios4-params input { width: 100%; min-width: 0; }
+/* NOT `.bar` - that class is already the 52px page header, and reusing it here
+   inherited display:flex, padding and a border onto a 4px progress strip, which
+   collapsed the fill to zero height. A generic class name borrowed from another
+   component is how that happens. */
+.bios4-bar { height: 4px; background: rgba(255, 255, 255, .08); border-radius: 2px;
+             overflow: hidden; margin-bottom: 6px; }
+.bios4-bar > div { height: 100%; width: 0; background: var(--accent, #5b8cff);
+                   transition: width .3s ease; }
+#trainChart { display: block; width: 100%; height: 56px; margin-bottom: 4px; }
+.bios4 button.ghost { background: transparent; border: 1px solid var(--line, #2a2f3a);
+                      opacity: .8; }
