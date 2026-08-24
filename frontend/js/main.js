@@ -29,8 +29,8 @@ async function boot() {
   try {
     const r = await fetch('/api/scenarios');
     const { scenarios, policies } = await r.json();
-    fill(el('scenario'), scenarios, 'crossing_chokepoint');
-    fill(el('policy'), policies, 'hierarchical');
+    fill(el('scenario'), scenarios, 'open_floor_control');
+    fill(el('policy'), policies, 'BIOS_PIBT.2');
   } catch (e) {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
   }
@@ -54,7 +54,7 @@ async function boot() {
   });
   window.addEventListener('resize', () => {
     if (!App.data) return;
-    App.view.resize(App.data.map);
+    App.view.resize(App.data.map, App.data.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, App.data.map, App.imgs);
     draw();
   });
@@ -96,7 +96,7 @@ async function run() {
 
     App.data = payload;
     App.simTime = 0;
-    App.view.resize(payload.map);
+    App.view.resize(payload.map, payload.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, payload.map, App.imgs);
 
     const n = payload.frames.length;
@@ -225,7 +225,11 @@ function draw() {
     ctx.drawImage(App.staticLayer, 0, 0, App.view.cssW, App.view.cssH);
   }
   drawNetwork(ctx, App.view, frame, App.imgs, frame.t);
-  drawFleet(ctx, App.view, frame, App.imgs, { labels: App.view.cell >= 22 });
+  const diameterCells = App.data.meta.robot_diameter_m / App.data.meta.cell_m;
+  drawFleet(ctx, App.view, frame, App.imgs, {
+    labels: App.view.cell >= 22,
+    robotSizeCells: Math.max(0.55, diameterCells),
+  });
 
   el('scrub').value = idx;
   el('clockNow').textContent = frame.t.toFixed(1);
@@ -240,6 +244,11 @@ function updateManagerDot(frame) {
   if (policy === 'stop_and_wait') {
     dot.className = 'dot';
     text.textContent = 'no fleet manager (baseline)';
+    return;
+  }
+  if (policy === 'BIOS_PIBT.1' || policy === 'BIOS_PIBT.2' || policy === 'BIOS_1.0.0') {
+    dot.className = 'dot up';
+    text.textContent = 'edge-only peer coordination · no manager';
     return;
   }
   const alive = frame.manager_alive;
@@ -262,13 +271,17 @@ function renderFleetPanel(frame) {
     const waiting = f.blocked_on
       ? (f.blocked_on === 'gate' ? 'awaiting block' : 'waiting on ' + f.blocked_on)
       : (f.task ? 'task ' + f.task : 'unassigned');
+    const pk = f.priority_key;
+    const priority = pk
+      ? ` · P[e${pk[0]} x${pk[1]} w${pk[2]} a${pk[3]} l${pk[4]}]`
+      : '';
 
     return `
       <div class="robot" style="border-left-color:${colour}">
         <span class="swatch" style="background:${colour}"></span>
         <div>
           <div class="rid">${r.id}</div>
-          <div class="meta">${waiting}</div>
+          <div class="meta">${waiting}${priority}</div>
           <div class="batt"><i class="${battCls}" style="width:${batt}%"></i></div>
         </div>
         <div class="right">
@@ -281,7 +294,8 @@ function renderFleetPanel(frame) {
 }
 
 function renderSummary(s, meta) {
-  const contacts = s.contacts_robot_robot + s.contacts_robot_human;
+  const contacts = s.contacts_robot_robot + s.contacts_robot_human
+                 + s.contacts_robot_rack;
   const finished = s.completed_all;
 
   el('summary').innerHTML = `
@@ -294,6 +308,8 @@ function renderSummary(s, meta) {
       <dd class="${s.contacts_robot_robot ? 'bad' : 'good'}">${s.contacts_robot_robot}</dd>
       <dt>Robot&ndash;human contacts</dt>
       <dd class="${s.contacts_robot_human ? 'bad' : 'good'}">${s.contacts_robot_human}</dd>
+      <dt>Robot&ndash;rack contacts</dt>
+      <dd class="${s.contacts_robot_rack ? 'bad' : 'good'}">${s.contacts_robot_rack}</dd>
       <dt>Worst separation</dt>
       <dd>${s.min_separation_m.toFixed(2)} m</dd>
       <dt>Deadlocks broken</dt>

@@ -41,6 +41,7 @@ const HALO_FOR = {
 function drawFleet(ctx, view, frame, imgs, opts) {
   const fleetById = {};
   for (const f of (frame.fleet || [])) fleetById[f.id] = f;
+  const robotSizeCells = (opts && opts.robotSizeCells) || 0.7;
 
   // Humans first: they belong on the floor plane with the robots, and drawing them
   // under keeps a robot that is about to hit one visible rather than hidden.
@@ -53,13 +54,13 @@ function drawFleet(ctx, view, frame, imgs, opts) {
     const colour = robotColour(r.id);
 
     const halo = imgs[HALO_FOR[info.state] || 'halo_idle'];
-    drawSprite(ctx, view, halo, r.x, r.y, null, 1.3, 0.85);
+    drawSprite(ctx, view, halo, r.x, r.y, null, robotSizeCells * 1.35, 0.85);
 
     // Robot and payload rotate together as one composite; rotating them separately and
     // hoping the centres agree produces visible drift at odd angles.
     const sprite = robotSprite(imgs, r.id);
     const [sx, sy] = view.worldToScreen(r.x, r.y);
-    const size = view.cell;
+    const size = view.cell * robotSizeCells;
     ctx.save();
     ctx.translate(sx, sy);
     ctx.rotate(Math.PI / 2 - r.th);

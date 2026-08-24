@@ -162,11 +162,20 @@ class TrafficSpec:
     # BIOS_1.0.0 block-token lifetime. Held only while physically inside the block
     # (re-broadcast every heartbeat), this just needs to cover entry + propagation.
     bios_claim_ttl_s: float = 4.0
+    # BIOS_PIBT priorities age in stable discrete epochs and inheritance recursion is
+    # bounded defensively even though a physical conflict chain cannot exceed N.
+    priority_age_quantum_s: float = 1.0
+    priority_max_depth: int = 64
 
 
 @dataclass(frozen=True)
 class Config:
-    cell_m: float = 1.0
+    # Centre-to-centre lane pitch.  With a 0.70 m footprint, 0.30 m standstill guard
+    # and 0.02 m pose noise, the old 1.00 m pitch had no positive clearance budget:
+    # two correctly centred neighbours sat exactly on the safety threshold.  1.40 m
+    # leaves 0.70 m between footprints and makes the discrete one-cell invariant
+    # physically executable instead of relying on recovery creep.
+    cell_m: float = 1.4
     robot: RobotSpec = field(default_factory=RobotSpec)
     rates: Rates = field(default_factory=Rates)
     net: NetSpec = field(default_factory=NetSpec)

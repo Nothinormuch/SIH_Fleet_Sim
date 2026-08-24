@@ -148,7 +148,12 @@ def crossing_chokepoint(n_robots: int = 4, tasks_per_robot: int = 3,
 def dense_aisles(n_robots: int = 8, tasks_per_robot: int = 4,
                  seed: int = 0) -> Scenario:
     """A realistic warehouse under load: many robots, narrow aisles, mixed routes."""
-    env = classic_warehouse()
+    # Capacity is part of the scenario, not something a priority rule can invent.
+    # The original fixed 31x21 floor gives 399 free cells and is the pinned <=24 AMR
+    # benchmark.  A requested 100-AMR demo now receives roughly four times the floor
+    # area instead of silently cramming one quarter of all cells with chassis.
+    env = (classic_warehouse() if n_robots <= 24
+           else classic_warehouse(width=61, height=41, name="classic_large"))
     rng = random.Random(seed)
     picks = _aisle_cells(env)
     drops = list(env.stations) + list(env.docks)
