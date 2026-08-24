@@ -1,21 +1,37 @@
-# SIH_Fleet_Sim — SIH26123
+# SIH_Fleet_Priority — SIH26123
 
 **Edge-AI Based Distributed Fleet Coordination for Autonomous Mobile Robots (AMRs) in
 Smart Warehouses** · Bharat Electronics Limited · Software · Robotics and Drones
 
 A multi-robot warehouse simulation, a peer-to-peer coordination protocol, and a
-benchmark harness that measures the three coordination policies against each other on
-fixed, seeded scenarios.
+benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 ```bash
 python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m pytest tests -q                # 19 tests
-python run.py --scenario crossing_chokepoint --policy all --robots 4 --seeds 3
-python run.py --scenario dense_aisles --policy hierarchical --json out/run.json
+python -m pytest tests -q                # 36 tests
+python run.py --scenario open_floor_control --policy BIOS_PIBT.2 --robots 4
+python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
 ```
 
 The simulation core and the benchmark have **no third-party dependencies** — stdlib
 only, so a robot node drops onto a bare Raspberry Pi image with no build step.
+
+## Decentralized priority algorithm
+
+The default high-density policy is `BIOS_PIBT.2`. Every AMR broadcasts a
+frozen lexicographic priority plus its next-cell intent. On grid-like rack maps it
+plans on a strongly connected one-way circulation graph and takes an expiring,
+two-phase peer lease on every destination cell. This prevents head-on entry and restores
+one-robot-per-cell ownership before a queue forms. Merge contenders use the same frozen
+total order; no process assigns moves and the dashboard is a passive observer.
+
+Maps that cannot be oriented without losing reachability retain the V1 PIBT/block-lease
+fallback. Local 50 Hz protective stopping remains authoritative for every policy.
+
+See [`docs/BIOS_PIBT_2_PROTOCOL.md`](docs/BIOS_PIBT_2_PROTOCOL.md) for the exact
+protocol, state machine, conditional liveness argument and current benchmark evidence.
+Version 1 remains documented in
+[`docs/DECENTRALIZED_PRIORITY.md`](docs/DECENTRALIZED_PRIORITY.md).
 
 ---
 
@@ -65,6 +81,8 @@ src/
   geometry.py      vectors, angles, swept segment distance
   environment.py   grid map, warehouse generators, single-file block decomposition
   planner.py       A*, space-time A* with reservations, prioritised fleet planning
+  priority.py      deterministic next-cell PIBT, inheritance and backtracking
+  topology.py      2-core/tree decomposition for temporary exit priority
   messages.py      the P2P wire protocol (JSON over UDP multicast)
   transport.py     seeded network model + real UDP multicast socket, one interface
   world.py         ground truth: kinematics, 360° sensing, swept collision detection
@@ -83,8 +101,8 @@ frontend/
   js/network.js    the coordination layer: intent, peer links, wait-for arrows
   js/main.js       fetch, interpolated playback, panel binding
   assets/          generated sprite set (256 px per cell)
-tests/             19 regression tests
-docs/              CRITIQUE.md, FINDINGS.md
+tests/             34 regression tests
+docs/              BIOS_PIBT_2_PROTOCOL.md plus V1 design, critique and findings
 reference/         asset prompt pack and loader spec
 ```
 
@@ -105,17 +123,20 @@ Transport and world are injected. That single constraint buys three things at on
 
 ---
 
-## The three policies
+## Coordination policies
 
-All three are fields on one class, sharing one trajectory follower, one safety layer and
+All policies are fields on one class, sharing one trajectory follower, one safety layer and
 one physics interface — so any difference between them is caused by coordination and
-nothing else. Three separately tuned controllers would make the comparison meaningless.
+nothing else. Separately tuned controllers would make the comparison meaningless.
 
 | Policy | What it is | Why it is here |
 | --- | --- | --- |
 | `stop_and_wait` | Textbook: follow your own shortest path, stop when the next cell is occupied. | The weak baseline the statement names. Implemented faithfully, not as a straw man. |
 | `central` | Fleet manager plans everything with prioritised space-time A*. Robots follow the schedule; no peer negotiation. | **The strong baseline the statement omits** — what every deployed fleet actually runs. Beating only stop-and-wait proves nothing. |
 | `hierarchical` | Central plans when reachable, P2P negotiation when not, Layer 0 always. | The proposal. Full decentralisation as a fallback, not an ideal. |
+| `BIOS_1.0.0` | Decentralized block leases plus an aggressive local unstick manoeuvre. | Existing experimental liveness policy retained for comparison. |
+| `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
+| `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | Default high-density decentralized policy. |
 
 `--seeds N` pools runs so the safety statistics have enough exposure to mean something.
 
@@ -126,18 +147,26 @@ nothing else. Three separately tuned controllers would make the comparison meani
 **Working and covered by tests:** the map and block decomposition, A* and space-time A*
 (verified to resolve a head-on corridor with zero space-time clashes), the physics and
 swept collision detection, the two-channel speed-scaled protective field, the network
-model including the dead-zone result, the Poisson statistics, and the end-to-end
-single-robot path.
+model including the dead-zone result, the Poisson statistics, the end-to-end
+single-robot path, priority serialization, deterministic PIBT inheritance, backtracking,
+rotation handling, and tree-appendage detection.
 
-**Not yet converged: multi-robot throughput.** Runs are collision-free across all three
-policies (0 contacts, worst separation ≈ 0.87 m over 1.4 robot-hours), but no policy
-completes a full task set within the scenario duration, and `hierarchical` currently
-performs **worse** than `central` rather than matching it. The remaining cause is
-identified and written up in [`docs/FINDINGS.md`](docs/FINDINGS.md) §7: robots that
-finish work still obstruct cells other robots need, and the hierarchical policy churns
-between central schedules and local replanning.
+**High-density development result:** on `dead_zone_mesh`, 24 robots, seed 20 and a
+300 s cutoff, V1 completes 14/96 tasks with 174 detected wait cycles and 64 retreats;
+V2 completes 18/96 with zero robot/rack contacts, zero detected cycles and zero
+retreats. That is 28.6% more completed work at the cutoff, not a makespan comparison;
+neither run completes all tasks. See the V2 protocol document for assumptions and the
+extended trace.
 
-No speedup figure is published here, because there is not yet an honest one to publish.
+**V1 four-robot result (three seeds):** `BIOS_PIBT.1` completes all
+16 `open_floor_control` tasks in every seed (183.2–230.6 s). At the pinned cutoffs it
+completes 15/16, 15/16 and 16/16 tasks in `dense_aisles`, and 10/12, 6/12 and 10/12 in
+the deliberately extreme `crossing_chokepoint` case. There are zero inter-robot contacts
+across all nine runs (3.745 robot-hours). Extended crossing runs finish all 12 tasks in
+538.0 s, 758.2 s and 532.1 s respectively, showing eventual progress rather than a
+latched deadlock. These are development measurements, not a published 20% success claim.
+
+No speedup percentage is published yet, because there is not yet an honest one to publish.
 `metrics.compare()` deliberately returns `"incomparable"` rather than a ratio when a
 policy fails to complete — a policy that does not finish is a different kind of result,
 not an infinitely slow one, and folding it into a percentage would be the exact

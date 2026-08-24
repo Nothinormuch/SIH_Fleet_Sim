@@ -135,8 +135,10 @@ def test_world_blocks_racks_instead_of_letting_robots_tunnel():
     for _ in range(200):
         w.step(0.02, {"A": Actuation(v=1.2)})
     x, y = w.robots["A"].x, w.robots["A"].y
-    assert env.grid[to_cell((x, y))[1]][to_cell((x, y))[0]] != RACK
-    assert y < 5.0, "the robot must stop at the rack face, not pass through it"
+    cell = to_cell((x, y), DEFAULT.cell_m)
+    assert env.grid[cell[1]][cell[0]] != RACK
+    assert y < 5.0 * DEFAULT.cell_m, \
+        "the robot must stop at the rack face, not pass through it"
 
 
 def test_lidar_detections_carry_no_identity():

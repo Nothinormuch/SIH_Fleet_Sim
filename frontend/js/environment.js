@@ -91,12 +91,16 @@ class View {
     this.ox = 0;
     this.oy = 0;
     this.map = null;
+    this.metersPerCell = 1;
   }
 
   /* Size the backing store to the CSS box times DPR, then fit the map inside it.
    * Skipping the DPR step is what makes a canvas dashboard look soft on a laptop. */
-  resize(map) {
+  resize(map, metersPerCell) {
     if (map) this.map = map;
+    if (Number.isFinite(metersPerCell) && metersPerCell > 0) {
+      this.metersPerCell = metersPerCell;
+    }
     const dpr = window.devicePixelRatio || 1;
     const box = this.canvas.getBoundingClientRect();
     this.canvas.width = Math.max(1, Math.round(box.width * dpr));
@@ -116,14 +120,22 @@ class View {
     this.oy = (box.height - this.map.height * this.cell) / 2;
   }
 
-  /* World metres -> CSS pixels. The Y flip lives here and nowhere else. */
-  worldToScreen(x, y) {
+  /* Grid cells -> CSS pixels. Static fixtures and intent paths use cell units. */
+  cellToScreen(x, y) {
     return [this.ox + x * this.cell,
             this.oy + (this.map.height - y) * this.cell];
   }
 
+  /* World metres -> CSS pixels. The physics engine reports SI coordinates, while the
+   * warehouse map is indexed in cells. Keeping the conversion here prevents a non-1 m
+   * cell pitch from drawing valid robots through racks or beyond the map boundary. */
+  worldToScreen(x, y) {
+    return this.cellToScreen(x / this.metersPerCell,
+                             y / this.metersPerCell);
+  }
+
   cellRect(cx, cy) {
-    const [sx, sy] = this.worldToScreen(cx, cy + 1);   // top-left in screen terms
+    const [sx, sy] = this.cellToScreen(cx, cy + 1);   // top-left in screen terms
     return [sx, sy, this.cell, this.cell];
   }
 
@@ -131,6 +143,11 @@ class View {
     const { ctx } = this;
     ctx.clearRect(0, 0, this.cssW, this.cssH);
   }
+}
+
+// Expose the unit-boundary primitive to the dependency-free Node regression test.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { View };
 }
 
 /* Draw a sprite centred on a world point, rotated to a heading (maths convention). */

@@ -111,8 +111,8 @@ class Handler(BaseHTTPRequestHandler):
             v = q.get(name, [None])[0]
             return default if v is None or v == "" else v
 
-        scenario = str(one("scenario", "crossing_chokepoint"))
-        policy = str(one("policy", "hierarchical"))
+        scenario = str(one("scenario", "open_floor_control"))
+        policy = str(one("policy", "BIOS_PIBT.2"))
         if scenario not in SCENARIOS:
             return self._json(400, {"error": f"unknown scenario {scenario!r}",
                                     "known": sorted(SCENARIOS)})
@@ -128,7 +128,9 @@ class Handler(BaseHTTPRequestHandler):
 
         # Bounds, not suggestions. An unbounded duration on a CPU-bound endpoint is a
         # denial of service against your own laptop during a demo.
-        robots = max(2, min(robots, 24))
+        # The old 24-AMR cap silently turned a requested 100-AMR run into 24 AMRs.
+        # Keep a finite demo bound, but report and execute the number the UI accepts.
+        robots = max(2, min(robots, 100))
         duration = max(10.0, min(duration, 900.0))
 
         with _SIM_LOCK:
