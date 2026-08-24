@@ -127,6 +127,12 @@ class PolicyResult:
     plan_cpu_mean_ms: float = 0.0
     plan_cpu_max_ms: float = 0.0
 
+    priority_decisions: int = 0
+    priority_inheritances: int = 0
+    priority_backtracks: int = 0
+    priority_forced_moves: int = 0
+    priority_waits: int = 0
+
     net_loss: float = 0.0
     manager_killed_at: float | None = None
     completed_all: bool = False

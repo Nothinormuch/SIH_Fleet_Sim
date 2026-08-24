@@ -111,8 +111,8 @@ class Handler(BaseHTTPRequestHandler):
             v = q.get(name, [None])[0]
             return default if v is None or v == "" else v
 
-        scenario = str(one("scenario", "crossing_chokepoint"))
-        policy = str(one("policy", "hierarchical"))
+        scenario = str(one("scenario", "open_floor_control"))
+        policy = str(one("policy", "decentralized_pibt"))
         if scenario not in SCENARIOS:
             return self._json(400, {"error": f"unknown scenario {scenario!r}",
                                     "known": sorted(SCENARIOS)})

@@ -30,7 +30,7 @@ from dataclasses import replace
 
 from . import messages as msg
 from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
-                  POLICY_STOP_WAIT, POLICY_BIOS, Task)
+                  POLICY_STOP_WAIT, POLICY_BIOS, POLICY_DECENTRALIZED_PIBT, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
 from .scenarios import SCENARIOS, Scenario
@@ -73,10 +73,9 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     for j, walk in enumerate(sc.humans):
         world.add_human(f"H{j + 1}", walk)
 
-    # stop_and_wait has no fleet manager by definition - it is the no-coordination
-    # baseline. BIOS_1.0.0 also runs without one, by design: its chokepoint
-    # admission and unstick logic are wholly peer-to-peer. `central` depends on the
-    # manager, `hierarchical` merely prefers it.
+    # stop_and_wait has no fleet manager by definition. BIOS and decentralized_pibt
+    # also run without one by design; `central` depends on the manager and
+    # `hierarchical` merely prefers it.
     manager = None
     if policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL):
         manager = FleetManager(sc.env, cfg)
@@ -140,6 +139,8 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                  "path": [list(c) for c in b.path[b.pidx:b.pidx + 8]],
                  "peers": sorted(b.peers.keys()),
                  "blocked_on": b.blocked_on,
+                 "priority_key": (b._pub_priority_key.to_wire()
+                                  if b.policy == POLICY_DECENTRALIZED_PIBT else None),
                  "done": len(b.completed)}
                 for r, b in sorted(brains.items())
             ]
@@ -203,6 +204,11 @@ def _summarize(sc, policy, seed, cfg, world, net, brains, manager,
         plan_calls=plan_calls,
         plan_cpu_mean_ms=round(plan_cpu / plan_calls * 1000, 3) if plan_calls else 0.0,
         plan_cpu_max_ms=round(plan_max * 1000, 3),
+        priority_decisions=int(agg("priority_decisions")),
+        priority_inheritances=int(agg("priority_inheritances")),
+        priority_backtracks=int(agg("priority_backtracks")),
+        priority_forced_moves=int(agg("priority_forced_moves")),
+        priority_waits=int(agg("priority_waits")),
         net_loss=cfg.net.loss,
         manager_killed_at=sc.kill_manager_at,
     )
@@ -302,7 +308,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if POLICY_STOP_WAIT in by_policy:
         print()
-        for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS):
+        for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS,
+                     POLICY_DECENTRALIZED_PIBT):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")

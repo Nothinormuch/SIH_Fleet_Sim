@@ -29,8 +29,8 @@ async function boot() {
   try {
     const r = await fetch('/api/scenarios');
     const { scenarios, policies } = await r.json();
-    fill(el('scenario'), scenarios, 'crossing_chokepoint');
-    fill(el('policy'), policies, 'hierarchical');
+    fill(el('scenario'), scenarios, 'open_floor_control');
+    fill(el('policy'), policies, 'decentralized_pibt');
   } catch (e) {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
   }
@@ -242,6 +242,11 @@ function updateManagerDot(frame) {
     text.textContent = 'no fleet manager (baseline)';
     return;
   }
+  if (policy === 'decentralized_pibt' || policy === 'BIOS_1.0.0') {
+    dot.className = 'dot up';
+    text.textContent = 'edge-only peer coordination · no manager';
+    return;
+  }
   const alive = frame.manager_alive;
   dot.className = 'dot ' + (alive ? 'up' : 'down');
   text.textContent = alive ? 'fleet manager reachable'
@@ -262,13 +267,17 @@ function renderFleetPanel(frame) {
     const waiting = f.blocked_on
       ? (f.blocked_on === 'gate' ? 'awaiting block' : 'waiting on ' + f.blocked_on)
       : (f.task ? 'task ' + f.task : 'unassigned');
+    const pk = f.priority_key;
+    const priority = pk
+      ? ` · P[e${pk[0]} x${pk[1]} w${pk[2]} a${pk[3]} l${pk[4]}]`
+      : '';
 
     return `
       <div class="robot" style="border-left-color:${colour}">
         <span class="swatch" style="background:${colour}"></span>
         <div>
           <div class="rid">${r.id}</div>
-          <div class="meta">${waiting}</div>
+          <div class="meta">${waiting}${priority}</div>
           <div class="batt"><i class="${battCls}" style="width:${batt}%"></i></div>
         </div>
         <div class="right">
