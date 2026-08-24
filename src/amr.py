@@ -179,6 +179,12 @@ class AMRBrain:
         self._retreat_since = 0.0
         self._last_progress_t = 0.0
         self._last_cell: Cell | None = None
+        # Closest this robot has ever got to its CURRENT goal, and how many cells of
+        # net approach that represents. Monotone on purpose: crediting every step that
+        # happens to point goalwards would pay a robot to oscillate, and any fitness
+        # function built on it would be optimised by twitching in place.
+        self._best_goal_d: int | None = None
+        self._progress_goal: Cell | None = None
         # BIOS_1.0.0: when an unstick step is armed we allow Layer 0 to creep out of
         # a peer-jam instead of freezing; window closes once the step has landed.
         self._creep_until = -1e9
@@ -206,6 +212,11 @@ class AMRBrain:
             # way to tell a trained network apart from one that learned to always hold.
             "bios4_proceed": 0, "bios4_hold": 0, "bios4_yield": 0,
             "bios4_claim": 0, "bios4_reroute": 0, "bios4_unstick": 0,
+            # Cells of net approach to the current goal, summed over the run. Exists
+            # because "tasks completed" is 0-3 over a short episode and therefore says
+            # almost nothing about whether one policy is better than another - this is
+            # the same measurement at a resolution you can actually steer by.
+            "progress_cells": 0,
         }
 
     # ================================================================== main tick
@@ -223,6 +234,17 @@ class AMRBrain:
         if cell != self._last_cell:
             self._last_cell = cell
             self._last_progress_t = t
+
+        if self.goal is None or self.goal != self._progress_goal:
+            self._progress_goal = self.goal
+            self._best_goal_d = None if self.goal is None else manhattan(cell, self.goal)
+        else:
+            d = manhattan(cell, self.goal)
+            if self._best_goal_d is None:
+                self._best_goal_d = d
+            elif d < self._best_goal_d:
+                self.stats["progress_cells"] += self._best_goal_d - d
+                self._best_goal_d = d
 
         self._task_loop(t, sensors, outbox)
 

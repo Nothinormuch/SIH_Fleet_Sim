@@ -110,6 +110,13 @@ class PolicyResult:
     p05_separation_m: float = 0.0
     robot_hours: float = 0.0
 
+    # Cells of net approach to a goal, fleet-wide. A partial-credit companion to
+    # tasks_completed, which is far too coarse to compare short runs by.
+    progress_cells: int = 0
+    # How often BIOS_4's liveness valve had to rescue the policy. Reported for every
+    # policy (zero for the rest) because it is the honest measure of how much of the
+    # deadlock freedom came from the learned part and how much from the backstop.
+    bios4_unstick: int = 0
     deadlocks_detected: int = 0
     retreats: int = 0
     yields: int = 0

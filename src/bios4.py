@@ -131,10 +131,11 @@ class PolicyNet:
     happens only inside `act`.
     """
 
-    __slots__ = ("n_in", "n_hidden", "n_out", "w")
+    __slots__ = ("n_in", "n_hidden", "n_out", "w", "meta")
 
     def __init__(self, weights: Sequence[float], n_in: int = N_FEATURES,
-                 n_hidden: int = 16, n_out: int = N_ACTIONS) -> None:
+                 n_hidden: int = 16, n_out: int = N_ACTIONS,
+                 meta: dict | None = None) -> None:
         want = self.n_params(n_in, n_hidden, n_out)
         if len(weights) != want:
             raise ValueError(
@@ -143,6 +144,10 @@ class PolicyNet:
         self.n_hidden = n_hidden
         self.n_out = n_out
         self.w = list(weights)
+        # Provenance, carried so a loaded model can still say where it came from. Not
+        # part of the function the network computes, but a run labelled "BIOS_4" with no
+        # way to tell WHICH model produced it is not a result anyone can reproduce.
+        self.meta = dict(meta or {})
 
     @staticmethod
     def n_params(n_in: int, n_hidden: int, n_out: int) -> int:
@@ -192,6 +197,7 @@ class PolicyNet:
     # ------------------------------------------------------------------ model file
 
     def to_dict(self, meta: dict | None = None) -> dict:
+        """`meta` overrides what the model is carrying; omit it to keep provenance."""
         return {
             "format": MODEL_FORMAT,
             "version": MODEL_VERSION,
@@ -201,7 +207,7 @@ class PolicyNet:
             "features": list(FEATURES),
             "actions": list(ACTIONS),
             "weights": [round(v, 6) for v in self.w],
-            "meta": meta or {},
+            "meta": meta if meta is not None else dict(self.meta),
         }
 
     def to_json(self, meta: dict | None = None) -> str:
@@ -259,8 +265,11 @@ def model_from_dict(d: Any) -> PolicyNet:
         raise ModelError("weights must be a list of numbers")
     if any(math.isnan(v) or math.isinf(v) for v in w):
         raise ModelError("weights contain NaN or infinity")
+    meta = d.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
     try:
-        return PolicyNet(w, n_in, n_hidden, n_out)
+        return PolicyNet(w, n_in, n_hidden, n_out, meta=meta)
     except ValueError as exc:
         raise ModelError(str(exc)) from None
 
