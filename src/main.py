@@ -30,7 +30,7 @@ from dataclasses import replace
 
 from . import messages as msg
 from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
-                  POLICY_STOP_WAIT, POLICY_BIOS, Task)
+                  POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS4, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
 from .scenarios import SCENARIOS, Scenario
@@ -49,7 +49,7 @@ MANAGED_POLICIES = (POLICY_CENTRAL, POLICY_HIERARCHICAL)
 
 def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                  cfg: Config | None = None, trace: list | None = None,
-                 verbose: bool = False) -> PolicyResult:
+                 verbose: bool = False, policy_model=None) -> PolicyResult:
     """Run one (scenario, policy, seed) and return everything it produced.
 
     Pass a list as `trace` to collect per-frame snapshots for the dashboard; leave it
@@ -70,7 +70,11 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     for i, start in enumerate(sc.starts):
         rid = f"AMR{i + 1:02d}"
         world.add_robot(rid, start, 0.0)
-        b = AMRBrain(rid, sc.env, cfg, policy=policy, home=start)
+        # One model instance is SHARED by the whole fleet, and that is the claim:
+        # every robot flashes the same BIOS. Sharing is safe because PolicyNet.act is
+        # pure - it reads weights and returns an index, holding no per-robot state.
+        b = AMRBrain(rid, sc.env, cfg, policy=policy, home=start,
+                     policy_model=policy_model)
         b.queue = list(sc.assignments[i]) if i < len(sc.assignments) else []
         b.use_auction = sc.use_auction
         brains[rid] = b
@@ -215,7 +219,8 @@ def _summarize(sc, policy, seed, cfg, world, net, brains, manager,
 
 
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
-                      seed: int = 0, duration: float | None = None) -> dict:
+                      seed: int = 0, duration: float | None = None,
+                      policy_model=None) -> dict:
     """One run, packaged for the web dashboard: map, every frame, and the summary.
 
     Playback rather than a live stream, deliberately. The sim runs far faster than
@@ -232,7 +237,8 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         sc.duration_s = float(duration)
 
     frames: list = []
-    result = run_scenario(sc, policy, seed=seed, trace=frames)
+    result = run_scenario(sc, policy, seed=seed, trace=frames,
+                          policy_model=policy_model)
     return {
         "map": sc.env.to_json(),
         "meta": {
@@ -243,6 +249,11 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
             "kill_manager_at": sc.kill_manager_at,
             "cell_m": DEFAULT.cell_m,
             "has_manager": policy in MANAGED_POLICIES,
+            # So the dashboard can say WHICH model produced a run. A BIOS_4 result with
+            # no model behind it is an untrained control, not a policy, and the two must
+            # never be confused on screen.
+            "model": (policy_model.to_dict().get("meta") if policy_model is not None
+                      else None),
         },
         "frames": frames,
         "summary": result.to_dict(),
@@ -309,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if POLICY_STOP_WAIT in by_policy:
         print()
-        for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS):
+        for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS, POLICY_BIOS4):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")

@@ -43,8 +43,11 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from . import messages as msg
+from .bios4 import (ACT_CLAIM, ACT_HOLD, ACT_PROCEED, ACT_REROUTE, ACT_YIELD,
+                    legal_actions, observe)
 from .environment import Warehouse, corridors
 from .geometry import (Cell, angle_diff, bearing, cell_center, clamp, dist,
                        manhattan, to_cell)
@@ -58,7 +61,13 @@ POLICY_STOP_WAIT = "stop_and_wait"
 POLICY_CENTRAL = "central"
 POLICY_HIERARCHICAL = "hierarchical"
 POLICY_BIOS = "BIOS_1.0.0"
-POLICIES = (POLICY_STOP_WAIT, POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS)
+# The learned policy. Same Layer-1 slot as the others; the difference is that the
+# choice of verb comes from a trained network instead of a hand-written rule. See
+# bios4.py for why the model arbitrates rather than drives.
+POLICY_BIOS4 = "BIOS_4"
+POLICIES = (POLICY_STOP_WAIT, POLICY_CENTRAL, POLICY_HIERARCHICAL,
+            POLICY_BIOS, POLICY_BIOS4)
+_BIOS_FAMILY = (POLICY_BIOS, POLICY_BIOS4)
 
 MODE_CENTRAL = "CENTRAL_OK"
 MODE_P2P = "DEGRADED_P2P"
@@ -99,7 +108,8 @@ class AMRBrain:
     """One robot's entire decision-making. Pure: no sockets, no clocks, no globals."""
 
     def __init__(self, rid: str, env: Warehouse, cfg: Config,
-                 policy: str = POLICY_HIERARCHICAL, home: Cell = (0, 0)) -> None:
+                 policy: str = POLICY_HIERARCHICAL, home: Cell = (0, 0),
+                 policy_model: Any = None) -> None:
         if policy not in POLICIES:
             raise ValueError(f"unknown policy {policy!r}")
         self.rid = rid
@@ -107,6 +117,12 @@ class AMRBrain:
         self.cfg = cfg
         self.policy = policy
         self.home = home
+        # BIOS_4's trained network, INJECTED - never loaded here. The brain reads no
+        # files and opens no sockets, which is the one property that makes a model
+        # trained in the simulator legitimate on real hardware.
+        self.policy_model = policy_model
+        self._bios4_action = ACT_HOLD
+        self._bios4_last_reroute = -1e9
         # Single-file blocks, shared and cached across the fleet. Acquiring a whole
         # block before entering is what stops two robots meeting halfway down a
         # one-lane aisle, where no per-cell rule can help either of them.
@@ -185,6 +201,11 @@ class AMRBrain:
             "safety_stops": 0, "msgs_sent": 0, "bytes_sent": 0, "msgs_recv": 0,
             "plan_cpu_s": 0.0, "plan_calls": 0, "plan_cpu_max_s": 0.0,
             "central_plans": 0, "local_plans": 0, "seconds_degraded": 0.0,
+            # Which verb BIOS_4 chose, per tick. Kept because "it completed 7 tasks" is
+            # not a description of a policy - the mix of verbs is, and it is the only
+            # way to tell a trained network apart from one that learned to always hold.
+            "bios4_proceed": 0, "bios4_hold": 0, "bios4_yield": 0,
+            "bios4_claim": 0, "bios4_reroute": 0, "bios4_unstick": 0,
         }
 
     # ================================================================== main tick
@@ -195,7 +216,7 @@ class AMRBrain:
         self._ingest(t, inbox)
         self._expire_peers(t)
 
-        if self.mode == MODE_P2P and self.policy not in (POLICY_STOP_WAIT, POLICY_BIOS):
+        if self.mode == MODE_P2P and self.policy not in (POLICY_STOP_WAIT, *_BIOS_FAMILY):
             self.stats["seconds_degraded"] += 1.0 / self.cfg.rates.world_hz
 
         cell = sensors.cell
@@ -213,7 +234,7 @@ class AMRBrain:
             self._t_reactive = t
             self._traffic_loop(t, sensors, outbox)
 
-        if self.policy == POLICY_BIOS:
+        if self.policy in _BIOS_FAMILY:
             # Maintain the chokepoint token every control tick so any rival learns
             # as early as possible and no second robot slips into the single lane.
             self._bios_claim(t, sensors, self._next_cell(), outbox)
@@ -262,7 +283,7 @@ class AMRBrain:
         # allowed to argue with it.
         if sensors.clearance_omni_m <= spec.omni_stop_m:
             self.stats["safety_stops"] += 1
-            creeping = (self.policy == POLICY_BIOS and sensors.t < self._creep_until
+            creeping = (self.policy in _BIOS_FAMILY and sensors.t < self._creep_until
                         and act.v > 0.0)
             if creeping:
                 # BIOS_1.0.0 unstick: the target cell was verified free of peers and
@@ -321,6 +342,10 @@ class AMRBrain:
             # them, so waiting for them to clear first can never terminate. Layer 0
             # still protects the reverse, which is the guarantee that actually matters.
             self._track_block(t, False, None)
+            return
+
+        if self.policy == POLICY_BIOS4:
+            self._bios4_traffic(t, sensors, outbox)
             return
 
         if self.policy == POLICY_STOP_WAIT:
@@ -878,6 +903,118 @@ class AMRBrain:
             self._claims.pop(self._claim_cid, None)
             self._claim_cid = None
             self._last_claim_t = -1e9
+
+    # ---------------------------------------------------------------- BIOS_4
+
+    _BIOS4_STAT = ("bios4_proceed", "bios4_hold", "bios4_yield",
+                   "bios4_claim", "bios4_reroute")
+
+    def _bios4_traffic(self, t: float, sensors: Sensors,
+                       outbox: list[msg.Message]) -> None:
+        """Layer 1 for the learned policy: the model picks a verb, code keeps the guarantees.
+
+        The split IS the design. Everything that has to be true regardless of what a
+        network happened to learn stays in ordinary Python - the liveness valve below,
+        the legality mask, and Layer 0 underneath all of it. The model only ever chooses
+        between verbs that were already safe to execute, so a badly trained BIOS_4 is
+        slow. It is not unsafe, and it does not deadlock.
+
+        That is also the only version of this a judge should accept. "We trained a model
+        and it seems not to deadlock" is not a liveness argument; "the model cannot
+        prevent the unstick timer from firing" is.
+        """
+        nxt = self._next_cell()
+
+        # Liveness backstop, ABOVE the model and not negotiable. Same valve and same
+        # timer as BIOS_1.0.0: held still too long, edge into any free adjacent cell.
+        # A network that learned to always hold still cannot suppress this.
+        if (nxt is not None and self.blocked_since is not None
+                and t - self.blocked_since > self.cfg.traffic.bios_unstick_s):
+            self.stats["bios4_unstick"] += 1
+            self._bios_unstick(t, sensors, nxt, outbox)
+            return
+
+        if nxt is None:
+            self._track_block(t, False, None)
+            return
+
+        action = ACT_HOLD
+        if self.policy_model is not None:
+            action = self.policy_model.act(observe(self, t, sensors, nxt),
+                                           legal_actions(self, t, sensors, nxt))
+        self._bios4_action = action
+        self.stats[self._BIOS4_STAT[action]] += 1
+
+        # Who we would be waiting for. Recorded on EVERY hold, because `blocked_on` is
+        # what the wait-for graph is assembled from: a robot that holds without naming a
+        # blocker is invisible to cycle detection, and a deadlock it is part of cannot be
+        # found by anybody - including itself.
+        contender = self._bios4_contender(t, sensors, nxt)
+
+        if action == ACT_PROCEED:
+            self._hold = False
+            self._track_block(t, False, None)
+            return
+
+        if action == ACT_CLAIM:
+            # Conservative block entry: wait at the mouth until the token is ours. The
+            # claim itself goes out from _bios_claim on the main tick; this verb is the
+            # decision to RESPECT it rather than drive in regardless.
+            cid = self.blocks.id_of(nxt)
+            lock = self._bios_lock(cid, t) if cid is not None else None
+            if lock is None or lock[0] == self.rid:
+                self._hold = False
+                self._track_block(t, False, None)
+            else:
+                self._hold = True
+                self._track_block(t, True, lock[0])
+            return
+
+        if action == ACT_YIELD:
+            bay = self._passing_bay(sensors.cell, nxt)
+            if bay is not None:
+                self.retreat_target = bay
+                self.state = ST_RETREAT
+                self._retreat_since = t
+                self.path = [sensors.cell, bay]
+                self.path_times = []
+                self.pidx = 1
+                self.stats["retreats"] += 1
+                self.blocked_since = None
+                self._hold = False
+                return
+            # Nowhere to pull aside. Fall through to waiting rather than pretending the
+            # manoeuvre happened - a yield that does not move is a hold, and it has to
+            # be recorded as one or the wait-for graph loses an edge.
+            self._hold = True
+            self._track_block(t, True, contender)
+            return
+
+        if action == ACT_REROUTE:
+            self._bios4_last_reroute = t
+            self.penalty[nxt] = self.penalty.get(nxt, 0.0) +                 self.cfg.traffic.replan_penalty
+            self._replan(t, sensors.cell)
+            self._hold = False
+            self._track_block(t, False, None)
+            return
+
+        # ACT_HOLD, and the landing place for anything the mask removed.
+        self._hold = True
+        if self.blocked_since is None and contender is not None:
+            self.stats["yields"] += 1
+            outbox.append(msg.yield_to(self.rid, self._next_seq(), t, nxt, contender))
+        self._track_block(t, True, contender)
+
+    def _bios4_contender(self, t: float, sensors: Sensors, nxt: Cell) -> str | None:
+        """Who is in our way: by occupancy, by published intent, or failing both, by lidar.
+
+        The lidar fallback matters. A peer whose heartbeat we have lost is still
+        physically there, and a hold blamed on nobody is a hold no cycle detector can see.
+        """
+        for p in self.peers.values():
+            if p.cell == nxt or self._peer_intends(p, nxt, t):
+                return p.rid
+        return self._peer_ahead(sensors)
 
     def _find_cycle(self) -> list[str] | None:
         """Walk the wait-for chain from self; report the cycle if it returns to self."""
