@@ -1,0 +1,379 @@
+/* Holographic HUD overlay for the SIH26123 fleet dashboard.
+ *
+ * Clean, minimal neon operator console. Only the essential metrics float over
+ * the warehouse canvas: job progress, scenario name, minimap, and coordination
+ * health. Everything else lives in the side panel where it belongs.
+ */
+
+.hud-root {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.overlay-legend { position: relative; z-index: 6; }
+.transport { position: relative; z-index: 6; }
+
+/* ----------------------------------------------------------------- neon palette */
+
+:root {
+  --hud-cyan:   #00f0ff;
+  --hud-green:  #39ff8a;
+  --hud-amber:  #f5b843;
+  --hud-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* ----------------------------------------------------------------- glass block */
+
+.hud-block {
+  position: absolute;
+  background: rgba(8,12,18,.45);
+  -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  backdrop-filter: blur(10px) saturate(1.3);
+  border: 1.5px solid var(--glow);
+  box-shadow: 0 0 16px rgba(var(--glow-rgb), .4), inset 0 0 12px rgba(var(--glow-rgb), .12);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.hud-block::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 13px;
+  border: 1px solid rgba(255,255,255,.12);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hud-eb {
+  display: block;
+  margin: 0 0 8px;
+  font: 600 8px/1 var(--hud-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--glow);
+  text-shadow: 0 0 6px rgba(var(--glow-rgb), .7);
+}
+
+/* ----------------------------------------------------------------- jobs (top-left) */
+
+.hud-jobs {
+  --glow: #00f0ff;
+  --glow-rgb: 0,240,255;
+  top: 24px;
+  left: 16px;
+  width: 180px;
+}
+
+.hud-orb {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto;
+}
+
+.hud-progress {
+  width: 96px;
+  height: 96px;
+  display: block;
+}
+
+.hud-progress-track {
+  fill: none;
+  stroke: rgba(255,255,255,.05);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.hud-progress-arc {
+  fill: none;
+  stroke: var(--glow);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 389.56;
+  stroke-dashoffset: 389.56;
+  filter: drop-shadow(0 0 5px var(--glow));
+  transition: stroke-dashoffset .2s linear;
+}
+
+.hud-orb-core {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.hud-count {
+  font: 800 32px/1 var(--hud-mono);
+  color: var(--glow);
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 8px var(--glow));
+}
+
+.hud-count-sub {
+  font: 500 8px/1 var(--hud-mono);
+  color: rgba(255,255,255,.45);
+  letter-spacing: .08em;
+  margin-top: 2px;
+}
+
+.hud-sub {
+  font: 500 9px/1.2 var(--hud-mono);
+  color: rgba(220,230,240,.7);
+  margin-top: 6px;
+  text-align: center;
+}
+
+.hud-jobs[data-complete="1"] .hud-count {
+  color: var(--hud-green);
+  filter: drop-shadow(0 0 10px var(--hud-green));
+}
+
+.hud-jobs[data-complete="1"] .hud-count-sub {
+  color: rgba(57,255,138,.7);
+}
+
+.hud-banner {
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 16px;
+  font: 600 8px/1 var(--hud-mono);
+  letter-spacing: .14em;
+  text-align: center;
+  text-transform: uppercase;
+  border: 1px solid rgba(245,184,67,.6);
+  color: #f5b843;
+  background: rgba(245,184,67,.06);
+}
+
+.hud-banner.hud-banner-complete {
+  border-color: rgba(57,255,138,.8);
+  color: #39ff8a;
+  background: rgba(57,255,138,.08);
+}
+
+/* ----------------------------------------------------------------- scenario ticker (top-center) */
+
+.hud-ticker {
+  --glow: #39ff8a;
+  --glow-rgb: 57,255,138;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 16px;
+  border-radius: 24px;
+  white-space: nowrap;
+}
+
+.hud-ticker-text {
+  font: 600 10px/1 var(--hud-mono);
+  color: #c8ffe1;
+  text-shadow: 0 0 7px rgba(57,255,138,.7);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* ----------------------------------------------------------------- minimap (top-right) */
+
+.hud-minimap-block {
+  --glow: #00f0ff;
+  --glow-rgb: 0,240,255;
+  top: 24px;
+  right: 16px;
+  width: 180px;
+}
+
+.hud-mm-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.hud-mm {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+/* ----------------------------------------------------------------- coordination health (bottom-right) */
+
+.hud-health {
+  --glow: #39ff8a;
+  --glow-rgb: 57,255,138;
+  bottom: 80px;
+  right: 16px;
+  width: 200px;
+  text-align: center;
+}
+
+.hud-holo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 140px;
+  height: 140px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: conic-gradient(from 0deg,
+    rgba(179,0,255,.10),
+    rgba(0,240,255,.04),
+    rgba(255,42,246,.10),
+    rgba(179,0,255,.10));
+  filter: blur(8px);
+  animation: hud-spin 12s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes hud-spin {
+  to { transform: translate(-50%, -50%) rotate(1turn); }
+}
+
+.hud-ring {
+  width: 110px;
+  height: 110px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.hud-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.hud-ring-track {
+  fill: none;
+  stroke: rgba(255,255,255,.05);
+  stroke-width: 6;
+}
+
+.hud-ring-arc {
+  fill: none;
+  stroke: var(--glow);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 389.56;
+  stroke-dashoffset: 389.56;
+  filter: drop-shadow(0 0 6px var(--glow));
+}
+
+.hud-ring-core {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.hud-health-num {
+  font: 800 24px/1 var(--hud-mono);
+  color: var(--glow);
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 8px var(--glow));
+}
+
+.hud-health-sub {
+  font: 500 8px/1 var(--hud-mono);
+  color: rgba(255,255,255,.5);
+  letter-spacing: .06em;
+  margin-top: 2px;
+}
+
+.hud-micro-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+  text-align: left;
+  padding: 0 6px;
+}
+
+.hud-micro {
+  display: flex;
+  justify-content: space-between;
+  font: 500 8px/1 var(--hud-mono);
+  color: rgba(208,220,232,.7);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.hud-micro b {
+  color: #fff;
+  font-weight: 700;
+  text-shadow: 0 0 4px var(--glow);
+}
+
+/* ----------------------------------------------------------------- responsive */
+
+@media (max-width: 1200px) {
+  .hud-jobs { left: 12px; width: 160px; }
+  .hud-minimap-block { right: 12px; width: 160px; }
+  .hud-health { right: 12px; width: 180px; }
+  .hud-orb { width: 80px; height: 80px; }
+  .hud-progress { width: 80px; height: 80px; }
+  .hud-count { font-size: 26px; }
+  .hud-ring { width: 90px; height: 90px; }
+}
+
+@media (max-height: 700px) {
+  .hud-jobs { top: 16px; }
+  .hud-ticker { top: 12px; }
+  .hud-minimap-block { top: 16px; }
+  .hud-health { bottom: 70px; }
+}
+
+/* ----------------------------------------------------------------- result panel styling */
+
+.summary .hud-positive {
+  background: rgba(57,255,138,.04);
+  border: 1px solid rgba(57,255,138,.2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 0 10px rgba(57,255,138,.15);
+}
+
+.summary .hud-positive dl {
+  margin: 0 0 4px;
+}
+
+.summary .safety-detail {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.summary .safety-detail summary {
+  cursor: pointer;
+  font: 600 11px/1 var(--mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  user-select: none;
+}
+
+.summary .safety-detail summary:hover {
+  color: var(--accent);
+}
+
+.summary .safety-detail dl {
+  margin: 9px 0 0;
+}
+
+.summary .safety-detail .caveat {
+  margin: 9px 0 0;
+}

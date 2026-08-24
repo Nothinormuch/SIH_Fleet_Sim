@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SIH26123 · AMR Fleet Coordination</title>
 <link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/hud.css">
 </head>
 <body>
 
@@ -21,6 +22,8 @@
 <main>
   <section class="stage">
     <canvas id="floor"></canvas>
+
+    <div id="hud" class="hud-root" aria-hidden="true"></div>
 
     <div class="overlay-legend">
       <span><i class="sw sw-intent"></i> broadcast intent</span>
@@ -126,6 +129,7 @@
 
 <script src="/js/environment.js"></script>
 <script src="/js/amr.js"></script>
+<script src="/js/hud.js"></script>
 <script src="/js/network.js"></script>
 <script src="/js/main.js"></script>
 </body>
