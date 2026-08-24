@@ -8,7 +8,7 @@ benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 ```bash
 python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m pytest tests -q                # 34 tests
+python -m pytest tests -q                # 36 tests
 python run.py --scenario open_floor_control --policy BIOS_PIBT.2 --robots 4
 python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
 ```
