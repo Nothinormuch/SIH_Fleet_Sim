@@ -117,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
             return default if v is None or v == "" else v
 
         scenario = str(one("scenario", "open_floor_control"))
-        policy = str(one("policy", "BIOS_PIBT.2"))
+        policy = str(one("policy", "BIOS_PIBT.3"))
         allocation_policy = str(one("allocation_policy", "auction"))
         if scenario not in SCENARIOS:
             return self._json(400, {"error": f"unknown scenario {scenario!r}",

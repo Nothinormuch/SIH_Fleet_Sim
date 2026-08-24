@@ -170,6 +170,19 @@ class TrafficSpec:
     # robot can close the same auction without an auctioneer choosing the winner.
     auction_bid_window_s: float = 0.6
     auction_lease_s: float = 20.0
+    # V3 bids on a bounded bundle instead of serialising one auction per task. One
+    # active task per physical drop cell is deliberate admission control: it keeps
+    # service-station queues out of the circulation lanes.
+    auction_batch_bids: int = 12
+    auction_drop_capacity: int = 2
+    # At most this many live jobs may reserve the same direction through a
+    # bidirectional single-file block.  The phase flips only after those jobs finish,
+    # which avoids injecting two opposing queues into a corridor that cannot pass.
+    auction_corridor_capacity: int = 2
+    # Robots gossip one catalog entry at this rate so a task missed in a radio hole is
+    # eventually learned from a peer; the WMS is not required to coordinate retries.
+    task_gossip_period_s: float = 1.0
+    completion_gossip_period_s: float = 1.0
 
 
 @dataclass(frozen=True)

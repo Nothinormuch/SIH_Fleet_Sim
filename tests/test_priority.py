@@ -3,14 +3,17 @@
 import random
 
 from src.amr import (AMRBrain, CELL_ZONE_BASE, POLICIES, POLICY_BIOS_PIBT,
-                     POLICY_BIOS_PIBT_V2)
+                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, Peer,
+                     ST_IDLE, Task)
 from src.environment import (FREE, Warehouse, chokepoint_warehouse,
                              classic_warehouse, open_floor)
-from src.messages import block_claim, decode, encode
+from src.messages import BID, TASK_DONE, TASK_NEW, block_claim, decode, encode
 from src.priority import PriorityKey, pibt_step
 from src.settings import DEFAULT
 from src.scenarios import dead_zone
+from src.task_allocation import ALLOCATION_AUCTION
 from src.topology import analyse_topology, directed_circulation
+from src.world import World
 
 
 def _key(rid: str, age: int) -> PriorityKey:
@@ -117,6 +120,167 @@ def test_policy_is_exposed_under_bios_pibt_name():
     assert POLICY_BIOS_PIBT in POLICIES
     assert POLICY_BIOS_PIBT_V2 == "BIOS_PIBT.2"
     assert POLICY_BIOS_PIBT_V2 in POLICIES
+    assert POLICY_BIOS_PIBT_V3 == "BIOS_PIBT.3"
+    assert POLICY_BIOS_PIBT_V3 in POLICIES
+
+
+def test_v3_peer_catalog_gossips_a_missed_task_without_a_manager():
+    brain = AMRBrain(
+        "AMR01", open_floor(6, 6), DEFAULT,
+        policy=POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    brain.open_tasks["T1"] = Task("T1", (1, 1), (4, 4), 0.0, 2, 0.6)
+    outbox = []
+
+    brain._broadcast_task_catalog(1.0, outbox)
+
+    assert len(outbox) == 1
+    assert outbox[0].type == TASK_NEW
+    assert outbox[0].src == "AMR01"
+    assert outbox[0].body["task"] == "T1"
+    assert outbox[0].body["e"] == 2
+
+
+def test_v3_peer_catalog_repeats_completion_records():
+    brain = AMRBrain(
+        "AMR01", open_floor(6, 6), DEFAULT,
+        policy=POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    brain.completed_tasks.add("T1")
+    outbox = []
+
+    brain._broadcast_completion_catalog(1.0, outbox)
+
+    assert len(outbox) == 1
+    assert outbox[0].type == TASK_DONE
+    assert outbox[0].body["task"] == "T1"
+
+
+def test_v3_chokepoint_wave_members_do_not_refill_mid_phase():
+    env = chokepoint_warehouse(length=13)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("A", (1, 1), 0.0)
+    brain = AMRBrain(
+        "A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    brain.open_tasks = {
+        "T000": Task("T000", (1, 1), (23, 1)),
+        "T001": Task("T001", (23, 2), (1, 2)),
+        "T002": Task("T002", (1, 3), (23, 3)),
+        "T004": Task("T004", (1, 5), (23, 5)),
+    }
+
+    brain._run_v3_batch_auction(0.0, world.sense("A"), [])
+    brain._run_v3_batch_auction(0.7, world.sense("A"), [])
+
+    cid = next(iter(brain._task_corridor_directions(brain.open_tasks["T000"])))
+    entry, members = brain._v3_corridor_waves[cid]
+    assert entry == (6, 4)
+    assert members == ("T000", "T002")
+
+    # Finishing one member must not admit T004 into the still-active wave.
+    brain.completed_tasks.add("T002")
+    brain.open_tasks.pop("T002")
+    assert brain._v3_corridor_waves[cid][1] == ("T000", "T002")
+
+
+def test_v3_stages_one_cell_before_an_occupied_chokepoint_mouth():
+    env = chokepoint_warehouse(length=13)
+    brain = AMRBrain(
+        "A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    brain.path = [(5, 2), (5, 3), (5, 4), (6, 4), (7, 4)]
+    brain.pidx = 1
+    brain._last_cell = (5, 2)
+    brain.peers["B"] = Peer("B", cell=(5, 4), last_seen=0.0)
+
+    assert brain._v3_staging_conflict(0.0, (5, 2)) == "B"
+
+
+def test_v3_idle_vacate_never_enters_a_bidirectional_block():
+    env = chokepoint_warehouse(length=13)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("A", (5, 4), 0.0)
+    brain = AMRBrain(
+        "A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V3, home=(23, 4),
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    brain.peers["B"] = Peer("B", cell=(4, 4), goal=(5, 4), last_seen=0.0)
+
+    brain._vacate_if_in_the_way(0.0, world.sense("A"))
+
+    assert brain.goal is not None
+    assert brain._controlled_block(brain.goal) is None
+
+
+def test_v3_duplicate_cell_loser_exits_to_a_non_corridor_cell():
+    env = chokepoint_warehouse(length=13)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("B", (5, 4), 0.0)
+    brain = AMRBrain(
+        "B", env, DEFAULT, policy=POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    brain.peers["A"] = Peer(
+        "A", cell=(5, 4), pose=(7.8, 6.8, 0.0), last_seen=0.0,
+    )
+
+    repaired = brain._repair_duplicate_cell(0.0, world.sense("B"))
+
+    assert repaired
+    assert brain._cell_repair_target == brain.path[-1]
+    assert brain.path[-1] in env.neighbors((5, 4))
+    assert brain._controlled_block(brain.path[-1]) is None
+
+
+def test_v3_batch_auction_bounds_work_per_drop_cell():
+    env = open_floor(8, 8)
+    world = World(env, DEFAULT, seed=0)
+    starts = {"A": (0, 0), "B": (3, 0), "C": (6, 0)}
+    brains = {}
+    for rid, start in starts.items():
+        world.add_robot(rid, start, 0.0)
+        brains[rid] = AMRBrain(
+            rid, env, DEFAULT, policy=POLICY_BIOS_PIBT_V3,
+            allocation_policy=ALLOCATION_AUCTION,
+        )
+
+    tasks = [
+        Task("T1", (1, 1), (7, 7), 0.0, 0, 0.6),
+        Task("T2", (2, 1), (7, 7), 0.0, 0, 0.6),
+        Task("T3", (3, 1), (7, 7), 0.0, 0, 0.6),
+        Task("T4", (4, 1), (0, 7), 0.0, 0, 0.6),
+    ]
+    first_round = {}
+    for rid, brain in brains.items():
+        brain.open_tasks = {task.tid: Task(**task.__dict__) for task in tasks}
+        brain.peers = {
+            other: Peer(other, state=ST_IDLE, last_seen=0.0)
+            for other in brains if other != rid
+        }
+        outbox = []
+        brain._run_v3_batch_auction(0.0, world.sense(rid), outbox)
+        first_round[rid] = [message for message in outbox if message.type == BID]
+
+    all_bids = [message for messages in first_round.values() for message in messages]
+    winners = []
+    for rid, brain in brains.items():
+        brain._ingest(0.7, [message for message in all_bids if message.src != rid])
+        for peer in brain.peers.values():
+            peer.last_seen = 0.7
+        outbox = []
+        brain._run_v3_batch_auction(0.7, world.sense(rid), outbox)
+        assert all(claim[2] == rid for claim in brain._task_claims.values())
+        if brain.task is not None:
+            winners.append(brain.task)
+
+    assert len({task.tid for task in winners}) == len(winners)
+    assert sum(task.drop == (7, 7) for task in winners) \
+        <= DEFAULT.traffic.auction_drop_capacity
 
 
 def test_v2_circulation_is_strongly_connected_and_has_no_reverse_edge():

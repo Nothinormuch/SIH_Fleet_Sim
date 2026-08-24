@@ -39,7 +39,8 @@ MANAGER_ID = "FM0"
 
 class FleetManager:
     def __init__(self, env: Warehouse, cfg: Config, mid: str = MANAGER_ID,
-                 allocation_policy: str | None = ALLOCATION_HUNGARIAN) -> None:
+                 allocation_policy: str | None = ALLOCATION_HUNGARIAN,
+                 route_planning: bool = True) -> None:
         validate_allocation_policy(allocation_policy)
         self.env = env
         self.cfg = cfg
@@ -49,6 +50,7 @@ class FleetManager:
         # task of its own.
         self.allocation_policy = allocation_policy
         self.allocate_tasks = allocation_policy == ALLOCATION_HUNGARIAN
+        self.route_planning = route_planning
         self.alive = True
         self.epoch = 0
 
@@ -107,7 +109,7 @@ class FleetManager:
             elif m.type == msg.AWARD and self.allocate_tasks:
                 self.assigned[b["task"]] = m.src
 
-        if t - self._t_beacon >= 0.5:
+        if self.route_planning and t - self._t_beacon >= 0.5:
             self._t_beacon = t
             out.append(msg.mgr_beacon(self.mid, self._next_seq(), t, self.epoch))
 
@@ -115,7 +117,8 @@ class FleetManager:
             self._t_plan = t
             if self.allocate_tasks:
                 out.extend(self._assign_tasks(t))
-            out.extend(self._plan_fleet(t))
+            if self.route_planning:
+                out.extend(self._plan_fleet(t))
         return out
 
     # ------------------------------------------------------------------ assignment

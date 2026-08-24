@@ -12,20 +12,22 @@ import math
 
 import pytest
 
-from src.amr import (AMRBrain, POLICY_CENTRAL, POLICY_DECENTRALIZED,
-                     POLICY_STOP_WAIT, Task)
+from src.amr import (AMRBrain, POLICY_BIOS_PIBT_V3, POLICY_CENTRAL,
+                     POLICY_DECENTRALIZED, POLICY_STOP_WAIT, Task)
 from src.assignment import hungarian
 from src.environment import (RACK, chokepoint_warehouse, classic_warehouse,
                              corridors, open_floor)
 from src.fleet_manager import FleetManager
 from src.geometry import segments_min_distance, to_cell, wrap_angle
-from src.messages import award, bid, decode, encode, heartbeat, task_new
+from src.messages import (MGR_BEACON, PLAN_RSP, award, bid, decode, encode,
+                          heartbeat, task_new)
 from src.metrics import poisson_rate_ci
 from src.planner import Reservations, astar, prioritized_plan, space_time_astar
 from src.settings import DEFAULT
-from src.task_allocation import ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN
+from src.task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
+                                 ALLOCATION_PREASSIGNED)
 from src.transport import SimNetwork
-from src.world import Actuation, Sensors, World
+from src.world import Actuation, Detection, Sensors, World
 
 
 # ----------------------------------------------------------------- geometry
@@ -93,6 +95,18 @@ def test_manager_award_is_accepted_by_its_destination_robot():
     assert task.tid not in brain._task_claims
 
 
+def test_allocation_only_manager_never_controls_routes():
+    manager = FleetManager(
+        open_floor(10, 10), DEFAULT,
+        allocation_policy=ALLOCATION_HUNGARIAN,
+        route_planning=False,
+    )
+
+    outbox = manager.step(1.0, [])
+
+    assert not any(message.type in (MGR_BEACON, PLAN_RSP) for message in outbox)
+
+
 def test_decentralized_safety_guard_does_not_creep_inside_contact_envelope():
     env = open_floor(10, 10)
     brain = AMRBrain("A", env, DEFAULT, policy=POLICY_DECENTRALIZED)
@@ -106,6 +120,23 @@ def test_decentralized_safety_guard_does_not_creep_inside_contact_envelope():
 
     assert act.v == 0.0
     assert act.safety_stop
+
+
+def test_v3_recovery_motion_must_increase_close_peer_clearance():
+    env = open_floor(10, 10)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V3)
+    peer = Detection(x=2.7, y=2.5, r=0.35, range_m=0.2)
+    sensors = Sensors(
+        t=1.0, pose=(2.5, 2.5, 0.0), v=0.0, omega=0.0,
+        battery_frac=1.0, cell=(1, 1), clearance_m=0.0,
+        clearance_omni_m=0.0, detections=(peer,),
+    )
+
+    assert not brain._escape_motion_increases_clearance(
+        sensors, Actuation(v=0.2, omega=0.0))
+    away = Sensors(**{**sensors.__dict__, "pose": (2.5, 2.5, math.pi)})
+    assert brain._escape_motion_increases_clearance(
+        away, Actuation(v=0.2, omega=0.0))
 
 
 def test_task_protocol_carries_epoch_deadline_and_lease():
@@ -147,6 +178,19 @@ def test_decentralized_dashboard_run_has_no_fleet_manager():
     assert {event["type"] for event in events} >= {"TN", "BD", "AW"}
 
 
+def test_v3_auction_has_no_fleet_manager_or_central_route_mode():
+    from src.main import run_for_dashboard
+
+    payload = run_for_dashboard(
+        "dense_aisles", POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_AUCTION,
+        robots=2, seed=0, duration=2.0,
+    )
+
+    assert not any(frame["manager_alive"] for frame in payload["frames"])
+    assert payload["meta"]["allocation_policy"] == ALLOCATION_AUCTION
+
+
 def test_allocation_is_selected_by_policy_on_a_normal_scenario():
     from src.main import run_for_dashboard
 
@@ -170,6 +214,13 @@ def test_allocation_is_selected_by_policy_on_a_normal_scenario():
     assert any(frame["manager_alive"] for frame in hungarian_run["frames"])
     assert {event["type"] for event in hungarian_events} >= {"TN", "AW"}
     assert not any(event["type"] == "BD" for event in hungarian_events)
+
+    preassigned = run_for_dashboard(
+        "dense_aisles", POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_PREASSIGNED,
+        robots=2, seed=0, duration=1.0)
+    assert preassigned["meta"]["allocation_policy"] == ALLOCATION_PREASSIGNED
+    assert preassigned["meta"]["tasks"] == 8
 
 
 def test_astar_respects_racks():

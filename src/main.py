@@ -31,14 +31,16 @@ from dataclasses import replace
 from . import messages as msg
 from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
                   POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS_PIBT,
-                  POLICY_BIOS_PIBT_V2, POLICY_DECENTRALIZED,
+                  POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
+                  POLICY_DECENTRALIZED,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
 from .scenarios import SCENARIOS, Scenario
 from .settings import Config, DEFAULT
 from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
-                               ALLOCATION_POLICIES,
+                               ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED,
+                               ACTIVE_ALLOCATION_POLICIES,
                                validate_allocation_policy)
 from .transport import SimNetwork
 from .world import World
@@ -53,6 +55,8 @@ def _resolve_allocation_policy(sc: Scenario,
     if allocation_policy is None and sc.use_auction:
         allocation_policy = ALLOCATION_AUCTION
     validate_allocation_policy(allocation_policy)
+    if allocation_policy == ALLOCATION_PREASSIGNED:
+        return None
     return allocation_policy
 
 
@@ -64,7 +68,7 @@ def _announced_tasks(sc: Scenario, allocation_policy: str | None) -> list[Task]:
     those queues and announces the same tasks to the WMS/robots instead. The old
     `use_auction` scenario flag is supported only as a backwards-compatible default.
     """
-    if allocation_policy in ALLOCATION_POLICIES:
+    if allocation_policy in ACTIVE_ALLOCATION_POLICIES:
         if sc.unassigned:
             return list(sc.unassigned)
         return [task for queue in sc.assignments for task in queue]
@@ -131,7 +135,9 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
         manager_allocation = (ALLOCATION_HUNGARIAN
                               if allocation_policy == ALLOCATION_HUNGARIAN else None)
         manager = FleetManager(sc.env, cfg,
-                               allocation_policy=manager_allocation)
+                               allocation_policy=manager_allocation,
+                               route_planning=policy in (
+                                   POLICY_CENTRAL, POLICY_HIERARCHICAL))
         net.register(MANAGER_ID)
 
     total_tasks = len(announced_tasks) if uses_allocation else sc.n_tasks
@@ -343,10 +349,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="route/traffic policy")
     ap.add_argument("--allocation-policy", choices=sorted(ALLOCATION_POLICIES),
                     default=None,
-                    help="task allocator: auction or hungarian; default keeps the scenario workload")
+                    help=("task allocator: decentralized auction, Hungarian "
+                          "comparison, or preassigned workload"))
     ap.add_argument("--robots", type=int, default=None)
+    ap.add_argument("--duration", type=float, default=None,
+                    help="override the scenario duration in simulated seconds")
+    ap.add_argument("--seed", type=int, default=0,
+                    help="first deterministic seed (default: 0)")
     ap.add_argument("--seeds", type=int, default=1,
-                    help="run seeds 0..N-1 and pool them for the safety statistics")
+                    help="number of consecutive seeds to run and pool")
     ap.add_argument("--loss", type=float, default=None,
                     help="override uniform packet loss probability")
     ap.add_argument("--json", metavar="PATH", default=None,
@@ -359,11 +370,13 @@ def main(argv: list[str] | None = None) -> int:
 
     for policy in policies:
         runs = []
-        for seed in range(args.seeds):
+        for seed in range(args.seed, args.seed + args.seeds):
             kw = {"seed": seed}
             if args.robots is not None:
                 kw["n_robots"] = args.robots
             sc = SCENARIOS[args.scenario](**kw)
+            if args.duration is not None:
+                sc.duration_s = args.duration
             if args.loss is not None:
                 sc.net = replace(sc.net, loss=args.loss)
             r = run_scenario(sc, policy, seed=seed, verbose=args.verbose,
@@ -386,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         print()
         for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS,
                      POLICY_DECENTRALIZED, POLICY_BIOS_PIBT,
-                     POLICY_BIOS_PIBT_V2):
+                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")

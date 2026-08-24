@@ -6,9 +6,11 @@ can replace the motion policy while these two task-allocation contracts stay unc
 
 from __future__ import annotations
 
+ALLOCATION_PREASSIGNED = "preassigned"
 ALLOCATION_AUCTION = "auction"
 ALLOCATION_HUNGARIAN = "hungarian"
-ALLOCATION_POLICIES = (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN)
+ACTIVE_ALLOCATION_POLICIES = (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN)
+ALLOCATION_POLICIES = (ALLOCATION_PREASSIGNED, *ACTIVE_ALLOCATION_POLICIES)
 
 
 def validate_allocation_policy(policy: str | None) -> None:

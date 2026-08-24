@@ -9,9 +9,9 @@ benchmark harness for decentralized AMR priority and path-conflict resolution.
 ```bash
 python backend/server.py                 # dashboard -> http://127.0.0.1:8000
 python -m pytest tests -q
-python run.py --scenario open_floor_control --policy BIOS_PIBT.2 --robots 4
+python run.py --scenario open_floor_control --policy BIOS_PIBT.3 --allocation-policy auction --robots 4
 python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
-python run.py --scenario dense_aisles --policy BIOS_PIBT.2 --allocation-policy auction --robots 4
+python run.py --scenario dense_aisles --policy BIOS_PIBT.3 --allocation-policy auction --robots 4
 python run.py --scenario dense_aisles --policy BIOS_PIBT.2 --allocation-policy hungarian --robots 4
 ```
 
@@ -20,18 +20,23 @@ only, so a robot node drops onto a bare Raspberry Pi image with no build step.
 
 ## Decentralized priority algorithm
 
-The default high-density policy is `BIOS_PIBT.2`. Every AMR broadcasts a
+The default policy is `BIOS_PIBT.3` with peer `auction` allocation. It combines V2's
+traffic layer with decentralized batch task allocation and congestion admission. Every
+AMR broadcasts a
 frozen lexicographic priority plus its next-cell intent. On grid-like rack maps it
 plans on a strongly connected one-way circulation graph and takes an expiring,
 two-phase peer lease on every destination cell. This prevents head-on entry and restores
 one-robot-per-cell ownership before a queue forms. Merge contenders use the same frozen
 total order; no process assigns moves and the dashboard is a passive observer.
 
-Maps that cannot be oriented without losing reachability retain the V1 PIBT/block-lease
-fallback. Local 50 Hz protective stopping remains authoritative for every policy.
+Maps that cannot be oriented without losing reachability use bounded directional task
+waves, block leases, early mouth staging and PIBT. Local 50 Hz protective stopping
+remains authoritative for every policy.
 
-See [`docs/BIOS_PIBT_2_PROTOCOL.md`](docs/BIOS_PIBT_2_PROTOCOL.md) for the exact
-protocol, state machine, conditional liveness argument and current benchmark evidence.
+See [`docs/BIOS_PIBT_3_PROTOCOL.md`](docs/BIOS_PIBT_3_PROTOCOL.md) for the complete
+allocation/traffic relationship, state machine, conditional liveness argument and
+current benchmark evidence. V2 remains documented in
+[`docs/BIOS_PIBT_2_PROTOCOL.md`](docs/BIOS_PIBT_2_PROTOCOL.md).
 Version 1 remains documented in
 [`docs/DECENTRALIZED_PRIORITY.md`](docs/DECENTRALIZED_PRIORITY.md).
 
@@ -106,7 +111,7 @@ frontend/
   js/main.js       fetch, interpolated playback, panel binding
   assets/          generated sprite set (256 px per cell)
 tests/             core, priority and dashboard regression tests
-docs/              BIOS_PIBT_2_PROTOCOL.md plus V1 design, critique and findings
+docs/              V3/V2 protocols plus V1 design, critique and findings
 reference/         asset prompt pack and loader spec
 ```
 
@@ -140,12 +145,14 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `hierarchical` | Central plans when reachable, P2P negotiation when not, Layer 0 always. | The proposal. Full decentralisation as a fallback, not an ideal. |
 | `BIOS_1.0.0` | Decentralized block leases plus an aggressive local unstick manoeuvre. | Existing experimental liveness policy retained for comparison. |
 | `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
-| `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | Default high-density decentralized policy. |
+| `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
+| `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Default fully decentralized route + allocation policy. |
 
 Task ownership is selected independently of the route policy. `auction` lets peers
-broadcast bids and converge on deterministic leased awards; `hungarian` lets the
-optional fleet manager minimise the robot-to-task cost matrix. Keeping allocation and
-traffic separate makes their performance effects measurable rather than conflated.
+broadcast bids and converge on deterministic leased awards; this is the fully
+decentralized V3 mode. `hungarian` lets the optional fleet manager minimise the
+robot-to-task cost matrix and exists only as a comparison baseline. Keeping allocation
+and traffic separate makes their performance effects measurable rather than conflated.
 
 `--seeds N` pools runs so the safety statistics have enough exposure to mean something.
 
@@ -160,12 +167,17 @@ model including the dead-zone result, the Poisson statistics, the end-to-end
 single-robot path, priority serialization, deterministic PIBT inheritance, backtracking,
 rotation handling, and tree-appendage detection.
 
-**High-density development result:** on `dead_zone_mesh`, 24 robots, seed 20 and a
-300 s cutoff, V1 completes 14/96 tasks with 174 detected wait cycles and 64 retreats;
-V2 completes 18/96 with zero robot/rack contacts, zero detected cycles and zero
-retreats. That is 28.6% more completed work at the cutoff, not a makespan comparison;
-neither run completes all tasks. See the V2 protocol document for assumptions and the
-extended trace.
+**V3 high-density result:** on `dead_zone_mesh`, 24 robots, seed 20 and a 300 s
+cutoff, the merged V2-plus-allocation branch completes 8/96 tasks. V3 completes 41/96
+with zero robot/human/rack contacts, zero detected wait cycles and zero retreats. That
+is 5.125 times the completed work at the cutoff, not a makespan comparison; neither run
+completes all tasks.
+
+**V3 chokepoint result:** all three pinned four-AMR seeds complete 12/12 tasks in
+407.7–413.9 s with zero observed contacts, detected wait cycles or retreats. Extended
+10% and 20% packet-loss sweeps also complete every task across three seeds per loss
+level (407.7–423.4 s). All 54 regressions pass. See the V3 protocol document for
+assumptions and exact commands.
 
 **V1 four-robot result (three seeds):** `BIOS_PIBT.1` completes all
 16 `open_floor_control` tasks in every seed (183.2–230.6 s). At the pinned cutoffs it
@@ -208,5 +220,4 @@ paused on the frame where two robots negotiate a chokepoint and replayed against
 different policy on the same seed.
 
 **Not built yet:** the distributed multi-process runner (the UDP transport class exists
-and is unit-tested; the process launcher is not written), and the packet-loss / partition
-sweep plots.
+and is unit-tested; the process launcher is not written), and packet-loss sweep plots.
