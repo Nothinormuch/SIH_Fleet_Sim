@@ -58,6 +58,7 @@ async function boot() {
     if (!App.data) return;
     App.view.resize(App.data.map, App.data.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, App.data.map, App.imgs);
+    Hud.resize(App.data.map);
     draw();
   });
 
@@ -114,6 +115,11 @@ async function run() {
 
     renderSummary(payload.summary, payload.meta);
     setStatus(`${n} frames · ${payload.meta.robots} robots · seed ${payload.meta.seed}`);
+
+    // HUD is re-inited on every run; init() disposes any previous instance so
+    // replaying / re-running never stacks overlays.
+    Hud.init(App.view, App.imgs, payload);
+
     draw();
     togglePlay();
   } catch (e) {
@@ -246,6 +252,7 @@ function draw() {
   renderFleetPanel(frame);
   renderAuctionPanel(frame);
   updateSummaryProgress(frame);
+  Hud.render(frame, App.data.summary, App.data.meta, frame.t);
 }
 
 function updateManagerDot(frame) {

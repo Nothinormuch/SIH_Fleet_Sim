@@ -120,7 +120,8 @@ class AMRBrain:
 
     def __init__(self, rid: str, env: Warehouse, cfg: Config,
                  policy: str = POLICY_HIERARCHICAL, home: Cell = (0, 0),
-                 allocation_policy: str | None = None) -> None:
+                 allocation_policy: str | None = None,
+                 policy_model=None) -> None:
         if policy not in POLICIES:
             raise ValueError(f"unknown policy {policy!r}")
         validate_allocation_policy(allocation_policy)
