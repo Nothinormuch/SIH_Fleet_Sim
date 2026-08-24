@@ -158,6 +158,35 @@ and traffic separate makes their performance effects measurable rather than conf
 
 ---
 
+### `BIOS_4` — the learned one
+
+A 549-parameter network chooses among five verbs the fleet already implements — proceed,
+hold, yield to a passing bay, respect the block token, replan — at the 10 Hz traffic
+layer. **It does not drive the wheels**, and that is deliberate: `_safety()` has final
+authority over actuation, so a model trained to emit velocities would spend its capacity
+rediscovering an envelope it is not allowed to leave, and sim-to-real would become a
+question about chassis dynamics instead of about decisions.
+
+Everything that must hold regardless of what the network learned stays in ordinary Python:
+panic-on-stick fires above the model on its own timer, Layer 0 sits below it, and
+unexecutable verbs are masked. A badly trained BIOS_4 is slow, not unsafe.
+
+```bash
+# train (about 45 minutes on 12 cores, writes models/bios4.json)
+python -m src.evolve --population 24 --generations 30 --workers 12
+
+# report it against every baseline on the HELD-OUT seeds
+python -m src.evolve --evaluate models/bios4.json --workers 12
+```
+
+Or do both from the dashboard: pick `BIOS_4` and the Train / Upload buttons appear.
+Training runs as a background job you can watch and cancel; the model downloads as a
+`.json` you can re-upload here or flash onto a robot.
+
+Training seeds (0–7) and evaluation seeds (8–11) are disjoint and the trainer refuses to
+cross the line — training and reporting on the same seed turns the headline into a
+memorisation score. Result and caveats: `docs/FINDINGS.md`.
+
 ## Status — read this before quoting any number
 
 **Working and covered by tests:** the map and block decomposition, A* and space-time A*

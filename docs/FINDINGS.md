@@ -163,3 +163,81 @@ than tuning thresholds.
 - **Ray-cast with grid traversal, not fixed steps.** Amanatides–Woo costs one iteration
   per cell crossed instead of eighty per ray. At 50 Hz × N robots it decides whether the
   benchmark runs in seconds or minutes.
+
+---
+
+## BIOS_4 — what a learned coordination policy actually bought
+
+`BIOS_4` picks one of five verbs at the 10 Hz traffic layer — proceed, hold, yield to a
+passing bay, respect the block token, replan — from a 549-parameter network trained by an
+evolution strategy. It does not drive the wheels. Trained on seeds 0–2, **reported here on
+held-out seeds 8–11 at 420 s, which is longer than any episode it ever saw:**
+
+| policy | tasks (4 seeds) | per seed | progress | r-r | r-h | rack | min sep | replans |
+|---|---|---|---|---|---|---|---|---|
+| `stop_and_wait` | 0/48 | 0,0,0,0 | 59 | 0 | 0 | 0 | 0.855 | 366 |
+| `central` | 0/48 | 0,0,0,0 | 54 | 0 | 0 | 0 | 0.849 | 32 |
+| `hierarchical` | 0/48 | 0,0,0,0 | 31 | 0 | 0 | 0 | 0.851 | 974 |
+| `BIOS_1.0.0` | 7/48 | 4,3,**0,0** | 99 | 0 | 0 | **15** | 0.732 | 1556 |
+| **`BIOS_4`** | **13/48** | 3,3,3,4 | 129 | 0 | 0 | **0** | 0.865 | 729 |
+
+**The per-seed column is the result, not the total.** `BIOS_1.0.0` scores well on two
+seeds and *completely fails* on the other two; `BIOS_4` delivers on all four. A
+best-of-one-seed comparison would have shown `BIOS_1.0.0` winning (4 vs 3) and hidden the
+thing that actually matters. This is the same reason `safety_report()` pools runs, applied
+to throughput.
+
+Three secondary results worth more than the headline:
+
+- **`BIOS_1.0.0` drives into shelving and `BIOS_4` does not** — 15 rack contacts against
+  zero, and a worse worst-separation (0.732 m vs 0.865 m). Panic-on-stick edges into "any
+  free adjacent cell" and Layer 0's creep window lets it through the omni guard; over
+  28 robot-minutes that finds the racking. The learned policy reaches the same liveness
+  without needing the valve nearly as often.
+- **The backstop is not doing the work.** The unstick valve fired 23 times across four
+  420 s runs. If the learned policy were merely riding on panic-on-stick, that number
+  would be in the hundreds — a genome that always holds triggers it roughly 120 times per
+  robot per run. It is instrumented (`PolicyResult.bios4_unstick`) precisely so this claim
+  can be checked rather than asserted.
+- **The reroute cooldown halved the churn.** 729 replans against `BIOS_1.0.0`'s 1556 and
+  `hierarchical`'s 974. Replanning was left rate-limited at 3 s deliberately: unlimited
+  replanning is a known pathology here, and evolution would otherwise have rediscovered it
+  and called it a strategy.
+
+### The guarantees do not depend on the training working
+
+Tested rather than claimed. An always-hold model still moves the fleet (the valve fires
+above the model, on its own timer); an always-proceed model — the most reckless verb,
+ignoring block ownership and peer intent entirely — still produces zero contacts, because
+Layer 0 is below all of it. Twelve *arbitrary* 549-parameter genomes over 12 episodes
+likewise produced zero robot-robot and zero robot-human contacts. A badly trained BIOS_4 is
+slow; it is not unsafe and it does not deadlock.
+
+### Training lessons
+
+- **A sparse reward has no slope.** Over a 120 s episode the fleet completes 0–3 of 12
+  tasks, so a fitness of "tasks completed" is almost all zeros and evolution has nothing to
+  climb. `progress_cells` — cells of *net* approach to a goal — is the dense companion.
+  Monotone on purpose: crediting every goalward step would pay a robot to oscillate, and
+  the fitness would be maximised by twitching in place.
+- **An argmax policy starts on a plateau.** Initialised at zero, every logit is equal, the
+  first legal verb always wins, and small updates never flip the decision. The ES iterate
+  sat at exactly the same fitness for **thirteen generations** before escaping. The elite
+  still improved throughout, because it comes from the sampled population rather than from
+  the iterate — which is the only reason the run produced anything. Ship the best genome
+  ever *scored*, never the final iterate.
+- **Cost per episode is a random variable over seeds.** The same 90 s episode ranges from
+  2.07 s to 5.96 s of wall clock depending on the seed. A training budget estimated from
+  one seed was wrong by 3.4×.
+- **Population variance dwarfs the gradient.** Generation best swung between 8 and 3039
+  while the mean climbed steadily from −4784 to roughly +150. The mean is the signal that
+  the search is working; the best is mostly luck.
+
+### What this does not show
+
+One training run, one scenario, one fleet size. 13/48 is 27% of the task set — no policy
+here completes it. There is no variance estimate over *training* seeds, so "BIOS_4 beats
+BIOS_1.0.0" is one sample of a training process, not a distribution. And none of it has
+touched real hardware: the sim-to-real claim rests on the observation space being
+restricted to what a robot can actually sense and receive, which is an argument, not a
+measurement.

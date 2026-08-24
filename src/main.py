@@ -32,7 +32,7 @@ from . import messages as msg
 from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
                   POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS_PIBT,
                   POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
-                  POLICY_DECENTRALIZED,
+                  POLICY_DECENTRALIZED, POLICY_BIOS4,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
@@ -89,11 +89,17 @@ def _auction_event(message: msg.Message) -> dict:
             event[key] = body[key]
     return event
 
+# Which policies are served by a fleet manager at all. Kept here as one tuple because
+# two places need the answer - the runner, which decides whether to build a manager,
+# and the dashboard payload, which has to tell the UI whether a missing manager is a
+# failure or the design. A policy absent from this tuple is peer-to-peer by intent.
+MANAGED_POLICIES = (POLICY_CENTRAL, POLICY_HIERARCHICAL)
+
 
 def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                  cfg: Config | None = None, trace: list | None = None,
                  verbose: bool = False,
-                 allocation_policy: str | None = None) -> PolicyResult:
+                 allocation_policy: str | None = None, policy_model=None) -> PolicyResult:
     """Run one (scenario, policy, seed) and return everything it produced.
 
     Pass a list as `trace` to collect per-frame snapshots for the dashboard; leave it
@@ -118,9 +124,11 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
         rid = f"AMR{i + 1:02d}"
         world.add_robot(rid, start, 0.0)
         b = AMRBrain(rid, sc.env, cfg, policy=policy, home=start,
-                     allocation_policy=allocation_policy)
+                     allocation_policy=allocation_policy, policy_model=policy_model)
         b.queue = ([] if uses_allocation else
                    list(sc.assignments[i]) if i < len(sc.assignments) else [])
+        if hasattr(b, 'use_auction'):
+            b.use_auction = sc.use_auction
         brains[rid] = b
         net.register(rid)
 
@@ -261,6 +269,8 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         min_separation_m=round(seps[0], 3) if seps else 0.0,
         p05_separation_m=round(seps[max(0, int(0.05 * len(seps)))], 3) if seps else 0.0,
         robot_hours=round(robot_hours, 5),
+        progress_cells=int(agg("progress_cells")),
+        bios4_unstick=int(agg("bios4_unstick")),
         deadlocks_detected=int(agg("deadlocks_detected")),
         retreats=int(agg("retreats")),
         yields=int(agg("yields")),
@@ -287,7 +297,7 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
 
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
                       seed: int = 0, duration: float | None = None,
-                      allocation_policy: str = ALLOCATION_AUCTION) -> dict:
+                      allocation_policy: str = ALLOCATION_AUCTION, policy_model=None) -> dict:
     """One run, packaged for the web dashboard: map, every frame, and the summary.
 
     Playback rather than a live stream, deliberately. The sim runs far faster than
@@ -305,7 +315,7 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
 
     frames: list = []
     result = run_scenario(sc, policy, seed=seed, trace=frames,
-                          allocation_policy=allocation_policy)
+                          allocation_policy=allocation_policy, policy_model=policy_model)
     return {
         "map": sc.env.to_json(),
         "meta": {
@@ -318,6 +328,12 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
             "cell_m": DEFAULT.cell_m,
             "pose_units": "metres",
             "robot_diameter_m": 2.0 * DEFAULT.robot.radius_m,
+            "has_manager": policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL),
+            # So the dashboard can say WHICH model produced a run. A BIOS_4 result with
+            # no model behind it is an untrained control, not a policy, and the two must
+            # never be confused on screen.
+            "model": (policy_model.to_dict().get("meta") if policy_model is not None
+                      else None),
         },
         "frames": frames,
         "summary": result.to_dict(),
@@ -399,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
         print()
         for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS,
                      POLICY_DECENTRALIZED, POLICY_BIOS_PIBT,
-                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3):
+                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, POLICY_BIOS4):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")
