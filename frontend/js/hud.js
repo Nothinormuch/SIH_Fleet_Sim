@@ -239,6 +239,31 @@
         '<span class="hud-micro">Give-way <b data-hud="mYield">0</b></span>' +
         '<span class="hud-micro">Shields <b data-hud="mShield">0</b></span>' +
       '</div>' +
+    '</article>' +
+    '<article class="hud-block hud-fleet">' +
+      '<span class="hud-eb">Fleet Status</span>' +
+      '<div class="hud-fleet-grid" data-hud="fleetGrid"></div>' +
+    '</article>' +
+    '<article class="hud-block hud-allocation">' +
+      '<span class="hud-eb">Task Allocation</span>' +
+      '<div class="hud-alloc-stats">' +
+        '<div class="hud-alloc-row">' +
+          '<span class="hud-alloc-label">Announced</span>' +
+          '<span class="hud-alloc-val" data-hud="allocAnnounced">0</span>' +
+        '</div>' +
+        '<div class="hud-alloc-row">' +
+          '<span class="hud-alloc-label">Allocated</span>' +
+          '<span class="hud-alloc-val" data-hud="allocAllocated">0</span>' +
+        '</div>' +
+        '<div class="hud-alloc-row">' +
+          '<span class="hud-alloc-label">Completed</span>' +
+          '<span class="hud-alloc-val" data-hud="allocCompleted">0</span>' +
+        '</div>' +
+        '<div class="hud-alloc-row">' +
+          '<span class="hud-alloc-label">Throughput</span>' +
+          '<span class="hud-alloc-val" data-hud="allocThroughput">0</span>' +
+        '</div>' +
+      '</div>' +
     '</article>';
 
   function build() {
@@ -256,6 +281,11 @@
     el.mDead = qs('[data-hud="mDead"]');
     el.mYield = qs('[data-hud="mYield"]');
     el.mShield = qs('[data-hud="mShield"]');
+    el.fleetGrid = qs('[data-hud="fleetGrid"]');
+    el.allocAnnounced = qs('[data-hud="allocAnnounced"]');
+    el.allocAllocated = qs('[data-hud="allocAllocated"]');
+    el.allocCompleted = qs('[data-hud="allocCompleted"]');
+    el.allocThroughput = qs('[data-hud="allocThroughput"]');
 
     el.jobsArc.style.strokeDasharray = RING_C.toFixed(2);
     el.jobsArc.style.strokeDashoffset = RING_C.toFixed(2);
@@ -274,6 +304,11 @@
     el.mDead.textContent = fmt(sum.deadlocks_detected, 0);
     el.mYield.textContent = fmt(sum.yields, 0);
     el.mShield.textContent = fmt(sum.safety_stop_ticks, 0);
+
+    // Initialize allocation stats
+    if (el.allocAnnounced) el.allocAnnounced.textContent = fmt(sum.tasks_announced, 0);
+    if (el.allocCompleted) el.allocCompleted.textContent = fmt(sum.tasks_completed, 0);
+    if (el.allocThroughput) el.allocThroughput.textContent = fmt(sum.throughput_per_robot_hr, 1);
 
     S.health = fleetHealth(sum, meta);
     S.healthTgt = S.health;
@@ -314,6 +349,42 @@
     el.healthSub.textContent = S.active + '/' + S.spawned + ' fleet online';
   }
 
+  function updateFleet() {
+    if (!el.fleetGrid || !S.lastFrame) return;
+    const fleet = S.lastFrame.fleet || [];
+    if (fleet.length === 0) {
+      el.fleetGrid.innerHTML = '<div style="color: rgba(255,255,255,0.5); font-size: 10px;">No fleet data</div>';
+      return;
+    }
+
+    let html = '';
+    for (const robot of fleet) {
+      const state = robot.state || 'unknown';
+      const stateCol = state === 'idle' ? 'rgba(120,140,160,.6)' :
+                       state === 'charging' ? 'rgba(255,184,103,.7)' :
+                       state === 'active' ? '#39ff8a' : '#00f0ff';
+      html += `<div class="hud-fleet-row">
+        <span class="hud-fleet-id">${robot.id}</span>
+        <span class="hud-fleet-state" style="color: ${stateCol}">${state.slice(0, 3).toUpperCase()}</span>
+        <span class="hud-fleet-task">${robot.task ? 'T' + robot.task : '—'}</span>
+        <span class="hud-fleet-done">${fmt(robot.done, 0)}</span>
+      </div>`;
+    }
+    el.fleetGrid.innerHTML = html;
+  }
+
+  function updateAllocation() {
+    if (!S.summary) return;
+    const sum = S.summary;
+    const announced = num(sum.tasks_announced) || num(S.meta.tasks) || 0;
+    const allocated = Math.max(0, announced - (num(sum.tasks_announced) - num(sum.tasks_completed)));
+
+    if (el.allocAnnounced) el.allocAnnounced.textContent = fmt(announced, 0);
+    if (el.allocAllocated) el.allocAllocated.textContent = fmt(allocated, 0);
+    if (el.allocCompleted) el.allocCompleted.textContent = fmt(sum.tasks_completed, 0);
+    if (el.allocThroughput) el.allocThroughput.textContent = fmt(sum.throughput_per_robot_hr, 1) + ' t/r·h';
+  }
+
   function loop(now) {
     raf = requestAnimationFrame(loop);
     if (!root) return;
@@ -322,6 +393,8 @@
     springStep(dt);
     updateJobs();
     updateHealth();
+    updateFleet();
+    updateAllocation();
     paintMinimap(now);
   }
 

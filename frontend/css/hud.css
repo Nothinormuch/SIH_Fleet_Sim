@@ -377,3 +377,114 @@
 .summary .safety-detail .caveat {
   margin: 9px 0 0;
 }
+
+/* ----------------------------------------------------------------- fleet panel */
+
+.hud-fleet {
+  --glow: #00f0ff;
+  --glow-rgb: 0,240,255;
+  bottom: 240px;
+  left: 14px;
+  width: 180px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.hud-fleet-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.hud-fleet-row {
+  display: grid;
+  grid-template-columns: 40px 30px 30px 1fr;
+  gap: 6px;
+  font: 500 9px/1.2 var(--hud-mono);
+  color: rgba(200,255,225,.8);
+  align-items: center;
+  padding: 3px 4px;
+  border-radius: 4px;
+  background: rgba(0,240,255,.06);
+}
+
+.hud-fleet-id {
+  font-weight: 700;
+  color: #00f0ff;
+  text-shadow: 0 0 6px rgba(0,240,255,.6);
+}
+
+.hud-fleet-state {
+  font-weight: 600;
+  text-align: center;
+}
+
+.hud-fleet-task {
+  text-align: center;
+  color: rgba(255,255,255,.7);
+}
+
+.hud-fleet-done {
+  text-align: right;
+  font-weight: 700;
+}
+
+/* ----------------------------------------------------------------- allocation panel */
+
+.hud-allocation {
+  --glow: #39ff8a;
+  --glow-rgb: 57,255,138;
+  bottom: 14px;
+  right: 14px;
+  width: 160px;
+}
+
+.hud-alloc-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hud-alloc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(57,255,138,.05);
+  border: 1px solid rgba(57,255,138,.15);
+}
+
+.hud-alloc-label {
+  font: 600 9px/1 var(--hud-mono);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: rgba(200,255,220,.7);
+}
+
+.hud-alloc-val {
+  font: 700 11px/1 var(--hud-mono);
+  color: #39ff8a;
+  text-shadow: 0 0 8px rgba(57,255,138,.6);
+}
+
+/* Scrollbar styling for fleet panel */
+.hud-fleet::-webkit-scrollbar {
+  width: 4px;
+}
+
+.hud-fleet::-webkit-scrollbar-track {
+  background: rgba(0,240,255,.05);
+  border-radius: 2px;
+}
+
+.hud-fleet::-webkit-scrollbar-thumb {
+  background: rgba(0,240,255,.4);
+  border-radius: 2px;
+}
+
+.hud-fleet::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,240,255,.6);
+}
