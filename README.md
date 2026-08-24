@@ -172,9 +172,9 @@ and traffic separate makes their performance effects measurable rather than conf
 The strict SIH acceptance benchmark now passes all 90 paired seeds across 4-, 6- and
 8-robot fleets. `BIOS_PIBT.3` completes 30/30 runs at every fleet size; stop-and-wait
 completes 0/30 before the fixed 1200 s cutoff. The minimum conservative per-seed
-completion-time reduction bounds are **63.03%**, **45.50%** and **32.48%** respectively,
+completion-time reduction bounds are **66.06%**, **51.03%** and **32.66%** respectively,
 all above the required 20%. All 1,620 candidate tasks complete with zero observed
-robot/robot, robot/human or robot/rack contacts across 93.3722 robot-hours.
+robot/robot, robot/human or robot/rack contacts across 87.3498 robot-hours.
 
 These are right-censored lower bounds, not exact speedups: the baseline makespans are
 unknown because the baseline never finishes. A candidate result at time `C` and an
@@ -186,7 +186,7 @@ See [`docs/SIH_ACCEPTANCE_BENCHMARK.md`](docs/SIH_ACCEPTANCE_BENCHMARK.md) for t
 method, limitations and commands. Raw evidence is checked in as
 [`artifacts/benchmarks/sih-acceptance.json`](artifacts/benchmarks/sih-acceptance.json)
 and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv).
-All 91 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
+All 93 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
 checks also pass.
 
 ## The dashboard

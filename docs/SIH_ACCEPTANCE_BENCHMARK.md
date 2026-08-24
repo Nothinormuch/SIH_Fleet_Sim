@@ -63,17 +63,17 @@ Generated on 2026-08-24 with 5000 deterministic bootstrap resamples per fleet:
 
 | Robots | Candidate completion | Baseline completion | Candidate median | Candidate p95 | Minimum bound | Median bound | Median-bound bootstrap 95% interval |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 4 | 30/30 | 0/30 | 389.38 s | 407.88 s | 63.03% | 67.55% | 67.19–68.31% |
-| 6 | 30/30 | 0/30 | 599.23 s | 623.43 s | 45.50% | 50.06% | 49.68–50.85% |
-| 8 | 30/30 | 0/30 | 758.63 s | 787.62 s | 32.48% | 36.78% | 35.73–37.59% |
+| 4 | 30/30 | 0/30 | 382.37 s | 405.20 s | 66.06% | 68.14% | 67.63–69.30% |
+| 6 | 30/30 | 0/30 | 543.38 s | 571.33 s | 51.03% | 54.72% | 54.20–55.28% |
+| 8 | 30/30 | 0/30 | 712.69 s | 759.51 s | 32.66% | 40.61% | 39.82–41.96% |
 
 All 90 candidate runs completed all 1,620 tasks. The largest candidate makespan was
-810.20 s, below the 960 s value corresponding to a 20% bound at the 1200 s cutoff.
+808.04 s, below the 960 s value corresponding to a 20% bound at the 1200 s cutoff.
 There were zero observed robot/robot, robot/human and robot/rack contacts across
-93.3722 candidate robot-hours.
+87.3498 candidate robot-hours.
 
 Zero observed contacts do not prove an impossible collision rate of zero. The per-fleet
-one-sided 95% upper bounds reported in the JSON are 228.636, 99.319 and 58.780
+one-sided 95% upper bounds reported in the JSON are 234.215, 109.204 and 62.502
 robot/robot contacts per 1000 robot-hours for 4, 6 and 8 robots respectively. More
 exposure—not stronger wording—is what lowers those bounds.
 
@@ -92,7 +92,7 @@ The command writes:
   analysis
 
 The checked-in JSON records `git_commit` as
-`cffd62a8da5beaba3ae0fe1a6036710def80384a` and `source_tree_dirty: false`.
+`b1d3c82445cc32a8cbbf78331dfef462999a4e8a` and `source_tree_dirty: false`.
 The full matrix was reproduced after the implementation commit from a clean
 benchmark-relevant source, test, and documentation tree. The later evidence-only
 commit does not change the code revision exercised by the benchmark.
