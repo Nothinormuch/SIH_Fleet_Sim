@@ -236,10 +236,17 @@ function draw() {
 function updateManagerDot(frame) {
   const dot = el('mgrDot');
   const text = el('mgrText');
+  // Whether this policy has a manager at all is the backend's call, not a string
+  // match here: stop_and_wait and BIOS_1.0.0 are both manager-free by design, and a
+  // red DOWN badge would misreport intent as failure. Older payloads lack the flag,
+  // hence the fallback.
   const policy = App.data.meta.policy;
-  if (policy === 'stop_and_wait') {
+  const managed = App.data.meta.has_manager !== undefined
+    ? App.data.meta.has_manager
+    : (policy === 'central' || policy === 'hierarchical');
+  if (!managed) {
     dot.className = 'dot';
-    text.textContent = 'no fleet manager (baseline)';
+    text.textContent = `no fleet manager · ${policy === 'stop_and_wait' ? 'baseline' : 'peer-to-peer by design'}`;
     return;
   }
   const alive = frame.manager_alive;

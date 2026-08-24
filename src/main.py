@@ -40,6 +40,12 @@ from .world import World
 
 WMS_ID = "WMS"
 
+# Which policies are served by a fleet manager at all. Kept here as one tuple because
+# two places need the answer - the runner, which decides whether to build a manager,
+# and the dashboard payload, which has to tell the UI whether a missing manager is a
+# failure or the design. A policy absent from this tuple is peer-to-peer by intent.
+MANAGED_POLICIES = (POLICY_CENTRAL, POLICY_HIERARCHICAL)
+
 
 def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                  cfg: Config | None = None, trace: list | None = None,
@@ -78,7 +84,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     # admission and unstick logic are wholly peer-to-peer. `central` depends on the
     # manager, `hierarchical` merely prefers it.
     manager = None
-    if policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL):
+    if policy in MANAGED_POLICIES:
         manager = FleetManager(sc.env, cfg)
         net.register(MANAGER_ID)
 
@@ -236,6 +242,7 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
             "humans": len(sc.humans),
             "kill_manager_at": sc.kill_manager_at,
             "cell_m": DEFAULT.cell_m,
+            "has_manager": policy in MANAGED_POLICIES,
         },
         "frames": frames,
         "summary": result.to_dict(),
