@@ -200,6 +200,12 @@ class AMRBrain:
         self._pub_priority = 0.0
         self._pub_priority_key = PriorityKey(robot_id=rid)
         self.blocked_since: float | None = None
+        # Bounded priority hysteresis: when a wait is authorized to move, preserve its
+        # accumulated rank long enough to turn and cross one cell.  Resetting it in the
+        # same tick makes contenders alternate permission without translating; keeping
+        # it until progress forever can starve traffic behind a physically stuck AMR.
+        self._priority_grace_since: float | None = None
+        self._priority_grace_until = -1e9
         self.blocked_on: str | None = None
         self.retreat_target: Cell | None = None
         self._retreat_for: str | None = None
@@ -259,6 +265,8 @@ class AMRBrain:
                 self._cell_repair_target = None
             self._last_cell = cell
             self._last_progress_t = t
+            self._priority_grace_since = None
+            self._priority_grace_until = -1e9
 
         self._task_loop(t, sensors, outbox)
 
@@ -833,7 +841,15 @@ class AMRBrain:
         after_next = future[1]
         for peer in self.peers.values():
             if peer.cell == after_next:
-                return peer.rid
+                # Stage behind a peer that is continuing into the controlled lane,
+                # not one vacating the mouth toward us.  The latter is an ordinary
+                # merge conflict for the cell gate/PIBT resolver.  Treating physical
+                # mouth occupancy alone as same-direction admission creates a cycle:
+                # we stage for the exiting peer while it yields to our next-cell
+                # intent, so neither can leave.
+                if any(self._controlled_block(cell) is not None
+                       for cell in peer.intent):
+                    return peer.rid
         cid = self._controlled_block(after_next)
         if cid is not None:
             lock = self._bios_lock(cid, t)
@@ -1098,24 +1114,63 @@ class AMRBrain:
                 self._creep_until = max(self._creep_until, t + 6.0)
             return decision.blocked_by.get(self.rid) or inherited or "pibt-wait"
 
+        occupant = next(
+            (peer for peer in self.peers.values() if peer.cell == requested), None)
+        if chosen == requested and occupant is not None:
+            occupant_target = decision.next_cells.get(occupant.rid, occupant.cell)
+            my_step = (requested[0] - sensors.cell[0],
+                       requested[1] - sensors.cell[1])
+            leader_step = (occupant_target[0] - occupant.cell[0],
+                           occupant_target[1] - occupant.cell[1])
+            physical_gap = (
+                dist((sensors.pose[0], sensors.pose[1]),
+                     (occupant.pose[0], occupant.pose[1]))
+                - 2.0 * self.cfg.robot.radius_m
+            )
+            too_close_for_convoy = (
+                physical_gap <= self.cfg.robot.omni_stop_m + 0.05
+            )
+            if (occupant_target != occupant.cell
+                    and (leader_step != my_step or too_close_for_convoy)):
+                # PIBT proves collision-free *cell endpoints*, not continuous swept
+                # trajectories.  A turning leader can make the initial vectors close
+                # the gap; even in a straight convoy, an off-centre leader and a
+                # follower already half a cell forward may have no room for the leader
+                # to recenter.  Stage the follower at its own centre first.  Once it
+                # backs away, the leader's motion becomes clearance-increasing and the
+                # convoy drains on the next tick.
+                self._creep_until = max(self._creep_until, t + 6.0)
+                return occupant.rid
+
         # PIBT can authorize a safe convoy transition where the rear robot enters the
         # front robot's current cell while the front robot simultaneously vacates it.
         # Both chassis may already sit inside the conservative omni standstill field;
         # without a locally bounded creep neither can execute the collision-free
         # discrete configuration.  The forward speed envelope is still enforced, so
         # the follower cannot close on the peer ahead.
-        requested_occupied = any(p.cell == requested for p in self.peers.values())
-        if inherited is not None or requested_occupied:
+        requested_occupied = occupant is not None
+        current_will_be_filled = any(
+            rid != self.rid and target == sensors.cell
+            for rid, target in decision.next_cells.items()
+        )
+        if inherited is not None or requested_occupied or current_will_be_filled:
             self._creep_until = max(self._creep_until, t + 6.0)
+            # The previous tick's protective stop describes the old configuration.
+            # Promoting it immediately after PIBT has authorized a complete convoy
+            # move recreates a traffic hold before the new command can be evaluated.
+            # Clear only the latch; Layer 0 still receives the command below and its
+            # relative-velocity check rejects any recovery motion that closes a gap.
+            self._stall_since = None
 
         if chosen != requested:
             # Priority inheritance has actively displaced us.  Execute exactly one
             # cell, then the ordinary route loop replans toward the unchanged goal.
-            # Inside rack-lined degree-two lanes, physical space—not priority—is the
-            # limiting resource.  Corridor leases handle those cells; inherited
-            # side-steps are executed only on junction/open-floor cells where a
-            # differential-drive chassis has room to turn.
-            if self.env.degree(sensors.cell) < 3 or self.env.degree(chosen) < 3:
+            # Inside a controlled single-file block, physical space—not priority—is
+            # the limiting resource and its lease must drain the lane.  Graph degree
+            # is not a valid proxy: an open-bay boundary corner also has degree two,
+            # yet its perpendicular neighbour is exactly the safe escape PIBT found.
+            if (self._controlled_block(sensors.cell) is not None
+                    or self._controlled_block(chosen) is not None):
                 self.stats["priority_waits"] += 1
                 return inherited or "pibt-narrow"
             # Do not splice a side-step into a fast continuous trajectory: the grid
@@ -1179,19 +1234,34 @@ class AMRBrain:
         """
         if requested == sensors.cell:
             return None
-        occupant = next(
-            (peer for peer in self.peers.values() if peer.cell == requested), None)
-        if occupant is not None:
-            return occupant.rid
-        if self.env.degree(requested) >= 3:
-            opened = self._cell_gate_since.setdefault(requested, t)
-            if t - opened < self.cfg.traffic.gate_commit_s:
-                return "cell-gate"
         contenders = [
             peer for peer in self.peers.values()
             if peer.cell != requested and peer.intent
             and peer.intent[0] == requested
         ]
+        # A commit round is useful only at an actual merge.  The previous V3 code
+        # opened one at *every* degree-3/4 cell, even with no peer anywhere near it.
+        # On an open floor that made almost every grid step pay 450 ms and produced
+        # hundreds of false yields.  A heartbeat from an adjacent active peer is the
+        # conservative fallback when its intent packet was lost; with neither an
+        # intent contender nor a nearby active peer there is no distributed decision
+        # to commit.  Layer 0 and duplicate-cell repair remain authoritative if both
+        # heartbeat and intent are missing.
+        # Occupancy alone is not a final V3 decision.  Two adjacent robots requesting
+        # each other's cells would otherwise both return here, both name the other as
+        # blocker, and never reach the PIBT resolver below.  Treat an occupant as a
+        # reason to wait for one common snapshot, then let PIBT choose the winner (and
+        # a free inherited side-step when the topology permits one).
+        nearby_active = any(
+            peer.goal is not None and manhattan(peer.cell, requested) <= 2
+            for peer in self.peers.values()
+        )
+        if self.env.degree(requested) >= 3 and (contenders or nearby_active):
+            opened = self._cell_gate_since.setdefault(requested, t)
+            if t - opened < self.cfg.traffic.gate_commit_s:
+                return "cell-gate"
+        else:
+            self._cell_gate_since.pop(requested, None)
         for peer in sorted(
             contenders,
             key=lambda p: p.priority_key or PriorityKey(robot_id=p.rid),
@@ -1257,11 +1327,21 @@ class AMRBrain:
     def _track_block(self, t: float, blocked: bool, on: str | None) -> None:
         if blocked:
             if self.blocked_since is None:
-                self.blocked_since = t
+                self.blocked_since = (
+                    self._priority_grace_since
+                    if (self._priority_grace_since is not None
+                        and t < self._priority_grace_until)
+                    else t
+                )
             self.blocked_on = on
             if self.state not in (ST_RETREAT, ST_CHARGING):
                 self.state = ST_BLOCKED
         else:
+            if (self.blocked_since is not None
+                    and self.policy == POLICY_BIOS_PIBT_V3):
+                self._priority_grace_since = self.blocked_since
+                self._priority_grace_until = max(
+                    self._priority_grace_until, t + 6.0)
             self.blocked_since = None
             self.blocked_on = None
             if self.state == ST_BLOCKED:
@@ -1760,6 +1840,8 @@ class AMRBrain:
             self._awarded.discard(self.task.tid)
             self.task = None
             self.state = ST_IDLE
+            self._priority_grace_since = None
+            self._priority_grace_until = -1e9
             # Clear the station. A drop point is a shared resource, and a robot that
             # finishes its last job and simply stops where it stands is parked on top
             # of it - permanently, since nothing will ever ask it to move. That single
@@ -1799,7 +1881,9 @@ class AMRBrain:
                    for p in self.peers.values()):
             return
         taken = {p.cell for p in self.peers.values()} | {
-            p.goal for p in self.peers.values() if p.goal}
+            p.goal for p in self.peers.values() if p.goal} | {
+            cell for p in self.peers.values() for cell in p.intent
+        }
         options = [n for n in self.env.neighbors(here) if n not in taken]
         if self.policy == POLICY_BIOS_PIBT_V3 and not self.circulation.enabled:
             here_cid = self._controlled_block(here)
@@ -2189,6 +2273,8 @@ class AMRBrain:
         self.pidx = 0
         self.state = ST_IDLE
         self._task_started_t = 0.0
+        self._priority_grace_since = None
+        self._priority_grace_until = -1e9
 
     def _accept_task(self, t: float, task: Task, here: Cell,
                      lease_until: float | None = None,
@@ -2202,6 +2288,8 @@ class AMRBrain:
                 task.tid, (task.auction_epoch, bid_cost, self.rid, lease_until))
         self._awarded.discard(task.tid)
         self._task_started_t = t
+        self._priority_grace_since = None
+        self._priority_grace_until = -1e9
         self.state = ST_TO_PICK
         self.goal = task.pick
         self._replan(t, here)
@@ -2377,7 +2465,11 @@ class AMRBrain:
 
     def _priority_key(self, t: float, sensors: Sensors) -> PriorityKey:
         """Build the published BIOS_PIBT key from operational facts, not weights."""
-        waited = 0.0 if self.blocked_since is None else t - self.blocked_since
+        wait_started = self.blocked_since
+        if (wait_started is None and self._priority_grace_since is not None
+                and t < self._priority_grace_until):
+            wait_started = self._priority_grace_since
+        waited = 0.0 if wait_started is None else t - wait_started
         service = 0.0 if self.task is None else t - self._task_started_t
         distance = 0 if self.goal is None else manhattan(sensors.cell, self.goal)
         return PriorityKey(
@@ -2492,6 +2584,12 @@ class AMRBrain:
             self.rid, self._next_seq(), t, tid, epoch=0))
 
     def _intent_horizon(self, t: float) -> tuple[list[Cell], list[tuple[float, float]]]:
+        # A completed task can leave its final waypoint in ``path`` until the next
+        # route loop.  With no live goal those cells are history, not intent.  Sending
+        # them after the idle heartbeat would immediately recreate the ghost route the
+        # heartbeat lifecycle just cleared on every peer.
+        if self.goal is None:
+            return [], []
         h = self.cfg.traffic.intent_horizon
         cells = self.path[self.pidx:self.pidx + h]
         if (self.policy in DIRECTED_POLICIES and self.circulation.enabled
@@ -2529,6 +2627,14 @@ class AMRBrain:
                 p.goal = msg.as_cell(b["g"]) if b.get("g") else None
                 p.priority_key = PriorityKey.from_wire(b.get("pk"), m.src)
                 p.last_seen = t
+                # INTENT is sent only while a route has cells to advertise.  An idle
+                # peer therefore sends no empty INTENT packet to overwrite its last
+                # active one.  Clear it from the authoritative heartbeat lifecycle;
+                # otherwise a fresh idle heartbeat keeps a stale route alive forever
+                # and different robots run PIBT against different ghost reservations.
+                if p.state == ST_IDLE or p.goal is None:
+                    p.intent = []
+                    p.windows = []
             elif m.type == msg.INTENT:
                 p = self.peers.setdefault(m.src, Peer(m.src))
                 p.intent = [msg.as_cell(c) for c in b["cells"]]

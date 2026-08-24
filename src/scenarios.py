@@ -29,13 +29,16 @@ N upward until the curves separate - that sweep is the actual result.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import random
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from .amr import Task
 from .environment import RACK, Warehouse, chokepoint_warehouse, classic_warehouse, open_floor
 from .geometry import Cell, manhattan
 from .settings import Config, NetSpec
+from .task_allocation import ACTIVE_ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED
 
 
 @dataclass
@@ -67,6 +70,60 @@ class Scenario:
     @property
     def n_tasks(self) -> int:
         return sum(len(q) for q in self.assignments)
+
+
+def workload_fingerprint(sc: Scenario, cfg: Config,
+                         allocation_policy: str | None) -> str:
+    """Stable identity for every input that may affect a paired policy run.
+
+    The route policy is deliberately excluded: it is the independent variable.  Map,
+    starts, ordered tasks, failures, radio model, seed and every controller constant are
+    included, so a comparator cannot silently call two different experiments a pair.
+    """
+    allocation = allocation_policy or ALLOCATION_PREASSIGNED
+
+    def task_row(task: Task) -> dict:
+        return {
+            "id": task.tid,
+            "pick": list(task.pick),
+            "drop": list(task.drop),
+            "announced_t": task.announced_t,
+            "auction_epoch": task.auction_epoch,
+            "bid_deadline": task.bid_deadline,
+        }
+
+    if allocation in ACTIVE_ALLOCATION_POLICIES:
+        announced = (list(sc.unassigned) if sc.unassigned else
+                     [task for queue in sc.assignments for task in queue])
+        workload: dict = {"announced": [task_row(task) for task in announced]}
+    else:
+        workload = {
+            "queues": [
+                [task_row(task) for task in queue]
+                for queue in sc.assignments
+            ]
+        }
+
+    payload = {
+        "schema": 1,
+        "scenario": sc.name,
+        "environment": sc.env.to_json(),
+        "starts": [list(cell) for cell in sc.starts],
+        "workload": workload,
+        "allocation_policy": allocation,
+        "humans": [[list(cell) for cell in route] for route in sc.humans],
+        "duration_s": sc.duration_s,
+        "kill_manager_at": sc.kill_manager_at,
+        "partition_at": sc.partition_at,
+        "heal_at": sc.heal_at,
+        "partition_groups": sc.partition_groups,
+        "pose_noise_m": sc.pose_noise_m,
+        "seed": sc.seed,
+        "config": asdict(cfg),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                         allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 # ---------------------------------------------------------------- helpers
@@ -252,6 +309,37 @@ def auction_test(n_robots: int = 8, n_tasks: int = 32, seed: int = 0) -> Scenari
     return sc
 
 
+def sih_acceptance_overlap(n_robots: int = 4, tasks_per_robot: int = 3,
+                           seed: int = 0) -> Scenario:
+    """Pinned SIH success-criterion workload with overlapping chokepoint paths.
+
+    Every job crosses the same single-file block and directions alternate, which is
+    exactly the case named by the problem statement.  Both policies receive the same
+    decentralized-auction catalog.  Pure stop-and-wait can right-censor by settling
+    into a permanent head-on wait; the benchmark reports a conservative completion-
+    time reduction lower bound instead of pretending the timeout is a makespan.
+    """
+    base = crossing_chokepoint(n_robots=n_robots,
+                               tasks_per_robot=tasks_per_robot, seed=seed)
+    announced = [
+        Task(**task.__dict__)
+        for queue in base.assignments
+        for task in queue
+    ]
+    return Scenario(
+        "sih_acceptance_overlap",
+        base.env,
+        base.starts,
+        base.assignments,
+        duration_s=1200.0,
+        net=base.net,
+        pose_noise_m=base.pose_noise_m,
+        use_auction=True,
+        unassigned=announced,
+        seed=seed,
+    )
+
+
 SCENARIOS = {
     "crossing_chokepoint": crossing_chokepoint,
     "dense_aisles": dense_aisles,
@@ -261,4 +349,5 @@ SCENARIOS = {
     "dead_zone_mesh": lambda **kw: dead_zone(mesh_radio=True, **kw),
     "open_floor_control": open_floor_control,
     "auction_test": auction_test,
+    "sih_acceptance_overlap": sih_acceptance_overlap,
 }

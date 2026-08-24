@@ -127,28 +127,22 @@ observed contact rate.
 
 ```bash
 python -m pytest tests -q
-python run.py --scenario crossing_chokepoint --policy BIOS_PIBT.3 \
-  --allocation-policy auction --robots 4 --seeds 3 --duration 600
-python run.py --scenario dead_zone_mesh --policy BIOS_PIBT.3 \
-  --allocation-policy auction --robots 24 --seed 20 --duration 300
+python benchmark.py --seeds 30 --jobs 8
 ```
 
-Candidate results:
+The pinned acceptance scenario runs 30 paired seeds for 4, 6 and 8 robots, with three
+alternating-direction tasks per robot and a 1200 s cutoff. Both policies receive the
+same decentralized auction catalog; SHA-256 workload identities make that equality
+machine-checkable.
 
-| Scenario | Result | Robot/human/rack contacts | Wait cycles | Retreats |
-| --- | ---: | ---: | ---: | ---: |
-| Chokepoint, seed 0 | 12/12 in 407.7 s | 0 / 0 / 0 | 0 | 0 |
-| Chokepoint, seed 1 | 12/12 in 409.3 s | 0 / 0 / 0 | 0 | 0 |
-| Chokepoint, seed 2 | 12/12 in 413.9 s | 0 / 0 / 0 | 0 | 0 |
-| Dead-zone mesh, 24 AMRs, seed 20, 300 s | 41/96 | 0 / 0 / 0 | 0 | 0 |
+`BIOS_PIBT.3` completes 30/30 runs for every fleet. Stop-and-wait completes 0/30 at
+each fleet size. Because the baseline is right-censored, the honest result is a
+conservative lower bound, not an exact speedup. The minimum per-seed bounds are 63.03%
+(4 robots), 45.50% (6) and 32.48% (8), all above the required 20%. Candidate medians
+are 389.38 s, 599.23 s and 758.63 s. All 1,620 candidate tasks complete with zero
+observed robot/robot, robot/human or robot/rack contacts across 93.3722 robot-hours.
 
-The 24-AMR result is 5.125 times the 8/96 result of the merged V2-plus-allocation
-baseline at the same cutoff. Neither run completes all 96 jobs, so this is a throughput
-comparison and not a makespan claim.
-
-Across three extended seeds at both 10% and 20% uniform packet loss, all 12 chokepoint
-tasks completed. Observed contacts, detected wait cycles and retreat manoeuvres were
-zero. Makespans ranged from 407.7 s to 423.4 s.
-
-The release gate also requires all 54 Python regressions, Python bytecode compilation,
-and JavaScript syntax checks to pass on the exact candidate commit.
+See [`SIH_ACCEPTANCE_BENCHMARK.md`](SIH_ACCEPTANCE_BENCHMARK.md) for the censoring proof,
+strict pass conditions, bootstrap intervals, provenance and limitations. The release
+gate also requires all 73 Python regressions, Python bytecode compilation, and frontend
+JavaScript syntax checks to pass.

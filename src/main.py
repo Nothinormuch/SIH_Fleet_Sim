@@ -36,7 +36,7 @@ from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
-from .scenarios import SCENARIOS, Scenario
+from .scenarios import SCENARIOS, Scenario, workload_fingerprint
 from .settings import Config, DEFAULT
 from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
                                ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED,
@@ -105,6 +105,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
 
     cfg = cfg or DEFAULT
     cfg = replace(cfg, net=sc.net, seed=seed)
+    workload_id = workload_fingerprint(sc, cfg, allocation_policy)
     dt = 1.0 / cfg.rates.world_hz
 
     world = World(sc.env, cfg, seed=seed)
@@ -224,11 +225,11 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
 
     world.finalize()
     return _summarize(sc, policy, allocation_policy, seed, cfg, world, net,
-                      brains, manager, total_tasks, makespan)
+                      brains, manager, total_tasks, makespan, workload_id)
 
 
 def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
-               manager, total_tasks, makespan) -> PolicyResult:
+               manager, total_tasks, makespan, workload_id) -> PolicyResult:
     sim_s = world.t
     n = len(brains)
     robot_hours = n * sim_s / 3600.0
@@ -246,7 +247,7 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
 
     return PolicyResult(
         policy=policy, allocation_policy=allocation_policy,
-        scenario=sc.name, seed=seed,
+        scenario=sc.name, seed=seed, workload_id=workload_id,
         sim_seconds=round(sim_s, 2), robots=n,
         tasks_completed=done, tasks_announced=total_tasks,
         # A run that did not finish has no makespan. Recording the wall-clock cutoff as
