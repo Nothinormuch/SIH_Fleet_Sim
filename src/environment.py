@@ -117,7 +117,8 @@ def classic_warehouse(width: int = 31, height: int = 21, rack_w: int = 2,
 
     rack_set = set(racks)
     stations = tuple((0, y) for y in range(2, height - 2, 4) if (0, y) not in rack_set)
-    docks = tuple((width - 1, y) for y in range(2, min(height - 2, 2 + 4 * 4), 4))
+    dock_stop = height - 2 if height > 21 else min(height - 2, 2 + 4 * 4)
+    docks = tuple((width - 1, y) for y in range(2, dock_stop, 4))
     return _build(width, height, racks, stations, docks, name)
 
 

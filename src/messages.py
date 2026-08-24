@@ -35,7 +35,7 @@ CLAIM = "CL"          # exclusive request for one contested cell, with an expiry
 RELEASE = "RL"        # early release of a claim (an optimisation, never required)
 YIELD = "YD"          # "you win, I am backing off" - makes deadlock breaking observable
 BID = "BD"            # auction bid for an unassigned task
-AWARD = "AW"          # self-award after winning; also how peers learn the assignment
+AWARD = "AW"          # auction result or manager-directed task assignment
 TASK_DONE = "TD"      # task completed, drop it from every peer's open set
 TASK_NEW = "TN"       # order source announcing work; NOT a motion coordinator
 MGR_BEACON = "MB"     # fleet manager announcing it is reachable, with a plan epoch
@@ -95,7 +95,8 @@ def decode(raw: bytes) -> Message | None:
 def heartbeat(src: str, seq: int, t: float, pose: tuple[float, float, float],
               cell: Cell, battery: float, mode: str, state: str,
               task_id: str | None, priority: float = 0.0,
-              blocked_on: str | None = None, goal: Cell | None = None) -> Message:
+              blocked_on: str | None = None, goal: Cell | None = None,
+              priority_key: list[int | str] | None = None) -> Message:
     """`blocked_on` is what makes distributed deadlock detection possible at all.
 
     Cycle detection in a wait-for graph needs the graph, and the graph only exists if
@@ -103,7 +104,7 @@ def heartbeat(src: str, seq: int, t: float, pose: tuple[float, float, float],
     the report states the catch plainly: that only works while everyone is in radio
     range, so the detector degrades exactly where partitions make deadlock likeliest.
     """
-    return Message(HEARTBEAT, src, seq, t, {
+    body = {
         "p": [round(pose[0], 3), round(pose[1], 3), round(pose[2], 3)],
         "c": list(cell), "b": round(battery, 3),
         "m": mode, "s": state, "task": task_id,
@@ -113,13 +114,17 @@ def heartbeat(src: str, seq: int, t: float, pose: tuple[float, float, float],
         # will never clear on its own, because nothing in a purely reactive scheme ever
         # tells a stationary robot that it is in the way.
         "g": list(goal) if goal else None,
-    })
+    }
+    if priority_key is not None:
+        body["pk"] = priority_key
+    return Message(HEARTBEAT, src, seq, t, body)
 
 
 def task_new(src: str, seq: int, t: float, task_id: str, pick: Cell,
-             drop: Cell) -> Message:
+             drop: Cell, epoch: int = 0, bid_until: float | None = None) -> Message:
     return Message(TASK_NEW, src, seq, t, {
         "task": task_id, "pk": list(pick), "dp": list(drop),
+        "e": int(epoch), "dl": round(bid_until, 3) if bid_until is not None else None,
     })
 
 
@@ -149,18 +154,27 @@ def release(src: str, seq: int, t: float, cell: Cell) -> Message:
 
 
 def block_claim(src: str, seq: int, t: float, cid: int, until: float,
-                priority: float, epoch: int) -> Message:
+                priority: float, epoch: int, ttl: float | None = None,
+                priority_key: list[int | str] | None = None) -> Message:
     """Exclusive reservation of an entire single-lane block, keyed by block id.
 
     BIOS_1.0.0's chokepoint token. A corridor is one civilization-wide mutex: a
-    following convoy still glues the fleet at standstill clearance in a 1 m tunnel,
+    following convoy can still glue the fleet at standstill clearance in a narrow tunnel,
     so we admit exactly ONE robot into a controlled block at a time. Carrying the
     block id (in ``b``) separates a block-level claim from the single-cell CLAIM.
     """
-    return Message(CLAIM, src, seq, t, {
+    body = {
         "b": 1, "g": int(cid), "u": round(until, 2),
         "pr": round(priority, 4), "e": epoch,
-    })
+    }
+    # Receivers use a duration on their own clock.  ``u`` remains for compatibility
+    # with older traces, but comparing absolute sender timestamps would quietly assume
+    # clock synchronisation that the protocol explicitly does not require.
+    if ttl is not None:
+        body["ttl"] = round(max(0.0, ttl), 2)
+    if priority_key is not None:
+        body["pk"] = priority_key
+    return Message(CLAIM, src, seq, t, body)
 
 
 def block_release(src: str, seq: int, t: float, cid: int) -> Message:
@@ -171,16 +185,32 @@ def yield_to(src: str, seq: int, t: float, cell: Cell, winner: str) -> Message:
     return Message(YIELD, src, seq, t, {"c": list(cell), "to": winner})
 
 
-def bid(src: str, seq: int, t: float, task_id: str, cost: float) -> Message:
-    return Message(BID, src, seq, t, {"task": task_id, "cost": round(cost, 3)})
+def bid(src: str, seq: int, t: float, task_id: str, cost: float,
+        epoch: int = 0) -> Message:
+    return Message(BID, src, seq, t, {
+        "task": task_id, "cost": round(cost, 3), "e": int(epoch),
+    })
 
 
-def award(src: str, seq: int, t: float, task_id: str, cost: float) -> Message:
-    return Message(AWARD, src, seq, t, {"task": task_id, "cost": round(cost, 3)})
+def award(src: str, seq: int, t: float, task_id: str, cost: float,
+          dst: str | None = None, epoch: int = 0,
+          lease_until: float | None = None) -> Message:
+    body: dict[str, Any] = {
+        "task": task_id, "cost": round(cost, 3), "e": int(epoch),
+    }
+    if dst is not None:
+        body["dst"] = dst
+        body["winner"] = dst
+    if lease_until is not None:
+        body["u"] = round(lease_until, 3)
+    return Message(AWARD, src, seq, t, body)
 
 
-def task_done(src: str, seq: int, t: float, task_id: str) -> Message:
-    return Message(TASK_DONE, src, seq, t, {"task": task_id})
+def task_done(src: str, seq: int, t: float, task_id: str,
+              epoch: int = 0) -> Message:
+    return Message(TASK_DONE, src, seq, t, {
+        "task": task_id, "e": int(epoch),
+    })
 
 
 def mgr_beacon(src: str, seq: int, t: float, epoch: int) -> Message:

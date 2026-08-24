@@ -162,11 +162,37 @@ class TrafficSpec:
     # BIOS_1.0.0 block-token lifetime. Held only while physically inside the block
     # (re-broadcast every heartbeat), this just needs to cover entry + propagation.
     bios_claim_ttl_s: float = 4.0
+    # BIOS_PIBT priorities age in stable discrete epochs and inheritance recursion is
+    # bounded defensively even though a physical conflict chain cannot exceed N.
+    priority_age_quantum_s: float = 1.0
+    priority_max_depth: int = 64
+    # Distributed task allocation. The task injector publishes the deadline so every
+    # robot can close the same auction without an auctioneer choosing the winner.
+    auction_bid_window_s: float = 0.6
+    auction_lease_s: float = 20.0
+    # V3 bids on a bounded bundle instead of serialising one auction per task. One
+    # active task per physical drop cell is deliberate admission control: it keeps
+    # service-station queues out of the circulation lanes.
+    auction_batch_bids: int = 12
+    auction_drop_capacity: int = 2
+    # At most this many live jobs may reserve the same direction through a
+    # bidirectional single-file block.  The phase flips only after those jobs finish,
+    # which avoids injecting two opposing queues into a corridor that cannot pass.
+    auction_corridor_capacity: int = 2
+    # Robots gossip one catalog entry at this rate so a task missed in a radio hole is
+    # eventually learned from a peer; the WMS is not required to coordinate retries.
+    task_gossip_period_s: float = 1.0
+    completion_gossip_period_s: float = 1.0
 
 
 @dataclass(frozen=True)
 class Config:
-    cell_m: float = 1.0
+    # Centre-to-centre lane pitch.  With a 0.70 m footprint, 0.30 m standstill guard
+    # and 0.02 m pose noise, the old 1.00 m pitch had no positive clearance budget:
+    # two correctly centred neighbours sat exactly on the safety threshold.  1.40 m
+    # leaves 0.70 m between footprints and makes the discrete one-cell invariant
+    # physically executable instead of relying on recovery creep.
+    cell_m: float = 1.4
     robot: RobotSpec = field(default_factory=RobotSpec)
     rates: Rates = field(default_factory=Rates)
     net: NetSpec = field(default_factory=NetSpec)

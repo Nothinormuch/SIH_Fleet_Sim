@@ -69,6 +69,7 @@ html, body {
 }
 .dot.up   { background: var(--ok);  box-shadow: 0 0 10px var(--ok); }
 .dot.down { background: var(--bad); box-shadow: 0 0 10px var(--bad); }
+.dot.p2p  { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
 
 /* ------------------------------------------------------------------ layout */
 
@@ -215,9 +216,67 @@ select { cursor: pointer; }
 .batt i.low { background: var(--warn); }
 .batt i.crit { background: var(--bad); }
 
+/* ------------------------------------------------------------------ auction proof */
+
+.auction-summary {
+  display: flex; justify-content: space-between; gap: 8px;
+  margin-bottom: 9px; font: 500 10px/1.4 var(--mono); color: var(--ink-faint);
+}
+.auction-proof { color: var(--ok); }
+.auction-log {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 245px; overflow-y: auto;
+}
+.auction-row {
+  display: grid; grid-template-columns: 34px 24px minmax(0, 1fr);
+  gap: 5px; align-items: baseline; padding: 5px 6px;
+  background: var(--bg-sunken); border-left: 2px solid var(--line);
+  font: 10px/1.3 var(--mono); color: var(--ink-dim);
+}
+.auction-row b { color: var(--accent); }
+.auction-row small { grid-column: 3; color: var(--ink-faint); }
+.auction-row.type-TN { border-left-color: var(--accent); }
+.auction-row.type-BD { border-left-color: #c98bf0; }
+.auction-row.type-AW { border-left-color: var(--ok); }
+.auction-row.type-AW b { color: var(--ok); }
+.auction-row.type-TD { border-left-color: var(--ink-faint); }
+.auction-time { color: var(--ink-faint); }
+
 /* ------------------------------------------------------------------ summary */
 
 .summary { font-size: 12px; }
+.summary-live {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  margin-bottom: 11px;
+  padding: 8px 9px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+}
+
+.summary-live span {
+  color: var(--ink-dim);
+}
+
+.summary-live strong {
+  font: 600 13px/1.3 var(--mono);
+  color: var(--accent);
+  text-align: right;
+}
+
+.summary-live small {
+  grid-column: 1 / -1;
+  color: var(--ink-faint);
+}
+
+.summary-final-label {
+  margin: 0 0 7px;
+  color: var(--ink-faint);
+  font: 500 10px/1.2 var(--mono);
+  text-transform: uppercase;
+}
 .summary dl { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; margin: 0; }
 .summary dt { color: var(--ink-faint); }
 .summary dd { margin: 0; font: 500 12px/1.4 var(--mono); text-align: right; }

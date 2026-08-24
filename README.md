@@ -1,21 +1,44 @@
-# SIH_Fleet_Sim — SIH26123
+# SIH_Fleet_Priority — SIH26123
 
 **Edge-AI Based Distributed Fleet Coordination for Autonomous Mobile Robots (AMRs) in
 Smart Warehouses** · Bharat Electronics Limited · Software · Robotics and Drones
 
 A multi-robot warehouse simulation, a peer-to-peer coordination protocol, and a
-benchmark harness that measures the three coordination policies against each other on
-fixed, seeded scenarios.
+benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 ```bash
 python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m pytest tests -q                # 19 tests
-python run.py --scenario crossing_chokepoint --policy all --robots 4 --seeds 3
-python run.py --scenario dense_aisles --policy hierarchical --json out/run.json
+python -m pytest tests -q
+python run.py --scenario open_floor_control --policy BIOS_PIBT.3 --allocation-policy auction --robots 4
+python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
+python run.py --scenario dense_aisles --policy BIOS_PIBT.3 --allocation-policy auction --robots 4
+python run.py --scenario dense_aisles --policy BIOS_PIBT.2 --allocation-policy hungarian --robots 4
 ```
 
 The simulation core and the benchmark have **no third-party dependencies** — stdlib
 only, so a robot node drops onto a bare Raspberry Pi image with no build step.
+
+## Decentralized priority algorithm
+
+The default policy is `BIOS_PIBT.3` with peer `auction` allocation. It combines V2's
+traffic layer with decentralized batch task allocation and congestion admission. Every
+AMR broadcasts a
+frozen lexicographic priority plus its next-cell intent. On grid-like rack maps it
+plans on a strongly connected one-way circulation graph and takes an expiring,
+two-phase peer lease on every destination cell. This prevents head-on entry and restores
+one-robot-per-cell ownership before a queue forms. Merge contenders use the same frozen
+total order; no process assigns moves and the dashboard is a passive observer.
+
+Maps that cannot be oriented without losing reachability use bounded directional task
+waves, block leases, early mouth staging and PIBT. Local 50 Hz protective stopping
+remains authoritative for every policy.
+
+See [`docs/BIOS_PIBT_3_PROTOCOL.md`](docs/BIOS_PIBT_3_PROTOCOL.md) for the complete
+allocation/traffic relationship, state machine, conditional liveness argument and
+current benchmark evidence. V2 remains documented in
+[`docs/BIOS_PIBT_2_PROTOCOL.md`](docs/BIOS_PIBT_2_PROTOCOL.md).
+Version 1 remains documented in
+[`docs/DECENTRALIZED_PRIORITY.md`](docs/DECENTRALIZED_PRIORITY.md).
 
 ---
 
@@ -65,11 +88,15 @@ src/
   geometry.py      vectors, angles, swept segment distance
   environment.py   grid map, warehouse generators, single-file block decomposition
   planner.py       A*, space-time A* with reservations, prioritised fleet planning
+  priority.py      deterministic next-cell PIBT, inheritance and backtracking
+  topology.py      2-core/tree decomposition for temporary exit priority
   messages.py      the P2P wire protocol (JSON over UDP multicast)
   transport.py     seeded network model + real UDP multicast socket, one interface
   world.py         ground truth: kinematics, 360° sensing, swept collision detection
   amr.py           the agent: three control loops. Pure — no I/O, no clock, no globals
   fleet_manager.py the optional central optimiser, and the strong baseline
+  assignment.py    dependency-free Hungarian assignment implementation
+  task_allocation.py allocation policy contracts, separate from route coordination
   metrics.py       Poisson rate intervals, honest policy comparison
   scenarios.py     pinned, seeded benchmark scenarios including a negative control
   main.py          the headless runner and CLI
@@ -83,8 +110,8 @@ frontend/
   js/network.js    the coordination layer: intent, peer links, wait-for arrows
   js/main.js       fetch, interpolated playback, panel binding
   assets/          generated sprite set (256 px per cell)
-tests/             19 regression tests
-docs/              CRITIQUE.md, FINDINGS.md
+tests/             core, priority and dashboard regression tests
+docs/              V3/V2 protocols plus V1 design, critique and findings
 reference/         asset prompt pack and loader spec
 ```
 
@@ -105,17 +132,27 @@ Transport and world are injected. That single constraint buys three things at on
 
 ---
 
-## The three policies
+## Coordination policies
 
-All three are fields on one class, sharing one trajectory follower, one safety layer and
+All policies are fields on one class, sharing one trajectory follower, one safety layer and
 one physics interface — so any difference between them is caused by coordination and
-nothing else. Three separately tuned controllers would make the comparison meaningless.
+nothing else. Separately tuned controllers would make the comparison meaningless.
 
 | Policy | What it is | Why it is here |
 | --- | --- | --- |
 | `stop_and_wait` | Textbook: follow your own shortest path, stop when the next cell is occupied. | The weak baseline the statement names. Implemented faithfully, not as a straw man. |
 | `central` | Fleet manager plans everything with prioritised space-time A*. Robots follow the schedule; no peer negotiation. | **The strong baseline the statement omits** — what every deployed fleet actually runs. Beating only stop-and-wait proves nothing. |
 | `hierarchical` | Central plans when reachable, P2P negotiation when not, Layer 0 always. | The proposal. Full decentralisation as a fallback, not an ideal. |
+| `BIOS_1.0.0` | Decentralized block leases plus an aggressive local unstick manoeuvre. | Existing experimental liveness policy retained for comparison. |
+| `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
+| `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
+| `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Default fully decentralized route + allocation policy. |
+
+Task ownership is selected independently of the route policy. `auction` lets peers
+broadcast bids and converge on deterministic leased awards; this is the fully
+decentralized V3 mode. `hungarian` lets the optional fleet manager minimise the
+robot-to-task cost matrix and exists only as a comparison baseline. Keeping allocation
+and traffic separate makes their performance effects measurable rather than conflated.
 
 `--seeds N` pools runs so the safety statistics have enough exposure to mean something.
 
@@ -126,18 +163,31 @@ nothing else. Three separately tuned controllers would make the comparison meani
 **Working and covered by tests:** the map and block decomposition, A* and space-time A*
 (verified to resolve a head-on corridor with zero space-time clashes), the physics and
 swept collision detection, the two-channel speed-scaled protective field, the network
-model including the dead-zone result, the Poisson statistics, and the end-to-end
-single-robot path.
+model including the dead-zone result, the Poisson statistics, the end-to-end
+single-robot path, priority serialization, deterministic PIBT inheritance, backtracking,
+rotation handling, and tree-appendage detection.
 
-**Not yet converged: multi-robot throughput.** Runs are collision-free across all three
-policies (0 contacts, worst separation ≈ 0.87 m over 1.4 robot-hours), but no policy
-completes a full task set within the scenario duration, and `hierarchical` currently
-performs **worse** than `central` rather than matching it. The remaining cause is
-identified and written up in [`docs/FINDINGS.md`](docs/FINDINGS.md) §7: robots that
-finish work still obstruct cells other robots need, and the hierarchical policy churns
-between central schedules and local replanning.
+**V3 high-density result:** on `dead_zone_mesh`, 24 robots, seed 20 and a 300 s
+cutoff, the merged V2-plus-allocation branch completes 8/96 tasks. V3 completes 41/96
+with zero robot/human/rack contacts, zero detected wait cycles and zero retreats. That
+is 5.125 times the completed work at the cutoff, not a makespan comparison; neither run
+completes all tasks.
 
-No speedup figure is published here, because there is not yet an honest one to publish.
+**V3 chokepoint result:** all three pinned four-AMR seeds complete 12/12 tasks in
+407.7–413.9 s with zero observed contacts, detected wait cycles or retreats. Extended
+10% and 20% packet-loss sweeps also complete every task across three seeds per loss
+level (407.7–423.4 s). All 54 regressions pass. See the V3 protocol document for
+assumptions and exact commands.
+
+**V1 four-robot result (three seeds):** `BIOS_PIBT.1` completes all
+16 `open_floor_control` tasks in every seed (183.2–230.6 s). At the pinned cutoffs it
+completes 15/16, 15/16 and 16/16 tasks in `dense_aisles`, and 10/12, 6/12 and 10/12 in
+the deliberately extreme `crossing_chokepoint` case. There are zero inter-robot contacts
+across all nine runs (3.745 robot-hours). Extended crossing runs finish all 12 tasks in
+538.0 s, 758.2 s and 532.1 s respectively, showing eventual progress rather than a
+latched deadlock. These are development measurements, not a published 20% success claim.
+
+No speedup percentage is published yet, because there is not yet an honest one to publish.
 `metrics.compare()` deliberately returns `"incomparable"` rather than a ratio when a
 policy fails to complete — a policy that does not finish is a different kind of result,
 not an infinitely slow one, and folding it into a percentage would be the exact
@@ -145,9 +195,10 @@ dishonesty this project is arguing against.
 
 ## The dashboard
 
-`python backend/server.py` then open <http://127.0.0.1:8000>. Pick a scenario, policy,
-fleet size and seed; the server runs the simulation and returns the map, every telemetry
-frame and the result summary, and the page plays it back with a scrubber.
+`python backend/server.py` then open <http://127.0.0.1:8000>. Pick a scenario, route
+policy, task-allocation policy, fleet size and seed; the server runs the simulation and
+returns the map, every telemetry frame and the result summary, and the page plays it
+back with a scrubber.
 
 It draws the things that are otherwise invisible, because a warehouse of moving robots
 looks the same whether it is coordinating or getting lucky:
@@ -158,6 +209,8 @@ looks the same whether it is coordinating or getting lucky:
 - **wait-for arrows** — who is blocked on whom. Two arrows pointing at each other *is*
   the cycle the distributed deadlock detector searches for
 - **single-file blocks** — the runs of aisle the traffic layer applies block control to
+- **task allocation** — `TASK_NEW`, `BID`, `AWARD` and `TASK_DONE` messages for the
+  peer auction, or directed manager awards for Hungarian allocation
 - **the human worker** — dashed ring, because they publish nothing and cannot be
   negotiated with. Only the onboard safety layer sees them at all
 
@@ -167,5 +220,4 @@ paused on the frame where two robots negotiate a chokepoint and replayed against
 different policy on the same seed.
 
 **Not built yet:** the distributed multi-process runner (the UDP transport class exists
-and is unit-tested; the process launcher is not written), and the packet-loss / partition
-sweep plots.
+and is unit-tested; the process launcher is not written), and packet-loss sweep plots.

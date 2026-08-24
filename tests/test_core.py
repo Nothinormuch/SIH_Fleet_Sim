@@ -12,16 +12,22 @@ import math
 
 import pytest
 
-from src.amr import AMRBrain, POLICY_STOP_WAIT
+from src.amr import (AMRBrain, POLICY_BIOS_PIBT_V3, POLICY_CENTRAL,
+                     POLICY_DECENTRALIZED, POLICY_STOP_WAIT, Task)
+from src.assignment import hungarian
 from src.environment import (RACK, chokepoint_warehouse, classic_warehouse,
                              corridors, open_floor)
+from src.fleet_manager import FleetManager
 from src.geometry import segments_min_distance, to_cell, wrap_angle
-from src.messages import decode, encode, heartbeat
+from src.messages import (MGR_BEACON, PLAN_RSP, award, bid, decode, encode,
+                          heartbeat, task_new)
 from src.metrics import poisson_rate_ci
 from src.planner import Reservations, astar, prioritized_plan, space_time_astar
 from src.settings import DEFAULT
+from src.task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
+                                 ALLOCATION_PREASSIGNED)
 from src.transport import SimNetwork
-from src.world import Actuation, World
+from src.world import Actuation, Detection, Sensors, World
 
 
 # ----------------------------------------------------------------- geometry
@@ -43,6 +49,178 @@ def test_wrap_angle_is_bounded():
 
 
 # ----------------------------------------------------------------- planner
+
+
+def test_hungarian_finds_global_minimum_assignment():
+    costs = [
+        [4, 1, 3],
+        [2, 0, 5],
+        [3, 2, 2],
+    ]
+    pairs = hungarian(costs)
+    assert pairs == [(0, 1), (1, 0), (2, 2)]
+    assert sum(costs[row][column] for row, column in pairs) == 5
+
+
+def test_central_allocator_uses_global_assignment():
+    env = open_floor(10, 10)
+    manager = FleetManager(env, DEFAULT)
+    manager.robot_cells = {"A": (0, 0), "B": (4, 0)}
+    manager.robot_state = {"A": "idle", "B": "idle"}
+    manager.robot_task = {"A": None, "B": None}
+    manager.open_tasks = {
+        "T1": ((1, 0), (1, 1)),
+        "T2": ((0, 0), (0, 1)),
+    }
+
+    awards = manager._assign_tasks(0.0)
+    assignment = {m.body["task"]: m.body["dst"] for m in awards}
+    assert assignment == {"T1": "B", "T2": "A"}
+    assert all(m.body["dst"] in {"A", "B"} for m in awards)
+
+
+def test_manager_award_is_accepted_by_its_destination_robot():
+    env = open_floor(10, 10)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("A", (0, 0), 0.0)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_CENTRAL, home=(0, 0))
+    task = Task("T1", (1, 0), (2, 0))
+    brain.open_tasks[task.tid] = task
+
+    brain.step(0.0, world.sense("A"),
+               [award("FM0", 1, 0.0, task.tid, 1.0, dst="A")])
+
+    assert brain.task is not None
+    assert brain.task.tid == "T1"
+    assert task.tid not in brain._task_claims
+
+
+def test_allocation_only_manager_never_controls_routes():
+    manager = FleetManager(
+        open_floor(10, 10), DEFAULT,
+        allocation_policy=ALLOCATION_HUNGARIAN,
+        route_planning=False,
+    )
+
+    outbox = manager.step(1.0, [])
+
+    assert not any(message.type in (MGR_BEACON, PLAN_RSP) for message in outbox)
+
+
+def test_decentralized_safety_guard_does_not_creep_inside_contact_envelope():
+    env = open_floor(10, 10)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_DECENTRALIZED)
+    brain._creep_until = 10.0
+    sensors = Sensors(
+        t=1.0, pose=(2.5, 2.5, 0.0), v=0.0, omega=0.0,
+        battery_frac=1.0, cell=(2, 2), clearance_m=0.0,
+        clearance_omni_m=0.0)
+
+    act = brain._safety(sensors, Actuation(v=0.3, omega=0.4))
+
+    assert act.v == 0.0
+    assert act.safety_stop
+
+
+def test_v3_recovery_motion_must_increase_close_peer_clearance():
+    env = open_floor(10, 10)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V3)
+    peer = Detection(x=2.7, y=2.5, r=0.35, range_m=0.2)
+    sensors = Sensors(
+        t=1.0, pose=(2.5, 2.5, 0.0), v=0.0, omega=0.0,
+        battery_frac=1.0, cell=(1, 1), clearance_m=0.0,
+        clearance_omni_m=0.0, detections=(peer,),
+    )
+
+    assert not brain._escape_motion_increases_clearance(
+        sensors, Actuation(v=0.2, omega=0.0))
+    away = Sensors(**{**sensors.__dict__, "pose": (2.5, 2.5, math.pi)})
+    assert brain._escape_motion_increases_clearance(
+        away, Actuation(v=0.2, omega=0.0))
+
+
+def test_task_protocol_carries_epoch_deadline_and_lease():
+    new = task_new("WMS", 1, 0.0, "T1", (1, 1), (2, 2),
+                   epoch=3, bid_until=0.6)
+    offer = bid("AMR02", 2, 0.1, "T1", 7.5, epoch=3)
+    claim = award("AMR02", 3, 0.7, "T1", 7.5,
+                  epoch=3, lease_until=20.7)
+
+    assert new.body["e"] == 3 and new.body["dl"] == 0.6
+    assert offer.body["e"] == 3
+    assert claim.body["e"] == 3 and claim.body["u"] == 20.7
+
+
+def test_expired_peer_claim_reopens_a_new_auction_epoch():
+    env = open_floor(10, 10)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_DECENTRALIZED)
+    task = Task("T1", (1, 1), (2, 2), 0.0, 0, 0.6)
+    brain.open_tasks[task.tid] = task
+    brain._task_claims[task.tid] = (0, 4.0, "B", 1.0)
+
+    brain._expire_task_claims(2.0)
+
+    assert task.auction_epoch == 1
+    assert task.bid_deadline > 2.0
+    assert task.tid not in brain._task_claims
+
+
+def test_decentralized_dashboard_run_has_no_fleet_manager():
+    from src.main import run_for_dashboard
+
+    payload = run_for_dashboard("dense_aisles", POLICY_DECENTRALIZED,
+                                robots=2, seed=0, duration=1.0)
+    assert payload["meta"]["policy"] == POLICY_DECENTRALIZED
+    assert payload["meta"]["allocation_policy"] == ALLOCATION_AUCTION
+    assert not any(frame["manager_alive"] for frame in payload["frames"])
+    events = [event for frame in payload["frames"]
+              for event in frame.get("auction_events", [])]
+    assert {event["type"] for event in events} >= {"TN", "BD", "AW"}
+
+
+def test_v3_auction_has_no_fleet_manager_or_central_route_mode():
+    from src.main import run_for_dashboard
+
+    payload = run_for_dashboard(
+        "dense_aisles", POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_AUCTION,
+        robots=2, seed=0, duration=2.0,
+    )
+
+    assert not any(frame["manager_alive"] for frame in payload["frames"])
+    assert payload["meta"]["allocation_policy"] == ALLOCATION_AUCTION
+
+
+def test_allocation_is_selected_by_policy_on_a_normal_scenario():
+    from src.main import run_for_dashboard
+
+    auction = run_for_dashboard(
+        "dense_aisles", POLICY_DECENTRALIZED, allocation_policy=ALLOCATION_AUCTION,
+        robots=2, seed=0, duration=2.0)
+    auction_events = [event for frame in auction["frames"]
+                      for event in frame.get("auction_events", [])]
+    assert auction["meta"]["tasks"] == 8
+    assert auction["meta"]["allocation_policy"] == ALLOCATION_AUCTION
+    assert not any(frame["manager_alive"] for frame in auction["frames"])
+    assert {event["type"] for event in auction_events} >= {"TN", "BD", "AW"}
+
+    hungarian_run = run_for_dashboard(
+        "dense_aisles", POLICY_DECENTRALIZED,
+        allocation_policy=ALLOCATION_HUNGARIAN, robots=2, seed=0, duration=2.0)
+    hungarian_events = [event for frame in hungarian_run["frames"]
+                        for event in frame.get("auction_events", [])]
+    assert hungarian_run["meta"]["tasks"] == 8
+    assert hungarian_run["meta"]["allocation_policy"] == ALLOCATION_HUNGARIAN
+    assert any(frame["manager_alive"] for frame in hungarian_run["frames"])
+    assert {event["type"] for event in hungarian_events} >= {"TN", "AW"}
+    assert not any(event["type"] == "BD" for event in hungarian_events)
+
+    preassigned = run_for_dashboard(
+        "dense_aisles", POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_PREASSIGNED,
+        robots=2, seed=0, duration=1.0)
+    assert preassigned["meta"]["allocation_policy"] == ALLOCATION_PREASSIGNED
+    assert preassigned["meta"]["tasks"] == 8
 
 
 def test_astar_respects_racks():
@@ -135,8 +313,10 @@ def test_world_blocks_racks_instead_of_letting_robots_tunnel():
     for _ in range(200):
         w.step(0.02, {"A": Actuation(v=1.2)})
     x, y = w.robots["A"].x, w.robots["A"].y
-    assert env.grid[to_cell((x, y))[1]][to_cell((x, y))[0]] != RACK
-    assert y < 5.0, "the robot must stop at the rack face, not pass through it"
+    cell = to_cell((x, y), DEFAULT.cell_m)
+    assert env.grid[cell[1]][cell[0]] != RACK
+    assert y < 5.0 * DEFAULT.cell_m, \
+        "the robot must stop at the rack face, not pass through it"
 
 
 def test_lidar_detections_carry_no_identity():

@@ -44,6 +44,7 @@ if str(ROOT) not in sys.path:
 from src.amr import POLICIES                      # noqa: E402
 from src.main import run_for_dashboard            # noqa: E402
 from src.scenarios import SCENARIOS               # noqa: E402
+from src.task_allocation import ALLOCATION_POLICIES  # noqa: E402
 
 # Simulations are CPU-bound and a long one takes a while; serialise them so a reloading
 # browser cannot start six at once and starve the machine.
@@ -104,21 +105,31 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------ endpoints
 
     def _api_scenarios(self) -> None:
-        self._json(200, {"scenarios": sorted(SCENARIOS), "policies": sorted(POLICIES)})
+        self._json(200, {
+            "scenarios": sorted(SCENARIOS),
+            "policies": sorted(POLICIES),
+            "allocation_policies": sorted(ALLOCATION_POLICIES),
+        })
 
     def _api_run(self, q: dict) -> None:
         def one(name: str, default):
             v = q.get(name, [None])[0]
             return default if v is None or v == "" else v
 
-        scenario = str(one("scenario", "crossing_chokepoint"))
-        policy = str(one("policy", "hierarchical"))
+        scenario = str(one("scenario", "open_floor_control"))
+        policy = str(one("policy", "BIOS_PIBT.3"))
+        allocation_policy = str(one("allocation_policy", "auction"))
         if scenario not in SCENARIOS:
             return self._json(400, {"error": f"unknown scenario {scenario!r}",
                                     "known": sorted(SCENARIOS)})
         if policy not in POLICIES:
             return self._json(400, {"error": f"unknown policy {policy!r}",
                                     "known": sorted(POLICIES)})
+        if allocation_policy not in ALLOCATION_POLICIES:
+            return self._json(400, {
+                "error": f"unknown task allocation policy {allocation_policy!r}",
+                "known": sorted(ALLOCATION_POLICIES),
+            })
         try:
             robots = int(one("robots", 4))
             seed = int(one("seed", 0))
@@ -128,12 +139,15 @@ class Handler(BaseHTTPRequestHandler):
 
         # Bounds, not suggestions. An unbounded duration on a CPU-bound endpoint is a
         # denial of service against your own laptop during a demo.
-        robots = max(2, min(robots, 24))
+        # The old 24-AMR cap silently turned a requested 100-AMR run into 24 AMRs.
+        # Keep a finite demo bound, but report and execute the number the UI accepts.
+        robots = max(2, min(robots, 100))
         duration = max(10.0, min(duration, 900.0))
 
         with _SIM_LOCK:
-            payload = run_for_dashboard(scenario, policy, robots=robots,
-                                        seed=seed, duration=duration)
+            payload = run_for_dashboard(
+                scenario, policy, robots=robots, seed=seed, duration=duration,
+                allocation_policy=allocation_policy)
         self._json(200, payload)
 
     # ------------------------------------------------------------------ static
@@ -164,7 +178,8 @@ def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
     print(f"\n  SIH_Fleet_Sim dashboard  ->  http://{host}:{port}\n"
           f"  serving {FRONTEND}\n"
           f"  scenarios: {', '.join(sorted(SCENARIOS))}\n"
-          f"  policies:  {', '.join(sorted(POLICIES))}\n"
+          f"  route policies:      {', '.join(sorted(POLICIES))}\n"
+          f"  allocation policies: {', '.join(sorted(ALLOCATION_POLICIES))}\n"
           f"  Ctrl-C to stop\n", flush=True)
     try:
         httpd.serve_forever()

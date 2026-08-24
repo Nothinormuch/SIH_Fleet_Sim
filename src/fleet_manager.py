@@ -27,19 +27,30 @@ from __future__ import annotations
 import time
 
 from . import messages as msg
+from .assignment import hungarian
 from .environment import Warehouse
 from .geometry import Cell, manhattan
 from .planner import prioritized_plan
 from .settings import Config
+from .task_allocation import (ALLOCATION_HUNGARIAN, validate_allocation_policy)
 
 MANAGER_ID = "FM0"
 
 
 class FleetManager:
-    def __init__(self, env: Warehouse, cfg: Config, mid: str = MANAGER_ID) -> None:
+    def __init__(self, env: Warehouse, cfg: Config, mid: str = MANAGER_ID,
+                 allocation_policy: str | None = ALLOCATION_HUNGARIAN,
+                 route_planning: bool = True) -> None:
+        validate_allocation_policy(allocation_policy)
         self.env = env
         self.cfg = cfg
         self.mid = mid
+        # A manager may still provide route plans while task ownership is decided by
+        # the peer auction. In that mode it must observe robot state but never assign a
+        # task of its own.
+        self.allocation_policy = allocation_policy
+        self.allocate_tasks = allocation_policy == ALLOCATION_HUNGARIAN
+        self.route_planning = route_planning
         self.alive = True
         self.epoch = 0
 
@@ -89,51 +100,58 @@ class FleetManager:
                 self.pending[m.src] = msg.as_cell(b["g"])
                 if b.get("ns"):
                     self.urgent.add(m.src)
-            elif m.type == msg.TASK_NEW:
+            elif m.type == msg.TASK_NEW and self.allocate_tasks:
                 self.open_tasks[b["task"]] = (msg.as_cell(b["pk"]), msg.as_cell(b["dp"]))
-            elif m.type == msg.TASK_DONE:
+            elif m.type == msg.TASK_DONE and self.allocate_tasks:
                 tid = b["task"]
                 self.open_tasks.pop(tid, None)
                 self.assigned.pop(tid, None)
-            elif m.type == msg.AWARD:
+            elif m.type == msg.AWARD and self.allocate_tasks:
                 self.assigned[b["task"]] = m.src
 
-        if t - self._t_beacon >= 0.5:
+        if self.route_planning and t - self._t_beacon >= 0.5:
             self._t_beacon = t
             out.append(msg.mgr_beacon(self.mid, self._next_seq(), t, self.epoch))
 
         if t - self._t_plan >= 1.0 / self.cfg.rates.route_hz:
             self._t_plan = t
-            out.extend(self._assign_tasks(t))
-            out.extend(self._plan_fleet(t))
+            if self.allocate_tasks:
+                out.extend(self._assign_tasks(t))
+            if self.route_planning:
+                out.extend(self._plan_fleet(t))
         return out
 
     # ------------------------------------------------------------------ assignment
 
     def _assign_tasks(self, t: float) -> list[msg.Message]:
-        """Greedy nearest-idle assignment.
+        """Globally assign open tasks to idle robots with the Hungarian algorithm.
 
-        Greedy, not Hungarian, and we say so: with the fleet sizes in this benchmark the
-        optimal assignment differs from greedy by a few percent, and inflating the
-        central baseline past what it really does would be its own kind of dishonesty.
-        The interesting comparison is against the distributed auction in amr.py, which
-        is *also* greedy - so assignment quality is held constant and the difference
-        that remains is caused by routing.
+        The cost remains Manhattan distance from the robot to the pickup, preserving
+        the old allocator's objective while replacing its locally greedy decisions.
+        The distributed auction in ``amr.py`` remains separate because allocation is a
+        selectable responsibility, independent of route planning.
         """
         out: list[msg.Message] = []
         idle = sorted(r for r, s in self.robot_state.items()
                       if s == "idle" and not self.robot_task.get(r))
-        for tid in sorted(self.open_tasks):
-            if tid in self.assigned or not idle:
-                continue
-            pick, drop = self.open_tasks[tid]
-            best = min(idle, key=lambda r: (manhattan(self.robot_cells.get(r, (0, 0)),
-                                                      pick), r))
-            idle.remove(best)
-            self.assigned[tid] = best
+        tasks = [(tid, self.open_tasks[tid]) for tid in sorted(self.open_tasks)
+                 if tid not in self.assigned]
+        if not idle or not tasks:
+            return out
+
+        costs = [
+            [float(manhattan(self.robot_cells.get(rid, (0, 0)), pick))
+             for _tid, (pick, _drop) in tasks]
+            for rid in idle
+        ]
+        for robot_index, task_index in hungarian(costs):
+            rid = idle[robot_index]
+            tid, (pick, _drop) = tasks[task_index]
+            self.assigned[tid] = rid
             self.stats["awards"] += 1
-            cost = float(manhattan(self.robot_cells.get(best, (0, 0)), pick))
-            out.append(msg.award(best, self._next_seq(), t, tid, cost))
+            cost = float(manhattan(self.robot_cells.get(rid, (0, 0)), pick))
+            out.append(msg.award(self.mid, self._next_seq(), t, tid, cost,
+                                 dst=rid))
         return out
 
     # ------------------------------------------------------------------ routing

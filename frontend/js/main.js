@@ -18,6 +18,7 @@ const App = {
   simTime: 0,
   lastRaf: 0,
   speed: 1,
+  auctionEvents: [],
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -28,9 +29,10 @@ async function boot() {
 
   try {
     const r = await fetch('/api/scenarios');
-    const { scenarios, policies } = await r.json();
-    fill(el('scenario'), scenarios, 'crossing_chokepoint');
-    fill(el('policy'), policies, 'hierarchical');
+    const { scenarios, policies, allocation_policies } = await r.json();
+    fill(el('scenario'), scenarios, 'open_floor_control');
+    fill(el('policy'), policies, 'BIOS_PIBT.3');
+    fill(el('allocationPolicy'), allocation_policies, 'auction');
   } catch (e) {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
   }
@@ -54,7 +56,7 @@ async function boot() {
   });
   window.addEventListener('resize', () => {
     if (!App.data) return;
-    App.view.resize(App.data.map);
+    App.view.resize(App.data.map, App.data.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, App.data.map, App.imgs);
     draw();
   });
@@ -80,6 +82,7 @@ async function run() {
   const q = new URLSearchParams({
     scenario: el('scenario').value,
     policy: el('policy').value,
+    allocation_policy: el('allocationPolicy').value,
     robots: el('robots').value,
     seed: el('seed').value,
     duration: el('duration').value,
@@ -95,8 +98,9 @@ async function run() {
     if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
 
     App.data = payload;
+    App.auctionEvents = payload.frames.flatMap(f => f.auction_events || []);
     App.simTime = 0;
-    App.view.resize(payload.map);
+    App.view.resize(payload.map, payload.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, payload.map, App.imgs);
 
     const n = payload.frames.length;
@@ -209,7 +213,8 @@ function interpolate(f0, f1, u) {
   // Discrete state is taken from the earlier frame, never blended: a robot is either
   // blocked or it is not, and averaging a state string is meaningless.
   return { t: lerp(f0.t, f1.t, u), robots, humans, fleet: f0.fleet,
-           manager_alive: f0.manager_alive, contacts: f0.contacts };
+           manager_alive: f0.manager_alive, contacts: f0.contacts,
+           auction_events: f0.auction_events || [] };
 }
 
 /* ------------------------------------------------------------------ drawing */
@@ -225,21 +230,50 @@ function draw() {
     ctx.drawImage(App.staticLayer, 0, 0, App.view.cssW, App.view.cssH);
   }
   drawNetwork(ctx, App.view, frame, App.imgs, frame.t);
-  drawFleet(ctx, App.view, frame, App.imgs, { labels: App.view.cell >= 22 });
+  const diameterCells = App.data.meta.robot_diameter_m / App.data.meta.cell_m;
+  drawFleet(ctx, App.view, frame, App.imgs, {
+    labels: App.view.cell >= 22,
+    robotSizeCells: Math.max(0.55, diameterCells),
+  });
 
   el('scrub').value = idx;
   el('clockNow').textContent = frame.t.toFixed(1);
   updateManagerDot(frame);
   renderFleetPanel(frame);
+  renderAuctionPanel(frame);
+  updateSummaryProgress(frame);
 }
 
 function updateManagerDot(frame) {
   const dot = el('mgrDot');
   const text = el('mgrText');
-  const policy = App.data.meta.policy;
-  if (policy === 'stop_and_wait') {
+  const routePolicy = App.data.meta.policy;
+  const allocation = App.data.meta.allocation_policy;
+  if (allocation === 'auction') {
+    dot.className = 'dot ' + (frame.manager_alive ? 'up' : 'p2p');
+    text.textContent = frame.manager_alive
+      ? 'peer auction · route manager reachable'
+      : 'WMS injector · peer auction';
+    return;
+  }
+  if (allocation === 'hungarian') {
+    dot.className = 'dot ' + (frame.manager_alive ? 'up' : 'down');
+    text.textContent = frame.manager_alive
+      ? 'Hungarian task allocator reachable'
+      : 'Hungarian task allocator DOWN';
+    return;
+  }
+  if (routePolicy === 'stop_and_wait' || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot';
-    text.textContent = 'no fleet manager (baseline)';
+    text.textContent = routePolicy === 'BIOS_1.0.0'
+      ? 'no fleet manager · peer traffic'
+      : 'no fleet manager (baseline)';
+    return;
+  }
+  if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'
+      || routePolicy === 'BIOS_PIBT.3' || routePolicy === 'BIOS_1.0.0') {
+    dot.className = 'dot up';
+    text.textContent = 'edge-only peer coordination · no manager';
     return;
   }
   const alive = frame.manager_alive;
@@ -262,13 +296,17 @@ function renderFleetPanel(frame) {
     const waiting = f.blocked_on
       ? (f.blocked_on === 'gate' ? 'awaiting block' : 'waiting on ' + f.blocked_on)
       : (f.task ? 'task ' + f.task : 'unassigned');
+    const pk = f.priority_key;
+    const priority = pk
+      ? ` · P[e${pk[0]} x${pk[1]} w${pk[2]} a${pk[3]} l${pk[4]}]`
+      : '';
 
     return `
       <div class="robot" style="border-left-color:${colour}">
         <span class="swatch" style="background:${colour}"></span>
         <div>
           <div class="rid">${r.id}</div>
-          <div class="meta">${waiting}</div>
+          <div class="meta">${waiting}${priority}</div>
           <div class="batt"><i class="${battCls}" style="width:${batt}%"></i></div>
         </div>
         <div class="right">
@@ -280,44 +318,129 @@ function renderFleetPanel(frame) {
   el('fleet').innerHTML = rows.join('');
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function uniqueAuctionEvents(events) {
+  const awardKeys = new Set();
+  return events.filter(event => {
+    if (event.type !== 'AW') return true;
+    // The winner rebroadcasts AWARD to renew its lease. It is real wire traffic,
+    // but it is not a new allocation, so keep one visible row per task/epoch/winner.
+    const key = [event.task, event.e ?? 0,
+      event.winner || event.dst || event.src].join('|');
+    if (awardKeys.has(key)) return false;
+    awardKeys.add(key);
+    return true;
+  });
+}
+
+function renderAuctionPanel(frame) {
+  const summary = el('auctionSummary');
+  const log = el('auctionLog');
+  if (!summary || !log) return;
+
+  const allocation = App.data.meta.allocation_policy;
+  const events = App.auctionEvents.filter(e => e.t <= frame.t + 1e-6);
+  const visibleEvents = uniqueAuctionEvents(events);
+  const counts = { TN: 0, BD: 0, AW: 0, TD: 0 };
+  for (const event of visibleEvents) {
+    if (counts[event.type] !== undefined) counts[event.type]++;
+  }
+  const renewals = events.filter(e => e.type === 'AW').length - counts.AW;
+  summary.innerHTML = allocation === 'auction'
+    ? `<span class="auction-proof">WMS announces only</span>
+       <span>${counts.TN} tasks · ${counts.BD} bids · ${counts.AW} awards ·
+       ${renewals} lease renewals · ${counts.TD} done</span>`
+    : allocation === 'hungarian'
+    ? `<span class="auction-proof">WMS -> Hungarian manager</span>
+       <span>${counts.TN} announced · ${counts.AW} assignments · ${counts.TD} done</span>`
+    : `<span>pre-assigned workload</span>
+       <span>${counts.TD} done</span>`;
+
+  if (!visibleEvents.length) {
+    log.innerHTML = '<p class="muted">No task-allocation messages yet.</p>';
+    return;
+  }
+
+  const rows = visibleEvents.slice(-18).reverse().map(event => {
+    const type = escapeHtml(event.type);
+    const task = escapeHtml(event.task || '-');
+    const source = escapeHtml(event.src);
+    let detail = '';
+    if (event.type === 'TN') detail = 'WMS -> all robots';
+    if (event.type === 'BD') detail = `cost ${Number(event.cost).toFixed(1)}`;
+    if (event.type === 'AW') {
+      const winner = escapeHtml(event.winner || event.dst || event.src);
+      detail = `winner ${winner} · cost ${Number(event.cost).toFixed(1)}`;
+      if (event.u !== undefined) detail += ` · lease ${Number(event.u).toFixed(1)}s`;
+    }
+    if (event.type === 'TD') detail = 'completed';
+    return `<div class="auction-row type-${type}">
+      <span class="auction-time">${Number(event.t).toFixed(1)}s</span>
+      <b>${type}</b><span>${source} · ${task}</span>
+      <small>${detail}</small>
+    </div>`;
+  });
+  log.innerHTML = rows.join('');
+}
+
 function renderSummary(s, meta) {
-  const contacts = s.contacts_robot_robot + s.contacts_robot_human;
+  const contacts = s.contacts_robot_robot + s.contacts_robot_human
+                 + s.contacts_robot_rack;
   const finished = s.completed_all;
 
   el('summary').innerHTML = `
+    <div class="summary-live">
+      <span>Playback progress</span>
+      <strong id="progressTasks">0 / ${meta.tasks}</strong>
+      <small id="progressTime">t = 0.0 s</small>
+    </div>
+
+    <p class="summary-final-label">
+      Final result after complete simulation
+    </p>
+
     <dl>
       <dt>Tasks completed</dt>
-      <dd class="${finished ? 'good' : ''}">${s.tasks_completed} / ${s.tasks_announced}</dd>
+      <dd>${s.tasks_completed} / ${s.tasks_announced}</dd>
+
       <dt>${finished ? 'Makespan' : 'Ran for'}</dt>
       <dd>${s.makespan_s.toFixed(1)} s${finished ? '' : ' (timeout)'}</dd>
       <dt>Robot&ndash;robot contacts</dt>
       <dd class="${s.contacts_robot_robot ? 'bad' : 'good'}">${s.contacts_robot_robot}</dd>
       <dt>Robot&ndash;human contacts</dt>
       <dd class="${s.contacts_robot_human ? 'bad' : 'good'}">${s.contacts_robot_human}</dd>
+      <dt>Robot&ndash;rack contacts</dt>
+      <dd class="${s.contacts_robot_rack ? 'bad' : 'good'}">${s.contacts_robot_rack}</dd>
       <dt>Worst separation</dt>
       <dd>${s.min_separation_m.toFixed(2)} m</dd>
+
       <dt>Deadlocks broken</dt>
       <dd>${s.deadlocks_detected}</dd>
-      <dt>Give-way manoeuvres</dt>
-      <dd>${s.retreats}</dd>
-      <dt>Messages / robot / s</dt>
-      <dd>${s.msgs_per_robot_s.toFixed(1)}</dd>
-      <dt>Bytes / robot / s</dt>
-      <dd>${s.bytes_per_robot_s.toFixed(0)}</dd>
-      <dt>Planner CPU (mean / max)</dt>
-      <dd>${s.plan_cpu_mean_ms.toFixed(2)} / ${s.plan_cpu_max_ms.toFixed(1)} ms</dd>
-      <dt>Time in degraded mode</dt>
-      <dd>${s.seconds_degraded.toFixed(0)} s</dd>
     </dl>
-    <p class="caveat">
-      ${contacts === 0
-        ? `Zero contacts over ${(s.robot_hours * 1000).toFixed(1)} milli-robot-hours bounds
-           the collision <i>rate</i>; it does not establish zero. Pool seeds with
-           <code>run.py --seeds N</code> for an interval worth quoting.`
-        : `${contacts} contact(s) recorded. A contact is a physical overlap in the
-           ground-truth world, checked swept rather than at frame endpoints.`}
-      ${finished ? '' : ' This run did not complete its task set, so its duration is a timeout and not a makespan &mdash; the two are not comparable.'}
-    </p>`;
+  `;
+}
+
+function updateSummaryProgress(frame) {
+  const done = (frame.fleet || [])
+    .reduce((sum, robot) => sum + (robot.done || 0), 0);
+
+  const total = App.data.meta.tasks;
+
+  const taskElement = el('progressTasks');
+  const timeElement = el('progressTime');
+
+  if (taskElement) {
+    taskElement.textContent = `${done} / ${total}`;
+  }
+
+  if (timeElement) {
+    timeElement.textContent = `t = ${frame.t.toFixed(1)} s`;
+  }
 }
 
 boot();
