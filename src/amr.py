@@ -2110,10 +2110,12 @@ class AMRBrain:
                     corridor_phase[cid] = entry if previous == entry else None
                     corridor_load[cid] = corridor_load.get(cid, 0) + 1
 
-        # Every bidirectional block has an immutable bounded wave. A mere concurrent
-        # capacity refills the same direction whenever its first robot finishes and
-        # can drain the entire fleet into one bay. Persisting the member task IDs makes
-        # the batch finish before the next catalog anchor flips direction.
+        # Every bidirectional block has a deterministic bounded wave. Active claims
+        # above keep an admitted batch in its direction until those robots finish.
+        # Unclaimed membership must NOT be persisted: under loss, peers can first see
+        # different completion subsets and cache opposite waves forever even after
+        # their completion catalogs converge. Re-deriving members from the canonical
+        # smallest unfinished task makes that disagreement self-healing.
         tasks_by_corridor: dict[int, list[tuple[str, Cell]]] = {}
         for task in sorted(self.open_tasks.values(), key=lambda item: item.tid):
             if task.tid in self.completed_tasks:
@@ -2122,14 +2124,19 @@ class AMRBrain:
                 tasks_by_corridor.setdefault(cid, []).append((task.tid, entry))
         corridor_capacity = max(1, self.cfg.traffic.auction_corridor_capacity)
         for cid, options in tasks_by_corridor.items():
-            wave = self._v3_corridor_waves.get(cid)
-            if wave is None or all(tid in self.completed_tasks for tid in wave[1]):
-                anchor_tid, entry = options[0]
-                members = tuple(
-                    tid for tid, direction in options if direction == entry
-                )[:corridor_capacity]
-                wave = (entry, members)
-                self._v3_corridor_waves[cid] = wave
+            unfinished = [
+                (tid, direction) for tid, direction in options
+                if tid not in self.completed_tasks
+            ]
+            if not unfinished:
+                self._v3_corridor_waves.pop(cid, None)
+                continue
+            _anchor_tid, entry = unfinished[0]
+            members = tuple(
+                tid for tid, direction in unfinished if direction == entry
+            )[:corridor_capacity]
+            wave = (entry, members)
+            self._v3_corridor_waves[cid] = wave
             entry, members = wave
             if cid in corridor_phase and corridor_phase[cid] != entry:
                 corridor_phase[cid] = None

@@ -1,9 +1,12 @@
 """End-to-end release tests for the failures named by the SIH statement."""
 
+from dataclasses import replace
+
 from src.amr import POLICY_BIOS_PIBT_V3, POLICY_STOP_WAIT
 from src.main import run_scenario
 from src.scenarios import (blocked_aisle, human_in_aisle, open_floor_control,
-                           partition_recovery, robot_failure_reassignment)
+                           partition_recovery, robot_failure_reassignment,
+                           sih_acceptance_overlap)
 from src.task_allocation import ALLOCATION_AUCTION, ALLOCATION_PREASSIGNED
 
 
@@ -45,6 +48,22 @@ def test_partition_heals_and_catalogs_converge():
     assert result.completed_all
     assert result.tasks_completed == result.tasks_announced == 4
     assert result.contacts_robot_robot == 0
+
+
+def test_lossy_completion_catalog_converges_corridor_wave_membership():
+    scenario = sih_acceptance_overlap(n_robots=4, seed=6)
+    scenario.net = replace(scenario.net, loss=0.20)
+    scenario.duration_s = 500.0
+
+    result = run_scenario(
+        scenario, POLICY_BIOS_PIBT_V3,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+
+    assert result.completed_all
+    assert result.tasks_completed == result.tasks_announced == 12
+    assert result.contacts_robot_robot == 0
+    assert result.contacts_robot_rack == 0
 
 
 def test_human_scenario_finishes_without_parking_in_worker_path():

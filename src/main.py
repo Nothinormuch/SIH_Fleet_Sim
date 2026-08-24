@@ -141,7 +141,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
         net.register(MANAGER_ID)
 
     total_tasks = len(announced_tasks) if uses_allocation else sc.n_tasks
-    announced = False
+    next_wms_announcement = 0.0
     makespan = None
     steps = int(sc.duration_s / dt)
     seq = 0
@@ -192,8 +192,12 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                 world.remove_obstacle(event.oid)
                 cleared_obstacles.add(event.oid)
 
-        if uses_allocation and not announced:
-            announced = True
+        if uses_allocation and t >= next_wms_announcement:
+            # TASK_NEW is an idempotent catalog announcement, not a one-shot command.
+            # Repeating it is essential: if every robot loses the first multicast,
+            # peer gossip has no copy from which to repair the missing task. Existing
+            # or completed tasks ignore the same-epoch repeat.
+            next_wms_announcement = t + 2.0 * cfg.traffic.task_gossip_period_s
             for tk in announced_tasks:
                 seq += 1
                 announcement = msg.task_new(
