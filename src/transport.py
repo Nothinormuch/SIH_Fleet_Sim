@@ -28,11 +28,10 @@ mentions one. Both configurations are in the benchmark sweep.
 from __future__ import annotations
 
 import heapq
-import json
 import math
 import random
+import secrets
 import socket
-import struct
 from itertools import count
 
 from . import messages as msg
@@ -41,6 +40,33 @@ from .settings import Config
 
 DEFAULT_GROUP = "239.26.1.23"      # admin-scoped multicast, mnemonic for SIH26123
 DEFAULT_PORT = 26123
+
+
+class ReplayWindow:
+    """Bounded duplicate/replay detector that still accepts modest UDP reordering."""
+
+    def __init__(self, width: int = 64) -> None:
+        if width < 8 or width > 1024:
+            raise ValueError("replay window width must be between 8 and 1024")
+        self.width = width
+        self.highest = -1
+        self.bitmap = 0
+
+    def accept(self, sequence: int) -> bool:
+        if sequence > self.highest:
+            shift = sequence - self.highest
+            self.bitmap = ((self.bitmap << shift) if shift < self.width else 0)
+            self.bitmap = (self.bitmap | 1) & ((1 << self.width) - 1)
+            self.highest = sequence
+            return True
+        delta = self.highest - sequence
+        if delta >= self.width:
+            return False
+        mask = 1 << delta
+        if self.bitmap & mask:
+            return False
+        self.bitmap |= mask
+        return True
 
 
 class SimNetwork:
@@ -158,12 +184,29 @@ class UdpMulticastTransport:
     """
 
     def __init__(self, rid: str, group: str = DEFAULT_GROUP,
-                 port: int = DEFAULT_PORT, ttl: int = 1) -> None:
+                 port: int = DEFAULT_PORT, ttl: int = 1,
+                 interface: str = "0.0.0.0",
+                 shared_key: bytes | str | None = None,
+                 require_auth: bool | None = None,
+                 session_id: str | None = None) -> None:
         self.rid = rid
         self.group = group
         self.port = port
+        self.interface = interface
+        self.shared_key = shared_key
+        self.require_auth = shared_key is not None if require_auth is None else require_auth
+        if self.require_auth and shared_key is None:
+            raise ValueError("require_auth=True needs a shared_key")
+        if self.require_auth:
+            key_bytes = shared_key if isinstance(shared_key, bytes) \
+                else str(shared_key).encode("utf-8")
+            if len(key_bytes) < 16:
+                raise ValueError("shared_key must contain at least 16 bytes")
+        self.session_id = session_id or secrets.token_hex(8)
+        self._replay: dict[tuple[str, str], ReplayWindow] = {}
         self.stats = {"sent": 0, "recv": 0, "bytes_sent": 0, "bytes_recv": 0,
-                      "malformed": 0}
+                      "malformed": 0, "send_failed": 0, "replayed": 0,
+                      "auth_failed": 0, "oversized": 0}
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -172,8 +215,13 @@ class UdpMulticastTransport:
         except (AttributeError, OSError):
             pass                       # Windows has no SO_REUSEPORT; SO_REUSEADDR does
         self.sock.bind(("", port))
-        mreq = struct.pack("4sl", socket.inet_aton(group), socket.INADDR_ANY)
+        # ip_mreq is exactly two network-order IPv4 addresses.  Native ``4sl`` is
+        # 16 bytes on LP64 platforms and only happened to work on some kernels.
+        mreq = socket.inet_aton(group) + socket.inet_aton(interface)
         self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        if interface != "0.0.0.0":
+            self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF,
+                                 socket.inet_aton(interface))
         self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
         # Loop enabled so several nodes on one host still hear each other; the agent
         # discards its own src anyway.
@@ -181,7 +229,8 @@ class UdpMulticastTransport:
         self.sock.setblocking(False)
 
     def send(self, message: msg.Message) -> None:
-        wire = msg.encode(message)
+        wire = msg.encode(message, secret=self.shared_key,
+                          session_id=self.session_id)
         try:
             self.sock.sendto(wire, (self.group, self.port))
             self.stats["sent"] += 1
@@ -189,20 +238,30 @@ class UdpMulticastTransport:
         except OSError:
             # A send failure is a lost packet, not a crash. The protocol is designed
             # to tolerate loss, so the correct response is to carry on.
-            pass
+            self.stats["send_failed"] += 1
 
     def poll(self, max_msgs: int = 256) -> list[msg.Message]:
         out: list[msg.Message] = []
         for _ in range(max_msgs):
             try:
-                raw, _addr = self.sock.recvfrom(2048)
+                raw, _addr = self.sock.recvfrom(msg.MAX_DATAGRAM_BYTES + 1)
             except (BlockingIOError, OSError):
                 break
             self.stats["recv"] += 1
             self.stats["bytes_recv"] += len(raw)
-            m = msg.decode(raw)
+            m, reason = msg.decode_packet(
+                raw, secret=self.shared_key, require_auth=self.require_auth)
             if m is None:
                 self.stats["malformed"] += 1
+                if reason in ("invalid_auth", "auth_missing", "auth_unconfigured"):
+                    self.stats["auth_failed"] += 1
+                elif reason == "oversized":
+                    self.stats["oversized"] += 1
+                continue
+            session = m.sid or "legacy"
+            window = self._replay.setdefault((m.src, session), ReplayWindow())
+            if not window.accept(m.seq):
+                self.stats["replayed"] += 1
                 continue
             out.append(m)
         return out

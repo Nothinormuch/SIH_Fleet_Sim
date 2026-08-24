@@ -196,7 +196,10 @@ def test_v3_stages_one_cell_before_an_occupied_chokepoint_mouth():
     brain.path = [(5, 2), (5, 3), (5, 4), (6, 4), (7, 4)]
     brain.pidx = 1
     brain._last_cell = (5, 2)
-    brain.peers["B"] = Peer("B", cell=(5, 4), last_seen=0.0)
+    brain.peers["B"] = Peer(
+        "B", cell=(5, 4), goal=(7, 4), intent=[(6, 4), (7, 4)],
+        last_seen=0.0,
+    )
 
     assert brain._v3_staging_conflict(0.0, (5, 2)) == "B"
 

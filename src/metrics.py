@@ -23,6 +23,7 @@ policy against the same fixed scenario. Where a number is weak, it says so.
 from __future__ import annotations
 
 import math
+import random
 import statistics
 from dataclasses import dataclass, field, asdict
 
@@ -95,6 +96,7 @@ class PolicyResult:
     scenario: str
     seed: int
     allocation_policy: str | None = None
+    workload_id: str = ""
     sim_seconds: float = 0.0
     robots: int = 0
 
@@ -122,6 +124,9 @@ class PolicyResult:
     retreats: int = 0
     yields: int = 0
     replans: int = 0
+    dynamic_obstacles_detected: int = 0
+    dynamic_reroutes: int = 0
+    task_reassignments: int = 0
     safety_stop_ticks: int = 0
     seconds_degraded: float = 0.0
 
@@ -143,6 +148,7 @@ class PolicyResult:
 
     net_loss: float = 0.0
     manager_killed_at: float | None = None
+    robot_failures: int = 0
     completed_all: bool = False
 
     def to_dict(self) -> dict:
@@ -181,35 +187,198 @@ def safety_report(results: list[PolicyResult], conf: float = 0.95) -> dict:
     }
 
 
-def compare(baseline: list[PolicyResult], candidate: list[PolicyResult]) -> dict:
-    """Speedup of `candidate` over `baseline` on makespan, with spread.
+def percentile(values: list[float], p: float) -> float:
+    """Linearly interpolated percentile, defined for even a single observation."""
+    if not values:
+        raise ValueError("percentile requires at least one value")
+    if not 0.0 <= p <= 1.0:
+        raise ValueError("percentile must be between zero and one")
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * p
+    lower = int(math.floor(position))
+    upper = int(math.ceil(position))
+    if lower == upper:
+        return ordered[lower]
+    fraction = position - lower
+    return ordered[lower] + fraction * (ordered[upper] - ordered[lower])
 
-    Reported as a ratio of medians plus the full range, because makespan across seeds is
-    skewed - a single deadlocked run dominates a mean and makes the headline number a
-    property of the worst seed rather than of the policy.
+
+def _bootstrap_ci(values: list[float], samples: int = 5000,
+                  seed: int = 26123) -> tuple[float, float]:
+    """Deterministic 95% bootstrap interval for the median paired reduction."""
+    if not values:
+        raise ValueError("bootstrap requires at least one value")
+    if samples <= 0:
+        raise ValueError("bootstrap sample count must be positive")
+    if len(values) == 1:
+        return values[0], values[0]
+    rng = random.Random(seed)
+    medians = []
+    for _ in range(samples):
+        resample = [values[rng.randrange(len(values))]
+                    for _ in range(len(values))]
+        medians.append(statistics.median(resample))
+    return percentile(medians, 0.025), percentile(medians, 0.975)
+
+
+def _invalid_comparison(baseline: list[PolicyResult],
+                        candidate: list[PolicyResult], reason: str) -> dict:
+    return {
+        "baseline": baseline[0].policy if baseline else None,
+        "candidate": candidate[0].policy if candidate else None,
+        "verdict": "invalid",
+        "reason": reason,
+    }
+
+
+def compare_paired(baseline: list[PolicyResult], candidate: list[PolicyResult],
+                   threshold_pct: float = 20.0,
+                   bootstrap_samples: int = 5000) -> dict:
+    """Strict paired completion-time comparison with right-censoring support.
+
+    Exact reductions are reported when both policies finish.  If the candidate finishes
+    and the baseline reaches the fixed cutoff, ``1 - candidate/cutoff`` is a conservative
+    *lower bound*: the unknown baseline makespan is strictly greater than the cutoff.
+    No percentage is produced for mismatched workloads, missing seeds, duplicate seeds,
+    or a candidate timeout.
     """
     if not baseline or not candidate:
-        return {}
-    b = [r.makespan_s for r in baseline if r.completed_all]
-    c = [r.makespan_s for r in candidate if r.completed_all]
+        return _invalid_comparison(baseline, candidate,
+                                   "both policies require at least one run")
+
+    def index(results: list[PolicyResult], label: str) -> tuple[dict[int, PolicyResult], str | None]:
+        by_seed: dict[int, PolicyResult] = {}
+        for result in results:
+            if result.seed in by_seed:
+                return {}, f"duplicate {label} seed {result.seed}"
+            by_seed[result.seed] = result
+        return by_seed, None
+
+    base_by_seed, error = index(baseline, "baseline")
+    if error:
+        return _invalid_comparison(baseline, candidate, error)
+    cand_by_seed, error = index(candidate, "candidate")
+    if error:
+        return _invalid_comparison(baseline, candidate, error)
+    if set(base_by_seed) != set(cand_by_seed):
+        missing_candidate = sorted(set(base_by_seed) - set(cand_by_seed))
+        missing_baseline = sorted(set(cand_by_seed) - set(base_by_seed))
+        return _invalid_comparison(
+            baseline, candidate,
+            f"seed mismatch; missing candidate={missing_candidate}, "
+            f"missing baseline={missing_baseline}")
+
+    pairs = []
+    lower_bounds = []
+    exact_reductions = []
+    candidate_timeouts = []
+    both_timeouts = []
+    baseline_censored = []
+    for seed in sorted(base_by_seed):
+        base = base_by_seed[seed]
+        cand = cand_by_seed[seed]
+        if not base.workload_id or not cand.workload_id:
+            return _invalid_comparison(
+                baseline, candidate, f"seed {seed} has no workload fingerprint")
+        if base.workload_id != cand.workload_id:
+            return _invalid_comparison(
+                baseline, candidate, f"seed {seed} workload fingerprint mismatch")
+        for field_name in ("scenario", "robots", "tasks_announced",
+                           "allocation_policy", "net_loss"):
+            if getattr(base, field_name) != getattr(cand, field_name):
+                return _invalid_comparison(
+                    baseline, candidate,
+                    f"seed {seed} differs on {field_name}")
+
+        if not cand.completed_all:
+            candidate_timeouts.append(seed)
+            if not base.completed_all:
+                both_timeouts.append(seed)
+            continue
+
+        if base.completed_all:
+            reduction = (base.makespan_s - cand.makespan_s) / base.makespan_s * 100.0
+            kind = "exact"
+            exact_reductions.append(reduction)
+        else:
+            if base.sim_seconds <= 0:
+                return _invalid_comparison(
+                    baseline, candidate, f"seed {seed} has an invalid baseline cutoff")
+            reduction = (base.sim_seconds - cand.makespan_s) / base.sim_seconds * 100.0
+            kind = "right_censored_lower_bound"
+            baseline_censored.append(seed)
+        lower_bounds.append(reduction)
+        pairs.append({
+            "seed": seed,
+            "kind": kind,
+            "baseline_completed": base.completed_all,
+            "baseline_time_or_cutoff_s": round(
+                base.makespan_s if base.completed_all else base.sim_seconds, 2),
+            "candidate_makespan_s": round(cand.makespan_s, 2),
+            "reduction_or_lower_bound_pct": round(reduction, 2),
+            "workload_id": base.workload_id,
+        })
+
     out = {
         "baseline": baseline[0].policy,
         "candidate": candidate[0].policy,
-        "baseline_runs_completed": f"{len(b)}/{len(baseline)}",
-        "candidate_runs_completed": f"{len(c)}/{len(candidate)}",
+        "scenario": baseline[0].scenario,
+        "robots": baseline[0].robots,
+        "allocation_policy": baseline[0].allocation_policy or "preassigned",
+        "paired_runs": len(baseline),
+        "baseline_runs_completed": f"{sum(r.completed_all for r in baseline)}/{len(baseline)}",
+        "candidate_runs_completed": f"{sum(r.completed_all for r in candidate)}/{len(candidate)}",
+        "baseline_censored_seeds": baseline_censored,
+        "candidate_timeout_seeds": candidate_timeouts,
+        "both_timeout_seeds": both_timeouts,
+        "threshold_pct": threshold_pct,
+        "pairs": pairs,
     }
-    if not b or not c:
-        # A policy that fails to finish is not "infinitely slower"; it is a different
-        # kind of result and must not be silently folded into a speedup ratio.
-        out["verdict"] = "incomparable - at least one policy did not complete the task set"
+    if candidate_timeouts:
+        out.update({
+            "verdict": "incomplete",
+            "reason": f"candidate timed out for seeds {candidate_timeouts}",
+        })
         return out
-    mb, mc = statistics.median(b), statistics.median(c)
+
+    candidate_times = [r.makespan_s for r in candidate]
+    baseline_times = [r.makespan_s for r in baseline if r.completed_all]
+    ci_low, ci_high = _bootstrap_ci(
+        lower_bounds, samples=bootstrap_samples) if lower_bounds else (0.0, 0.0)
+    candidate_contacts = sum(
+        r.contacts_robot_robot + r.contacts_robot_human + r.contacts_robot_rack
+        for r in candidate)
+    minimum_bound = min(lower_bounds)
+    gate_pass = minimum_bound >= threshold_pct and candidate_contacts == 0
+    evidence_kind = ("exact_paired_makespan" if not baseline_censored
+                     else "right_censored_conservative_lower_bound")
     out.update({
-        "baseline_makespan_median_s": round(mb, 2),
-        "candidate_makespan_median_s": round(mc, 2),
-        "baseline_makespan_range_s": [round(min(b), 2), round(max(b), 2)],
-        "candidate_makespan_range_s": [round(min(c), 2), round(max(c), 2)],
-        "reduction_pct": round((mb - mc) / mb * 100, 2),
-        "speedup_x": round(mb / mc, 3) if mc > 0 else None,
+        "verdict": "pass" if gate_pass else "fail",
+        "evidence_kind": evidence_kind,
+        "minimum_reduction_lower_bound_pct": round(minimum_bound, 2),
+        "median_reduction_lower_bound_pct": round(statistics.median(lower_bounds), 2),
+        "mean_reduction_lower_bound_pct": round(statistics.mean(lower_bounds), 2),
+        "median_lower_bound_bootstrap_95pct": [round(ci_low, 2), round(ci_high, 2)],
+        "candidate_makespan_mean_s": round(statistics.mean(candidate_times), 2),
+        "candidate_makespan_median_s": round(statistics.median(candidate_times), 2),
+        "candidate_makespan_p95_s": round(percentile(candidate_times, 0.95), 2),
+        "baseline_makespan_mean_s": (round(statistics.mean(baseline_times), 2)
+                                      if baseline_times else None),
+        "baseline_makespan_median_s": (round(statistics.median(baseline_times), 2)
+                                        if baseline_times else None),
+        "baseline_makespan_p95_s": (round(percentile(baseline_times, 0.95), 2)
+                                     if baseline_times else None),
+        "candidate_contacts_total": candidate_contacts,
+        "candidate_robot_hours": round(sum(r.robot_hours for r in candidate), 4),
+        "candidate_msgs_per_robot_s_mean": round(
+            statistics.mean(r.msgs_per_robot_s for r in candidate), 3),
+        "candidate_plan_cpu_mean_ms": round(
+            statistics.mean(r.plan_cpu_mean_ms for r in candidate), 3),
+        "exact_reductions_pct": [round(value, 2) for value in exact_reductions],
     })
     return out
+
+
+def compare(baseline: list[PolicyResult], candidate: list[PolicyResult]) -> dict:
+    """Backward-compatible name for the strict paired comparison."""
+    return compare_paired(baseline, candidate)

@@ -7,12 +7,14 @@ A multi-robot warehouse simulation, a peer-to-peer coordination protocol, and a
 benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 ```bash
-python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m pytest tests -q
-python run.py --scenario open_floor_control --policy BIOS_PIBT.3 --allocation-policy auction --robots 4
-python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
-python run.py --scenario dense_aisles --policy BIOS_PIBT.3 --allocation-policy auction --robots 4
-python run.py --scenario dense_aisles --policy BIOS_PIBT.2 --allocation-policy hungarian --robots 4
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+python -m pytest -q
+python backend/server.py                       # http://127.0.0.1:8000
+python edge_demo.py --robots 3 --duration 5    # real processes + signed UDP
+python fault_campaign.py --seeds 30 --jobs 8  # loss, partition, crash recovery
+python benchmark.py --seeds 30 --jobs 8        # strict SIH acceptance gate
 ```
 
 The simulation core and the benchmark have **no third-party dependencies** — stdlib
@@ -90,8 +92,8 @@ src/
   planner.py       A*, space-time A* with reservations, prioritised fleet planning
   priority.py      deterministic next-cell PIBT, inheritance and backtracking
   topology.py      2-core/tree decomposition for temporary exit priority
-  messages.py      the P2P wire protocol (JSON over UDP multicast)
-  transport.py     seeded network model + real UDP multicast socket, one interface
+  messages.py      validated, authenticated P2P wire protocol with relative TTLs
+  transport.py     seeded network model + replay-safe real UDP multicast transport
   world.py         ground truth: kinematics, 360° sensing, swept collision detection
   amr.py           the agent: three control loops. Pure — no I/O, no clock, no globals
   fleet_manager.py the optional central optimiser, and the strong baseline
@@ -99,7 +101,11 @@ src/
   task_allocation.py allocation policy contracts, separate from route coordination
   metrics.py       Poisson rate intervals, honest policy comparison
   scenarios.py     pinned, seeded benchmark scenarios including a negative control
+  benchmark.py     strict paired SIH acceptance gate and JSON/CSV evidence writer
   main.py          the headless runner and CLI
+  edge_runtime.py  50 Hz fail-safe node loop + UDP sensor/actuator adapter
+  distributed_demo.py independent process launcher with physics-only referee
+  fault_campaign.py packet-loss, partition-heal and crashed-winner release gate
 backend/
   server.py        stdlib HTTP server: serves the frontend, runs sims on request
 frontend/
@@ -110,8 +116,11 @@ frontend/
   js/network.js    the coordination layer: intent, peer links, wait-for arrows
   js/main.js       fetch, interpolated playback, panel binding
   assets/          generated sprite set (256 px per cell)
-tests/             core, priority and dashboard regression tests
-docs/              V3/V2 protocols plus V1 design, critique and findings
+tests/             core, priority, benchmark-integrity and dashboard regression tests
+docs/              acceptance evidence, V3/V2 protocols, V1 design, critique and findings
+deploy/            hardened systemd service for one process per AMR
+config/            non-secret example edge-node environment
+artifacts/benchmarks/ checked-in raw and summarized acceptance evidence
 reference/         asset prompt pack and loader spec
 ```
 
@@ -189,38 +198,25 @@ memorisation score. Result and caveats: `docs/FINDINGS.md`.
 
 ## Status — read this before quoting any number
 
-**Working and covered by tests:** the map and block decomposition, A* and space-time A*
-(verified to resolve a head-on corridor with zero space-time clashes), the physics and
-swept collision detection, the two-channel speed-scaled protective field, the network
-model including the dead-zone result, the Poisson statistics, the end-to-end
-single-robot path, priority serialization, deterministic PIBT inheritance, backtracking,
-rotation handling, and tree-appendage detection.
+The strict SIH acceptance benchmark now passes all 90 paired seeds across 4-, 6- and
+8-robot fleets. `BIOS_PIBT.3` completes 30/30 runs at every fleet size; stop-and-wait
+completes 0/30 before the fixed 1200 s cutoff. The minimum conservative per-seed
+completion-time reduction bounds are **66.06%**, **51.03%** and **32.66%** respectively,
+all above the required 20%. All 1,620 candidate tasks complete with zero observed
+robot/robot, robot/human or robot/rack contacts across 87.3498 robot-hours.
 
-**V3 high-density result:** on `dead_zone_mesh`, 24 robots, seed 20 and a 300 s
-cutoff, the merged V2-plus-allocation branch completes 8/96 tasks. V3 completes 41/96
-with zero robot/human/rack contacts, zero detected wait cycles and zero retreats. That
-is 5.125 times the completed work at the cutoff, not a makespan comparison; neither run
-completes all tasks.
+These are right-censored lower bounds, not exact speedups: the baseline makespans are
+unknown because the baseline never finishes. A candidate result at time `C` and an
+unfinished baseline at cutoff `D` establish only that the true reduction is greater
+than `1 - C/D`. The release gate uses the minimum bound across seeds, not a favorable
+average, and refuses candidate timeouts or mismatched workload fingerprints.
 
-**V3 chokepoint result:** all three pinned four-AMR seeds complete 12/12 tasks in
-407.7–413.9 s with zero observed contacts, detected wait cycles or retreats. Extended
-10% and 20% packet-loss sweeps also complete every task across three seeds per loss
-level (407.7–423.4 s). All 54 regressions pass. See the V3 protocol document for
-assumptions and exact commands.
-
-**V1 four-robot result (three seeds):** `BIOS_PIBT.1` completes all
-16 `open_floor_control` tasks in every seed (183.2–230.6 s). At the pinned cutoffs it
-completes 15/16, 15/16 and 16/16 tasks in `dense_aisles`, and 10/12, 6/12 and 10/12 in
-the deliberately extreme `crossing_chokepoint` case. There are zero inter-robot contacts
-across all nine runs (3.745 robot-hours). Extended crossing runs finish all 12 tasks in
-538.0 s, 758.2 s and 532.1 s respectively, showing eventual progress rather than a
-latched deadlock. These are development measurements, not a published 20% success claim.
-
-No speedup percentage is published yet, because there is not yet an honest one to publish.
-`metrics.compare()` deliberately returns `"incomparable"` rather than a ratio when a
-policy fails to complete — a policy that does not finish is a different kind of result,
-not an infinitely slow one, and folding it into a percentage would be the exact
-dishonesty this project is arguing against.
+See [`docs/SIH_ACCEPTANCE_BENCHMARK.md`](docs/SIH_ACCEPTANCE_BENCHMARK.md) for the exact
+method, limitations and commands. Raw evidence is checked in as
+[`artifacts/benchmarks/sih-acceptance.json`](artifacts/benchmarks/sih-acceptance.json)
+and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv).
+All 93 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
+checks also pass.
 
 ## The dashboard
 
@@ -243,10 +239,31 @@ looks the same whether it is coordinating or getting lucky:
 - **the human worker** — dashed ring, because they publish nothing and cannot be
   negotiated with. Only the onboard safety layer sees them at all
 
-Playback rather than a live socket: the sim runs far faster than realtime, so streaming
+The run endpoint is POST-only, size- and workload-bounded, and protected by strict
+request validation and browser security headers. Playback rather than a live socket:
+the sim runs far faster than realtime, so streaming
 would mean throttling it back to wall-clock for no benefit, and a recorded run can be
 paused on the frame where two robots negotiate a chokepoint and replayed against a
 different policy on the same seed.
 
-**Not built yet:** the distributed multi-process runner (the UDP transport class exists
-and is unit-tested; the process launcher is not written), and packet-loss sweep plots.
+## Real edge processes and failure campaigns
+
+`python edge_demo.py --robots 3 --duration 5` starts a distinct operating-system process,
+brain, clock epoch, replay window and authenticated multicast socket for every AMR. The
+parent is a physics/lidar referee only; it never forwards peer traffic or chooses routes,
+bids, priorities or motor commands. `edge_node.py` replaces that referee pipe with a
+validated UDP sensor/actuator bridge and fails safe when sensor frames are invalid or
+stale.
+
+`python fault_campaign.py --seeds 30 --jobs 8` is a separate release gate covering
+0/5/10/20% packet loss, partition and healing, and crash of the current auction winner.
+The lease expiry reopens work for surviving robots; a failed chassis remains a sensed
+physical obstacle. Dynamic anonymous obstacles are promoted to expiring local blocked
+cells only after persistent observations, then routes are recalculated.
+
+See [`docs/EDGE_DEPLOYMENT.md`](docs/EDGE_DEPLOYMENT.md) for clean-clone/venv commands,
+[`docs/WIRE_PROTOCOL.md`](docs/WIRE_PROTOCOL.md) for the validated packet contract and
+[`docs/DEMO_AND_JUDGING.md`](docs/DEMO_AND_JUDGING.md) for the live judging sequence.
+The deployment runbook also covers the Raspberry Pi service.
+Actual Pi/Jetson CPU and memory claims still require running the included harness on that
+named device; local Mac timing is intentionally not presented as Pi evidence.

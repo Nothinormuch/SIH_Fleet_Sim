@@ -116,29 +116,47 @@ short gaps in a racking layout turned the warehouse into a series of toll gates 
 throughput *worse than doing nothing*. Block control is now scoped to runs of ≥ 6 cells,
 where per-cell yielding genuinely cannot recover.
 
-## 7. Open: idle robots are permanent walls, and the hierarchy churns
+## 7. Discrete collision freedom is not continuous executability
 
-**The remaining blocker.** A robot that finishes its queue stops where it stands — which
-is a drop station, a shared resource. Every other mechanism here (yielding, block
-control, deadlock breaking) assumes both parties are trying to go somewhere; none of them
-can prompt a robot that has already arrived and has no reason to move again. One idle
-robot on a station makes every remaining task targeting it unreachable, and the symptom
-reads as a planner deadlock.
+**Symptom:** PIBT returned a collision-free next-cell configuration, yet two robots
+remained safety-stopped forever.
 
-Partial work exists: heartbeats now carry the sender's goal, and `_vacate_if_in_the_way`
-lets a parked robot step aside when a peer's goal is its own cell. It has not yet changed
-the measured outcome, which means either it is not firing or station contention is not
-the whole story. `central` still strands robots at 6/8 tasks.
+The grid endpoints were valid, but a leader turning west while its follower entered
+from the south initially reduced the physical chassis gap. A similar straight-convoy
+failure occurred when the leader was laterally off-center and the follower had already
+crossed half a cell. Layer 0 was correct to reject both commands; discrete occupancy had
+not proved their swept trajectories executable.
 
-**Second open item:** `hierarchical` underperforms `central` (5/8 vs 6/8, with ~100 local
-replans against central's ~20). It spends too much time off the central schedule — every
-local replan discards the schedule and re-enables peer negotiation the coordinated plan
-had already made unnecessary. Making it *trust* a fresh schedule halved the deadlock
-count but did not close the throughput gap.
+**Fix:** stage a follower at its own cell centre when the leader turns, or when measured
+separation is already inside the standstill guard margin. The leader then receives a
+bounded recovery command only while relative velocity increases every close-peer gap.
+Straight, well-spaced convoys still flow without serialization.
 
-Both are ordinary debugging, not design problems. Next step is to instrument the
-per-robot state machine over a full run and find where time is actually spent, rather
-than tuning thresholds.
+## 8. Idle parking must avoid the route, not just the destination
+
+**Symptom:** an idle robot noticed that it blocked a peer, stepped aside, then selected
+another cell in the same advertised intent horizon. It oscillated between two cells at
+the corridor mouth while the task-owning robot was repeatedly displaced away from its
+goal.
+
+**Fix:** parking candidates exclude peer cells, peer goals and every cell in the current
+peer intent horizon. The idle AMR therefore selects a genuine side bay. Idle heartbeats
+also clear the peer's previous active intent, and a robot with no goal never publishes
+the tail of an old path.
+
+## 9. Priority permission needs bounded hysteresis
+
+**Symptom:** two merge contenders alternated permission every control tick. The winner's
+blocked timer—and therefore its waiting priority—was cleared as soon as PIBT authorized
+motion, before the chassis had time to turn and enter the next cell.
+
+Keeping the age forever solved that race but starved other traffic whenever the winner
+could not physically translate.
+
+**Fix:** retain the accumulated waiting rank only for the six-second verified recovery
+window. Cell progress resets it immediately; failure to progress lets it expire. This
+is long enough to execute one admitted transition and bounded enough not to become a
+permanent priority lease.
 
 ---
 

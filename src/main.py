@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import statistics
 import sys
 from dataclasses import replace
 
@@ -36,14 +35,14 @@ from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
-from .scenarios import SCENARIOS, Scenario
+from .scenarios import SCENARIOS, Scenario, workload_fingerprint
 from .settings import Config, DEFAULT
 from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
                                ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED,
                                ACTIVE_ALLOCATION_POLICIES,
                                validate_allocation_policy)
 from .transport import SimNetwork
-from .world import World
+from .world import Actuation, World
 
 WMS_ID = "WMS"
 AUCTION_MESSAGE_TYPES = (msg.TASK_NEW, msg.BID, msg.AWARD, msg.TASK_DONE)
@@ -111,6 +110,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
 
     cfg = cfg or DEFAULT
     cfg = replace(cfg, net=sc.net, seed=seed)
+    workload_id = workload_fingerprint(sc, cfg, allocation_policy)
     dt = 1.0 / cfg.rates.world_hz
 
     world = World(sc.env, cfg, seed=seed)
@@ -149,11 +149,15 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
         net.register(MANAGER_ID)
 
     total_tasks = len(announced_tasks) if uses_allocation else sc.n_tasks
-    announced = False
+    next_wms_announcement = 0.0
     makespan = None
     steps = int(sc.duration_s / dt)
     seq = 0
     auction_events: list[dict] = []
+    failed_nodes: set[str] = set()
+    triggered_failures: set[str] = set()
+    activated_obstacles: set[str] = set()
+    cleared_obstacles: set[str] = set()
 
     for k in range(steps):
         t = k * dt
@@ -167,9 +171,41 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
             net.set_partition([set(g) for g in sc.partition_groups])
         if sc.heal_at is not None and t >= sc.heal_at and net.partition is not None:
             net.set_partition(None)
+        for rid, fail_at in sc.robot_fail_at.items():
+            if t >= fail_at and rid not in triggered_failures:
+                failed_nodes.add(rid)
+                triggered_failures.add(rid)
+                if verbose:
+                    print(f"  [t={t:6.1f}] {rid} failed", file=sys.stderr)
+        for rid, restart_at in sc.robot_restart_at.items():
+            if t >= restart_at and rid in failed_nodes and rid in brains:
+                index = int(rid.removeprefix("AMR")) - 1
+                failed_nodes.remove(rid)
+                brains[rid] = AMRBrain(
+                    rid, sc.env, cfg, policy=policy,
+                    home=sc.starts[index], allocation_policy=allocation_policy)
+                # An auction node reconstructs its catalog from peer gossip after a
+                # restart. Pre-assigned work has no distributed owner record, so its
+                # static queue is restored explicitly for that comparison mode.
+                if not uses_allocation:
+                    brains[rid].queue = list(sc.assignments[index])
+                if verbose:
+                    print(f"  [t={t:6.1f}] {rid} restarted", file=sys.stderr)
+        for event in sc.obstacles:
+            if event.oid not in activated_obstacles and t >= event.appear_at:
+                world.add_obstacle(event.oid, event.cell, event.radius_m)
+                activated_obstacles.add(event.oid)
+            if (event.clear_at is not None and event.oid not in cleared_obstacles
+                    and t >= event.clear_at):
+                world.remove_obstacle(event.oid)
+                cleared_obstacles.add(event.oid)
 
-        if uses_allocation and not announced:
-            announced = True
+        if uses_allocation and t >= next_wms_announcement:
+            # TASK_NEW is an idempotent catalog announcement, not a one-shot command.
+            # Repeating it is essential: if every robot loses the first multicast,
+            # peer gossip has no copy from which to repair the missing task. Existing
+            # or completed tasks ignore the same-epoch repeat.
+            next_wms_announcement = t + 2.0 * cfg.traffic.task_gossip_period_s
             for tk in announced_tasks:
                 seq += 1
                 announcement = msg.task_new(
@@ -190,6 +226,13 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
         for rid in sorted(brains):
             st = world.robots[rid]
             net.set_position(rid, (st.x / cfg.cell_m, st.y / cfg.cell_m))
+            if rid in failed_nodes:
+                # A failed chassis remains a stopped physical obstacle, while its
+                # process and radio are silent. Packets due during downtime are lost.
+                net.poll(t, rid)
+                cmds[rid] = Actuation(v=0.0, omega=0.0, safety_stop=True)
+                st.carrying = None
+                continue
             sensors = world.sense(rid, pose_noise_m=sc.pose_noise_m)
             act, outbox = brains[rid].step(t, sensors, net.poll(t, rid))
             for m in outbox:
@@ -217,7 +260,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                  "blocked_on": b.blocked_on,
                  "priority_key": (b._pub_priority_key.to_wire()
                                   if b.policy in PIBT_POLICIES else None),
-                 "done": len(b.completed)}
+                 "done": len(b.completed), "failed": r in failed_nodes}
                 for r, b in sorted(brains.items())
             ]
             snap["manager_alive"] = bool(manager and manager.alive)
@@ -232,11 +275,11 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
 
     world.finalize()
     return _summarize(sc, policy, allocation_policy, seed, cfg, world, net,
-                      brains, manager, total_tasks, makespan)
+                      brains, manager, total_tasks, makespan, workload_id)
 
 
 def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
-               manager, total_tasks, makespan) -> PolicyResult:
+               manager, total_tasks, makespan, workload_id) -> PolicyResult:
     sim_s = world.t
     n = len(brains)
     robot_hours = n * sim_s / 3600.0
@@ -254,7 +297,7 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
 
     return PolicyResult(
         policy=policy, allocation_policy=allocation_policy,
-        scenario=sc.name, seed=seed,
+        scenario=sc.name, seed=seed, workload_id=workload_id,
         sim_seconds=round(sim_s, 2), robots=n,
         tasks_completed=done, tasks_announced=total_tasks,
         # A run that did not finish has no makespan. Recording the wall-clock cutoff as
@@ -275,6 +318,9 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         retreats=int(agg("retreats")),
         yields=int(agg("yields")),
         replans=int(agg("replans")),
+        dynamic_obstacles_detected=int(agg("dynamic_obstacles_detected")),
+        dynamic_reroutes=int(agg("dynamic_reroutes")),
+        task_reassignments=int(agg("task_reassignments")),
         safety_stop_ticks=int(agg("safety_stops")),
         seconds_degraded=round(agg("seconds_degraded") / max(1, n), 1),
         msgs_sent=int(agg("msgs_sent")),
@@ -292,6 +338,7 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         priority_waits=int(agg("priority_waits")),
         net_loss=cfg.net.loss,
         manager_killed_at=sc.kill_manager_at,
+        robot_failures=len(sc.robot_fail_at),
     )
 
 

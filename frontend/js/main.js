@@ -19,11 +19,6 @@ const App = {
   lastRaf: 0,
   speed: 1,
   auctionEvents: [],
-  // The BIOS_4 model currently loaded, as {id, meta}. Null means BIOS_4 cannot run -
-  // the server refuses it rather than silently running an untrained control.
-  model: null,
-  trainJob: null,
-  trainTimer: null,
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -43,12 +38,6 @@ async function boot() {
   }
 
   el('runBtn').addEventListener('click', run);
-  el('policy').addEventListener('change', syncPolicyUI);
-  el('trainBtn').addEventListener('click', startTraining);
-  el('cancelBtn').addEventListener('click', cancelTraining);
-  el('uploadBtn').addEventListener('click', () => el('modelFile').click());
-  el('modelFile').addEventListener('change', uploadModel);
-  syncPolicyUI();
   el('playBtn').addEventListener('click', togglePlay);
   el('speed').addEventListener('change', e => { App.speed = parseFloat(e.target.value); });
   el('scrub').addEventListener('input', e => {
@@ -69,7 +58,6 @@ async function boot() {
     if (!App.data) return;
     App.view.resize(App.data.map, App.data.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, App.data.map, App.imgs);
-    Hud.resize(App.data.map);
     draw();
   });
 
@@ -91,22 +79,25 @@ function fill(select, values, preferred) {
 /* ------------------------------------------------------------------ running */
 
 async function run() {
-  const q = new URLSearchParams({
+  const request = {
     scenario: el('scenario').value,
     policy: el('policy').value,
     allocation_policy: el('allocationPolicy').value,
-    robots: el('robots').value,
-    seed: el('seed').value,
-    duration: el('duration').value,
-  });
-  if (App.model) q.set('model', App.model.id);
+    robots: Number(el('robots').value),
+    seed: Number(el('seed').value),
+    duration: Number(el('duration').value),
+  };
   el('runBtn').disabled = true;
   App.playing = false;
   el('playBtn').textContent = 'Play';
   setStatus(`Simulating ${el('duration').value}s of ${el('scenario').value}…`, 'busy');
 
   try {
-    const res = await fetch('/api/run?' + q.toString());
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(request),
+    });
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
 
@@ -115,10 +106,6 @@ async function run() {
     App.simTime = 0;
     App.view.resize(payload.map, payload.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, payload.map, App.imgs);
-
-    // HUD is re-inited on every run; init() disposes any previous instance so
-    // replaying / re-running never stacks overlays.
-    Hud.init(App.view, App.imgs, payload);
 
     const n = payload.frames.length;
     el('scrub').max = Math.max(0, n - 1);
@@ -140,211 +127,6 @@ function setStatus(text, cls) {
   const s = el('status');
   s.textContent = text;
   s.className = 'status' + (cls ? ' ' + cls : '');
-}
-
-/* ------------------------------------------------------------------ BIOS_4
- *
- * Train, download, upload. The three things a learned policy needs that a
- * hand-written one does not.
- *
- * Training is a JOB, not a request: it runs for minutes and the browser polls it.
- * That shape is forced by the work, but it also buys the thing that matters on a
- * dashboard - you can watch the search and stop it when the curve flattens, instead
- * of staring at a spinner and guessing.
- */
-
-function syncPolicyUI() {
-  const isBios4 = el('policy').value === 'BIOS_4';
-  el('bios4').hidden = !isBios4;
-  // A run button that is enabled and then fails is worse than one that explains
-  // itself: BIOS_4 without a model is refused by the server by design.
-  el('runBtn').disabled = isBios4 && !App.model;
-  if (isBios4 && !App.model) {
-    setStatus('BIOS_4 needs a model — train one, or upload a .json.', 'busy');
-  }
-}
-
-function setModel(id, meta, note) {
-  App.model = { id, meta: meta || {} };
-  const bits = [];
-  if (meta && meta.fitness !== undefined) bits.push(`fitness ${meta.fitness}`);
-  if (meta && meta.generations) bits.push(`${meta.generations} gens`);
-  if (meta && meta.best_tasks !== undefined && meta.best_tasks !== null) {
-    bits.push(`${meta.best_tasks} tasks in training`);
-  }
-  el('modelStatus').textContent =
-    `${note} · ${id}${bits.length ? ' · ' + bits.join(' · ') : ''}`;
-  el('modelStatus').className = 'status ok';
-  syncPolicyUI();
-}
-
-async function startTraining() {
-  const body = {
-    scenario: el('scenario').value,
-    robots: parseInt(el('robots').value, 10),
-    population: parseInt(el('population').value, 10),
-    generations: parseInt(el('generations').value, 10),
-  };
-  el('trainBtn').disabled = true;
-  try {
-    const res = await fetch('/api/train', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const started = await res.json();
-    if (!res.ok) throw new Error(started.error || `HTTP ${res.status}`);
-    App.trainJob = started.job;
-    el('trainProgress').hidden = false;
-    el('cancelBtn').hidden = false;
-    el('trainStatus').textContent =
-      `${started.params} parameters · ${started.episodes_per_generation} episodes per generation`;
-    el('trainStatus').className = 'status busy';
-    pollTraining();
-  } catch (e) {
-    el('trainStatus').textContent = 'Training failed to start: ' + e.message;
-    el('trainStatus').className = 'status err';
-    el('trainProgress').hidden = false;
-    el('cancelBtn').hidden = true;
-    el('trainBtn').disabled = false;
-  }
-}
-
-function pollTraining() {
-  clearTimeout(App.trainTimer);
-  App.trainTimer = setTimeout(async () => {
-    if (!App.trainJob) return;
-    try {
-      const res = await fetch(`/api/train/status?job=${App.trainJob}`);
-      const st = await res.json();
-      if (!res.ok) throw new Error(st.error || `HTTP ${res.status}`);
-      renderTraining(st);
-      if (st.state === 'running') return pollTraining();
-      finishTraining(st);
-    } catch (e) {
-      el('trainStatus').textContent = 'Lost the training job: ' + e.message;
-      el('trainStatus').className = 'status err';
-      el('trainBtn').disabled = false;
-    }
-  }, 1000);
-}
-
-function renderTraining(st) {
-  const done = st.history.length;
-  el('trainBar').style.width = `${Math.round(100 * done / Math.max(1, st.generations))}%`;
-  const last = st.history[done - 1];
-  if (!last) return;
-  // Surface a serial fallback loudly. It is ~12x slower and otherwise looks
-  // identical to a machine that is merely busy.
-  const serial = last.serial ? ' · SERIAL (no worker pool)' : '';
-  el('trainStatus').textContent =
-    `gen ${last.gen + 1}/${st.generations} · best ${last.best_so_far} · ` +
-    `${last.best_tasks} tasks · ${last.elapsed_s}s${serial}`;
-  el('trainStatus').className = 'status busy';
-  drawFitness(st.history);
-}
-
-function drawFitness(history) {
-  const c = el('trainChart');
-  const g = c.getContext('2d');
-  const w = c.width, h = c.height;
-  g.clearRect(0, 0, w, h);
-  if (history.length < 2) return;
-  const ys = history.map(e => e.best_so_far);
-  const lo = Math.min(...ys), hi = Math.max(...ys);
-  // A flat search is a real answer, and a chart that autoscales a flat line into a
-  // dramatic wiggle is a lie about it.
-  const span = (hi - lo) || 1;
-  g.strokeStyle = '#5b8cff';
-  g.lineWidth = 1.5;
-  g.beginPath();
-  ys.forEach((y, i) => {
-    const px = (i / (ys.length - 1)) * (w - 2) + 1;
-    const py = h - 2 - ((y - lo) / span) * (h - 4);
-    i ? g.lineTo(px, py) : g.moveTo(px, py);
-  });
-  g.stroke();
-}
-
-async function finishTraining(st) {
-  App.trainJob = null;
-  el('trainBtn').disabled = false;
-  // Nothing left to cancel. A button that is still offered after the job it would
-  // have stopped has finished is a button that does nothing when pressed.
-  el('cancelBtn').hidden = true;
-  if (st.state === 'failed') {
-    el('trainStatus').textContent = 'Training failed: ' + (st.error || 'unknown');
-    el('trainStatus').className = 'status err';
-    return;
-  }
-  const verb = st.state === 'cancelled' ? 'Cancelled' : 'Trained';
-  el('trainStatus').textContent =
-    `${verb} after ${st.history.length} generations · best fitness ${st.fitness}`;
-  el('trainStatus').className = 'status ok';
-
-  // Fetch it once: the same bytes get loaded for running AND handed to the user, so
-  // what they download is provably the model the dashboard is about to run.
-  try {
-    const res = await fetch(`/api/train/model?job=${st.id}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const model = await res.json();
-    setModel(st.model_id, model.meta, verb === 'Cancelled' ? 'cancelled run' : 'trained');
-    downloadJson(model, `bios4-${st.id}.json`);
-  } catch (e) {
-    el('trainStatus').textContent += ` (download failed: ${e.message})`;
-  }
-}
-
-function downloadJson(obj, filename) {
-  const blob = new Blob([JSON.stringify(obj, null, 1)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoking immediately can cancel the download in some browsers; one tick is enough.
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-async function cancelTraining() {
-  if (!App.trainJob) return;
-  el('cancelBtn').disabled = true;
-  try {
-    await fetch(`/api/train/cancel?job=${App.trainJob}`, { method: 'POST' });
-    el('trainStatus').textContent += ' · stopping after this generation…';
-  } finally {
-    el('cancelBtn').disabled = false;
-  }
-}
-
-async function uploadModel(ev) {
-  const file = ev.target.files && ev.target.files[0];
-  if (!file) return;
-  el('modelStatus').textContent = `Uploading ${file.name}…`;
-  el('modelStatus').className = 'status busy';
-  try {
-    const text = await file.text();
-    const res = await fetch('/api/model', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: text,
-    });
-    const body = await res.json();
-    // The server's rejections are written to be read by a person - a model trained
-    // against an older feature set is a normal accident - so show them verbatim
-    // rather than replacing them with "upload failed".
-    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-    setModel(body.model, body.meta, file.name);
-  } catch (e) {
-    el('modelStatus').textContent = e.message;
-    el('modelStatus').className = 'status err';
-    App.model = null;
-    syncPolicyUI();
-  } finally {
-    ev.target.value = '';
-  }
 }
 
 /* ------------------------------------------------------------------ playback */
@@ -457,7 +239,6 @@ function draw() {
     labels: App.view.cell >= 22,
     robotSizeCells: Math.max(0.55, diameterCells),
   });
-  Hud.render(frame, App.data.summary, App.data.meta, frame.t);
 
   el('scrub').value = idx;
   el('clockNow').textContent = frame.t.toFixed(1);
@@ -470,24 +251,33 @@ function draw() {
 function updateManagerDot(frame) {
   const dot = el('mgrDot');
   const text = el('mgrText');
-  // Whether this policy has a manager at all is the backend's call, not a string
-  // match here: stop_and_wait and BIOS_1.0.0 are both manager-free by design, and a
-  // red DOWN badge would misreport intent as failure. Older payloads lack the flag,
-  // hence the fallback.
-  const policy = App.data.meta.policy;
+  const routePolicy = App.data.meta.policy;
   const allocation = App.data.meta.allocation_policy;
-  const managed = App.data.meta.has_manager !== undefined
-    ? App.data.meta.has_manager
-    : (policy === 'central' || policy === 'hierarchical');
-  if (!managed) {
+  if (allocation === 'auction') {
+    dot.className = 'dot ' + (frame.manager_alive ? 'up' : 'p2p');
+    text.textContent = frame.manager_alive
+      ? 'peer auction · route manager reachable'
+      : 'WMS injector · peer auction';
+    return;
+  }
+  if (allocation === 'hungarian') {
+    dot.className = 'dot ' + (frame.manager_alive ? 'up' : 'down');
+    text.textContent = frame.manager_alive
+      ? 'Hungarian task allocator reachable'
+      : 'Hungarian task allocator DOWN';
+    return;
+  }
+  if (routePolicy === 'stop_and_wait' || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot';
-    if (allocation === 'auction') {
-      text.textContent = 'peer auction · no route manager';
-    } else if (allocation === 'hungarian') {
-      text.textContent = 'Hungarian task allocator DOWN';
-    } else {
-      text.textContent = `no fleet manager · ${policy === 'stop_and_wait' ? 'baseline' : 'peer-to-peer by design'}`;
-    }
+    text.textContent = routePolicy === 'BIOS_1.0.0'
+      ? 'no fleet manager · peer traffic'
+      : 'no fleet manager (baseline)';
+    return;
+  }
+  if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'
+      || routePolicy === 'BIOS_PIBT.3' || routePolicy === 'BIOS_1.0.0') {
+    dot.className = 'dot up';
+    text.textContent = 'edge-only peer coordination · no manager';
     return;
   }
   const alive = frame.manager_alive;
@@ -505,7 +295,7 @@ function renderFleetPanel(frame) {
   const rows = frame.robots.map(r => {
     const f = info[r.id] || {};
     const colour = robotColour(r.id);
-    const batt = Math.round((r.batt || 0) * 100);
+    const batt = Math.max(0, Math.min(100, Math.round((Number(r.batt) || 0) * 100)));
     const battCls = batt < 15 ? 'crit' : (batt < 35 ? 'low' : '');
     const waiting = f.blocked_on
       ? (f.blocked_on === 'gate' ? 'awaiting block' : 'waiting on ' + f.blocked_on)
@@ -514,18 +304,20 @@ function renderFleetPanel(frame) {
     const priority = pk
       ? ` · P[e${pk[0]} x${pk[1]} w${pk[2]} a${pk[3]} l${pk[4]}]`
       : '';
+    const state = String(f.state || 'idle');
+    const stateClass = /^[a-z0-9_-]+$/i.test(state) ? state : 'idle';
 
     return `
       <div class="robot" style="border-left-color:${colour}">
         <span class="swatch" style="background:${colour}"></span>
         <div>
-          <div class="rid">${r.id}</div>
-          <div class="meta">${waiting}${priority}</div>
+          <div class="rid">${escapeHtml(r.id)}</div>
+          <div class="meta">${escapeHtml(waiting + priority)}</div>
           <div class="batt"><i class="${battCls}" style="width:${batt}%"></i></div>
         </div>
         <div class="right">
-          <span class="state ${f.state || 'idle'}">${(f.state || 'idle').replace(/_/g, ' ')}</span>
-          <div class="meta" style="margin-top:5px">${f.done || 0} done</div>
+          <span class="state ${stateClass}">${escapeHtml(state.replace(/_/g, ' '))}</span>
+          <div class="meta" style="margin-top:5px">${Number(f.done) || 0} done</div>
         </div>
       </div>`;
   });
@@ -607,10 +399,6 @@ function renderSummary(s, meta) {
                  + s.contacts_robot_rack;
   const finished = s.completed_all;
 
-  // Default view is the holographic-positive reading, and the audit trail lives
-  // behind a collapsed "Safety detail" disclosure: nothing negative is visible
-  // before a judge opts in. The raw numbers (contacts, timeout wording) are
-  // still there for the skeptical reader, one click down.
   el('summary').innerHTML = `
     <div class="summary-live">
       <span>Playback progress</span>
@@ -622,54 +410,25 @@ function renderSummary(s, meta) {
       Final result after complete simulation
     </p>
 
-    <div class="hud-positive">
-      <dl>
-        <dt>Tasks completed</dt>
-        <dd class="${finished ? 'good' : ''}">${s.tasks_completed} / ${s.tasks_announced}</dd>
-        <dt>${finished ? 'Makespan' : 'Ran for'}</dt>
-        <dd>${s.makespan_s.toFixed(1)} s</dd>
-        <dt>Throughput</dt>
-        <dd>${s.throughput_per_robot_hr.toFixed(2)} task/r&middot;h</dd>
-        <dt>Deadlocks resolved</dt>
-        <dd>${s.deadlocks_detected}</dd>
-        <dt>Give-way maneuvres</dt>
-        <dd>${s.retreats + s.yields}</dd>
-        <dt>Protective stops</dt>
-        <dd>${s.safety_stop_ticks} ticks</dd>
-      </dl>
-    </div>
-    <details class="safety-detail">
-      <summary>Safety detail</summary>
-      <dl>
-        <dt>Robot&ndash;robot contacts</dt>
-        <dd class="${s.contacts_robot_robot ? 'bad' : 'good'}">${s.contacts_robot_robot}</dd>
-        <dt>Robot&ndash;human contacts</dt>
-        <dd class="${s.contacts_robot_human ? 'bad' : 'good'}">${s.contacts_robot_human}</dd>
-        <dt>Robot&ndash;rack contacts</dt>
-        <dd class="${s.contacts_robot_rack ? 'bad' : 'good'}">${s.contacts_robot_rack}</dd>
-        <dt>Worst separation</dt>
-        <dd>${s.min_separation_m.toFixed(2)} m</dd>
-        <dt>Replans</dt>
-        <dd>${s.replans}</dd>
-        <dt>Messages / robot / s</dt>
-        <dd>${s.msgs_per_robot_s.toFixed(1)}</dd>
-        <dt>Bytes / robot / s</dt>
-        <dd>${s.bytes_per_robot_s.toFixed(0)}</dd>
-        <dt>Planner CPU (mean / max)</dt>
-        <dd>${s.plan_cpu_mean_ms.toFixed(2)} / ${s.plan_cpu_max_ms.toFixed(1)} ms</dd>
-        <dt>Time in degraded mode</dt>
-        <dd>${s.seconds_degraded.toFixed(0)} s</dd>
-      </dl>
-      <p class="caveat">
-        ${contacts === 0
-          ? `Zero contacts over ${(s.robot_hours * 1000).toFixed(1)} milli-robot-hours bounds
-             the collision <i>rate</i>; it does not establish zero. Pool seeds with
-             <code>run.py --seeds N</code> for an interval worth quoting.`
-          : `${contacts} contact(s) recorded. A contact is a physical overlap in the
-             ground-truth world, checked swept rather than at frame endpoints.`}
-        ${finished ? '' : ' This run did not complete its task set, so its duration is a timeout and not a makespan &mdash; the two are not comparable.'}
-      </p>
-    </details>`;
+    <dl>
+      <dt>Tasks completed</dt>
+      <dd>${s.tasks_completed} / ${s.tasks_announced}</dd>
+
+      <dt>${finished ? 'Makespan' : 'Ran for'}</dt>
+      <dd>${s.makespan_s.toFixed(1)} s${finished ? '' : ' (timeout)'}</dd>
+      <dt>Robot&ndash;robot contacts</dt>
+      <dd class="${s.contacts_robot_robot ? 'bad' : 'good'}">${s.contacts_robot_robot}</dd>
+      <dt>Robot&ndash;human contacts</dt>
+      <dd class="${s.contacts_robot_human ? 'bad' : 'good'}">${s.contacts_robot_human}</dd>
+      <dt>Robot&ndash;rack contacts</dt>
+      <dd class="${s.contacts_robot_rack ? 'bad' : 'good'}">${s.contacts_robot_rack}</dd>
+      <dt>Worst separation</dt>
+      <dd>${s.min_separation_m.toFixed(2)} m</dd>
+
+      <dt>Deadlocks broken</dt>
+      <dd>${s.deadlocks_detected}</dd>
+    </dl>
+  `;
 }
 
 function updateSummaryProgress(frame) {

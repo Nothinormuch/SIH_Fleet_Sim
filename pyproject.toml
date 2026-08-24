@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sih-fleet-priority"
+version = "0.3.0"
+description = "Distributed edge coordination and evidence harness for warehouse AMRs"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+reports = [
+  "matplotlib>=3.8,<4",
+  "websockets>=12,<16",
+]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.12,<1",
+]
+
+[project.scripts]
+sih-run = "src.main:main"
+sih-benchmark = "src.benchmark:main"
+sih-fault-campaign = "src.fault_campaign:main"
+sih-edge-demo = "src.distributed_demo:main"
+sih-edge-node = "src.edge_runtime:main"
+
+[tool.setuptools.packages.find]
+include = ["src*", "backend*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".git", ".venv", "venv", "SIH_Fleet_Priority", "Untitled"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+exclude = ["SIH_Fleet_Priority", "Untitled", ".venv", "venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

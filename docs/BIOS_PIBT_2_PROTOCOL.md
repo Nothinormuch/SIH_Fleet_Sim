@@ -129,9 +129,9 @@ not inferred from the protocol proof.
 
 ## Reproducible evidence
 
-The 34-test regression suite verifies the directed graph, cell-resource identity, positive
-clearance budget, PIBT properties, braking, swept collision detection and message
-round-trips:
+The regression suite verifies the directed graph, cell-resource identity, positive
+clearance budget, PIBT properties, braking, swept collision detection, malformed wire
+packets, authentication, replay handling and message round-trips:
 
 ```bash
 python -m pytest tests -q
