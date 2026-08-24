@@ -147,32 +147,88 @@
 
     const f = S.lastFrame;
     if (f) {
+      // Draw tasks (pending) as small green squares
+      if (f.tasks) {
+        for (const task of f.tasks) {
+          if (task && task.x !== undefined && task.y !== undefined) {
+            const [x, y] = worldToMM(task.x, task.y);
+            ctx.save();
+            ctx.fillStyle = 'rgba(57,255,138,.6)';
+            ctx.fillRect(x - 2, y - 2, 4, 4);
+            ctx.strokeStyle = '#39ff8a';
+            ctx.lineWidth = 0.8;
+            ctx.strokeRect(x - 2, y - 2, 4, 4);
+            ctx.restore();
+          }
+        }
+      }
+
+      // Draw goal points as diamonds (cyan outline)
+      if (f.goals) {
+        for (const goal of f.goals) {
+          if (goal && goal.x !== undefined && goal.y !== undefined) {
+            const [x, y] = worldToMM(goal.x, goal.y);
+            ctx.save();
+            ctx.strokeStyle = '#00f0ff';
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(x, y - 2.5);
+            ctx.lineTo(x + 2.5, y);
+            ctx.lineTo(x, y + 2.5);
+            ctx.lineTo(x - 2.5, y);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
+
+      // Draw robots as circles with heading indicator
+      for (const r of (f.robots || [])) {
+        const col = colFor(r.id);
+        const [x, y] = worldToMM(r.x, r.y);
+        const rsize = Math.max(2, mmDim.cell * 0.34);
+
+        ctx.save();
+        ctx.fillStyle = col;
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.arc(x, y, rsize, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw heading indicator (small line)
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1;
+        const hdist = rsize * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(r.th || 0) * hdist, y - Math.sin(r.th || 0) * hdist);
+        ctx.stroke();
+
+        // Draw cargo indicator (small square at center if carrying)
+        if (r.carry) {
+          ctx.fillStyle = '#f5b843';
+          ctx.globalAlpha = 0.7;
+          ctx.fillRect(x - 1, y - 1, 2, 2);
+        }
+        ctx.restore();
+      }
+
+      // Draw humans as dashed circles (red)
       for (const h of (f.humans || [])) {
         const [x, y] = worldToMM(h.x, h.y);
         ctx.save();
-        ctx.strokeStyle = 'rgba(255,95,87,.9)';
-        ctx.lineWidth = 1.2;
-        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = 'rgba(255,95,87,.8)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
         ctx.beginPath();
         ctx.arc(x, y, Math.max(2.5, mmDim.cell * 0.42), 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
-      for (const r of (f.robots || [])) {
-        const col = colFor(r.id);
-        const [x, y] = worldToMM(r.x, r.y);
-        ctx.save();
-        ctx.shadowColor = withAlpha(col, .9);
-        ctx.shadowBlur = 6;
-        ctx.fillStyle = col;
-        ctx.beginPath();
-        ctx.arc(x, y, Math.max(2, mmDim.cell * 0.34), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
     }
 
-    /* contained scan bar */
+    // Contained scan bar
     const ph = ((now || 0) % 3400) / 3400;
     const y = ph * (cssH + 30) - 15;
     const g = ctx.createLinearGradient(0, y - 14, 0, y + 14);
@@ -246,22 +302,30 @@
     '</article>' +
     '<article class="hud-block hud-allocation">' +
       '<span class="hud-eb">Task Allocation</span>' +
-      '<div class="hud-alloc-stats">' +
-        '<div class="hud-alloc-row">' +
+      '<div class="hud-alloc-detail">' +
+        '<div class="hud-alloc-metric">' +
           '<span class="hud-alloc-label">Announced</span>' +
-          '<span class="hud-alloc-val" data-hud="allocAnnounced">0</span>' +
+          '<span class="hud-alloc-num" data-hud="allocAnnounced">0</span>' +
         '</div>' +
-        '<div class="hud-alloc-row">' +
-          '<span class="hud-alloc-label">Allocated</span>' +
-          '<span class="hud-alloc-val" data-hud="allocAllocated">0</span>' +
+        '<div class="hud-alloc-metric">' +
+          '<span class="hud-alloc-label">Assigned</span>' +
+          '<span class="hud-alloc-num" data-hud="allocAssigned">0</span>' +
         '</div>' +
-        '<div class="hud-alloc-row">' +
+        '<div class="hud-alloc-metric">' +
+          '<span class="hud-alloc-label">In Progress</span>' +
+          '<span class="hud-alloc-num" data-hud="allocInProgress">0</span>' +
+        '</div>' +
+        '<div class="hud-alloc-metric">' +
           '<span class="hud-alloc-label">Completed</span>' +
-          '<span class="hud-alloc-val" data-hud="allocCompleted">0</span>' +
+          '<span class="hud-alloc-num" data-hud="allocCompleted">0</span>' +
         '</div>' +
-        '<div class="hud-alloc-row">' +
+        '<div class="hud-alloc-metric">' +
           '<span class="hud-alloc-label">Throughput</span>' +
-          '<span class="hud-alloc-val" data-hud="allocThroughput">0</span>' +
+          '<span class="hud-alloc-num" data-hud="allocThroughput">0</span>' +
+        '</div>' +
+        '<div class="hud-alloc-metric">' +
+          '<span class="hud-alloc-label">Method</span>' +
+          '<span class="hud-alloc-method" data-hud="allocMethod">—</span>' +
         '</div>' +
       '</div>' +
     '</article>';
@@ -283,9 +347,11 @@
     el.mShield = qs('[data-hud="mShield"]');
     el.fleetGrid = qs('[data-hud="fleetGrid"]');
     el.allocAnnounced = qs('[data-hud="allocAnnounced"]');
-    el.allocAllocated = qs('[data-hud="allocAllocated"]');
+    el.allocAssigned = qs('[data-hud="allocAssigned"]');
+    el.allocInProgress = qs('[data-hud="allocInProgress"]');
     el.allocCompleted = qs('[data-hud="allocCompleted"]');
     el.allocThroughput = qs('[data-hud="allocThroughput"]');
+    el.allocMethod = qs('[data-hud="allocMethod"]');
 
     el.jobsArc.style.strokeDasharray = RING_C.toFixed(2);
     el.jobsArc.style.strokeDashoffset = RING_C.toFixed(2);
@@ -376,13 +442,22 @@
   function updateAllocation() {
     if (!S.summary) return;
     const sum = S.summary;
-    const announced = num(sum.tasks_announced) || num(S.meta.tasks) || 0;
-    const allocated = Math.max(0, announced - (num(sum.tasks_announced) - num(sum.tasks_completed)));
+    const meta = S.meta;
+    const announced = num(sum.tasks_announced) || num(meta.tasks) || 0;
+    const completed = num(sum.tasks_completed) || 0;
+    const assigned = Math.max(0, announced - completed);  // Tasks not yet done
+    const inProgress = S.lastFrame && S.lastFrame.fleet
+      ? S.lastFrame.fleet.filter(f => f.task !== null && f.task !== undefined).length
+      : 0;
+    const alloc = meta.allocation_policy || (meta.policy === 'central' ? 'hungarian' : 'auction');
 
     if (el.allocAnnounced) el.allocAnnounced.textContent = fmt(announced, 0);
-    if (el.allocAllocated) el.allocAllocated.textContent = fmt(allocated, 0);
-    if (el.allocCompleted) el.allocCompleted.textContent = fmt(sum.tasks_completed, 0);
+    if (el.allocAssigned) el.allocAssigned.textContent = fmt(assigned, 0);
+    if (el.allocInProgress) el.allocInProgress.textContent = fmt(inProgress, 0);
+    if (el.allocCompleted) el.allocCompleted.textContent = fmt(completed, 0);
     if (el.allocThroughput) el.allocThroughput.textContent = fmt(sum.throughput_per_robot_hr, 1) + ' t/r·h';
+    if (el.allocMethod) el.allocMethod.textContent = alloc === 'auction' ? 'Peer Auction' :
+                                                      alloc === 'hungarian' ? 'Manager' : 'Preassigned';
   }
 
   function loop(now) {

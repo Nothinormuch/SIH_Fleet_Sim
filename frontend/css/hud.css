@@ -383,10 +383,10 @@
 .hud-fleet {
   --glow: #00f0ff;
   --glow-rgb: 0,240,255;
-  bottom: 240px;
+  bottom: 14px;
   left: 14px;
   width: 180px;
-  max-height: 200px;
+  max-height: 160px;
   overflow-y: auto;
 }
 
@@ -430,44 +430,58 @@
   font-weight: 700;
 }
 
-/* ----------------------------------------------------------------- allocation panel */
+/* ----------------------------------------------------------------- allocation panel (right sidebar) */
 
 .hud-allocation {
   --glow: #39ff8a;
   --glow-rgb: 57,255,138;
   bottom: 14px;
   right: 14px;
-  width: 160px;
+  width: 180px;
 }
 
-.hud-alloc-stats {
+.hud-alloc-detail {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin-top: 8px;
 }
 
-.hud-alloc-row {
+.hud-alloc-metric {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 6px;
+  padding: 6px 8px;
   border-radius: 4px;
   background: rgba(57,255,138,.05);
-  border: 1px solid rgba(57,255,138,.15);
+  border: 1px solid rgba(57,255,138,.2);
+  transition: background .2s;
+}
+
+.hud-alloc-metric:hover {
+  background: rgba(57,255,138,.1);
 }
 
 .hud-alloc-label {
-  font: 600 9px/1 var(--hud-mono);
-  letter-spacing: .05em;
+  font: 600 8px/1 var(--hud-mono);
+  letter-spacing: .06em;
   text-transform: uppercase;
   color: rgba(200,255,220,.7);
+  flex: 1;
 }
 
-.hud-alloc-val {
-  font: 700 11px/1 var(--hud-mono);
+.hud-alloc-num {
+  font: 700 12px/1 var(--hud-mono);
   color: #39ff8a;
-  text-shadow: 0 0 8px rgba(57,255,138,.6);
+  text-shadow: 0 0 8px rgba(57,255,138,.7);
+  min-width: 36px;
+  text-align: right;
+}
+
+.hud-alloc-method {
+  font: 600 9px/1 var(--hud-mono);
+  color: rgba(200,255,220,.9);
+  text-align: right;
 }
 
 /* Scrollbar styling for fleet panel */
