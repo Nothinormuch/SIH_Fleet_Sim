@@ -8,9 +8,11 @@ benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 ```bash
 python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m pytest tests -q                # 36 tests
+python -m pytest tests -q
 python run.py --scenario open_floor_control --policy BIOS_PIBT.2 --robots 4
 python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
+python run.py --scenario dense_aisles --policy BIOS_PIBT.2 --allocation-policy auction --robots 4
+python run.py --scenario dense_aisles --policy BIOS_PIBT.2 --allocation-policy hungarian --robots 4
 ```
 
 The simulation core and the benchmark have **no third-party dependencies** — stdlib
@@ -88,6 +90,8 @@ src/
   world.py         ground truth: kinematics, 360° sensing, swept collision detection
   amr.py           the agent: three control loops. Pure — no I/O, no clock, no globals
   fleet_manager.py the optional central optimiser, and the strong baseline
+  assignment.py    dependency-free Hungarian assignment implementation
+  task_allocation.py allocation policy contracts, separate from route coordination
   metrics.py       Poisson rate intervals, honest policy comparison
   scenarios.py     pinned, seeded benchmark scenarios including a negative control
   main.py          the headless runner and CLI
@@ -101,7 +105,7 @@ frontend/
   js/network.js    the coordination layer: intent, peer links, wait-for arrows
   js/main.js       fetch, interpolated playback, panel binding
   assets/          generated sprite set (256 px per cell)
-tests/             34 regression tests
+tests/             core, priority and dashboard regression tests
 docs/              BIOS_PIBT_2_PROTOCOL.md plus V1 design, critique and findings
 reference/         asset prompt pack and loader spec
 ```
@@ -137,6 +141,11 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `BIOS_1.0.0` | Decentralized block leases plus an aggressive local unstick manoeuvre. | Existing experimental liveness policy retained for comparison. |
 | `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
 | `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | Default high-density decentralized policy. |
+
+Task ownership is selected independently of the route policy. `auction` lets peers
+broadcast bids and converge on deterministic leased awards; `hungarian` lets the
+optional fleet manager minimise the robot-to-task cost matrix. Keeping allocation and
+traffic separate makes their performance effects measurable rather than conflated.
 
 `--seeds N` pools runs so the safety statistics have enough exposure to mean something.
 
@@ -174,9 +183,10 @@ dishonesty this project is arguing against.
 
 ## The dashboard
 
-`python backend/server.py` then open <http://127.0.0.1:8000>. Pick a scenario, policy,
-fleet size and seed; the server runs the simulation and returns the map, every telemetry
-frame and the result summary, and the page plays it back with a scrubber.
+`python backend/server.py` then open <http://127.0.0.1:8000>. Pick a scenario, route
+policy, task-allocation policy, fleet size and seed; the server runs the simulation and
+returns the map, every telemetry frame and the result summary, and the page plays it
+back with a scrubber.
 
 It draws the things that are otherwise invisible, because a warehouse of moving robots
 looks the same whether it is coordinating or getting lucky:
@@ -187,6 +197,8 @@ looks the same whether it is coordinating or getting lucky:
 - **wait-for arrows** — who is blocked on whom. Two arrows pointing at each other *is*
   the cycle the distributed deadlock detector searches for
 - **single-file blocks** — the runs of aisle the traffic layer applies block control to
+- **task allocation** — `TASK_NEW`, `BID`, `AWARD` and `TASK_DONE` messages for the
+  peer auction, or directed manager awards for Hungarian allocation
 - **the human worker** — dashed ring, because they publish nothing and cannot be
   negotiated with. Only the onboard safety layer sees them at all
 

@@ -35,7 +35,7 @@ CLAIM = "CL"          # exclusive request for one contested cell, with an expiry
 RELEASE = "RL"        # early release of a claim (an optimisation, never required)
 YIELD = "YD"          # "you win, I am backing off" - makes deadlock breaking observable
 BID = "BD"            # auction bid for an unassigned task
-AWARD = "AW"          # self-award after winning; also how peers learn the assignment
+AWARD = "AW"          # auction result or manager-directed task assignment
 TASK_DONE = "TD"      # task completed, drop it from every peer's open set
 TASK_NEW = "TN"       # order source announcing work; NOT a motion coordinator
 MGR_BEACON = "MB"     # fleet manager announcing it is reachable, with a plan epoch
@@ -121,9 +121,10 @@ def heartbeat(src: str, seq: int, t: float, pose: tuple[float, float, float],
 
 
 def task_new(src: str, seq: int, t: float, task_id: str, pick: Cell,
-             drop: Cell) -> Message:
+             drop: Cell, epoch: int = 0, bid_until: float | None = None) -> Message:
     return Message(TASK_NEW, src, seq, t, {
         "task": task_id, "pk": list(pick), "dp": list(drop),
+        "e": int(epoch), "dl": round(bid_until, 3) if bid_until is not None else None,
     })
 
 
@@ -184,16 +185,32 @@ def yield_to(src: str, seq: int, t: float, cell: Cell, winner: str) -> Message:
     return Message(YIELD, src, seq, t, {"c": list(cell), "to": winner})
 
 
-def bid(src: str, seq: int, t: float, task_id: str, cost: float) -> Message:
-    return Message(BID, src, seq, t, {"task": task_id, "cost": round(cost, 3)})
+def bid(src: str, seq: int, t: float, task_id: str, cost: float,
+        epoch: int = 0) -> Message:
+    return Message(BID, src, seq, t, {
+        "task": task_id, "cost": round(cost, 3), "e": int(epoch),
+    })
 
 
-def award(src: str, seq: int, t: float, task_id: str, cost: float) -> Message:
-    return Message(AWARD, src, seq, t, {"task": task_id, "cost": round(cost, 3)})
+def award(src: str, seq: int, t: float, task_id: str, cost: float,
+          dst: str | None = None, epoch: int = 0,
+          lease_until: float | None = None) -> Message:
+    body: dict[str, Any] = {
+        "task": task_id, "cost": round(cost, 3), "e": int(epoch),
+    }
+    if dst is not None:
+        body["dst"] = dst
+        body["winner"] = dst
+    if lease_until is not None:
+        body["u"] = round(lease_until, 3)
+    return Message(AWARD, src, seq, t, body)
 
 
-def task_done(src: str, seq: int, t: float, task_id: str) -> Message:
-    return Message(TASK_DONE, src, seq, t, {"task": task_id})
+def task_done(src: str, seq: int, t: float, task_id: str,
+              epoch: int = 0) -> Message:
+    return Message(TASK_DONE, src, seq, t, {
+        "task": task_id, "e": int(epoch),
+    })
 
 
 def mgr_beacon(src: str, seq: int, t: float, epoch: int) -> Message:
