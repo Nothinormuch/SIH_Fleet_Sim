@@ -47,7 +47,7 @@ from dataclasses import dataclass, field
 from . import messages as msg
 from .environment import Warehouse, corridors
 from .geometry import (Cell, angle_diff, bearing, cell_center, clamp, dist,
-                       manhattan, to_cell)
+                       manhattan, segment_point_distance, to_cell)
 from .planner import astar
 from .priority import PriorityKey, pibt_step
 from .settings import Config
@@ -60,9 +60,9 @@ POLICY_STOP_WAIT = "stop_and_wait"
 POLICY_CENTRAL = "central"
 POLICY_HIERARCHICAL = "hierarchical"
 POLICY_BIOS = "BIOS_1.0.0"
-POLICY_DECENTRALIZED_PIBT = "decentralized_pibt"
+POLICY_BIOS_PIBT = "BIOS_PIBT.1"
 POLICIES = (POLICY_STOP_WAIT, POLICY_CENTRAL, POLICY_HIERARCHICAL,
-            POLICY_BIOS, POLICY_DECENTRALIZED_PIBT)
+            POLICY_BIOS, POLICY_BIOS_PIBT)
 
 MODE_CENTRAL = "CENTRAL_OK"
 MODE_P2P = "DEGRADED_P2P"
@@ -169,6 +169,9 @@ class AMRBrain:
         self.blocked_on: str | None = None
         self.retreat_target: Cell | None = None
         self._retreat_for: str | None = None
+        self._retreat_block_cid: int | None = None
+        self._retreat_origin: Cell | None = None
+        self._retreat_contested: Cell | None = None
         self._retreat_since = 0.0
         self._last_progress_t = 0.0
         self._last_cell: Cell | None = None
@@ -211,7 +214,7 @@ class AMRBrain:
         self._expire_peers(t)
 
         if self.mode == MODE_P2P and self.policy not in (
-                POLICY_STOP_WAIT, POLICY_BIOS, POLICY_DECENTRALIZED_PIBT):
+                POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS_PIBT):
             self.stats["seconds_degraded"] += 1.0 / self.cfg.rates.world_hz
 
         cell = sensors.cell
@@ -229,7 +232,7 @@ class AMRBrain:
             self._t_reactive = t
             self._traffic_loop(t, sensors, outbox)
 
-        if self.policy in (POLICY_BIOS, POLICY_DECENTRALIZED_PIBT):
+        if self.policy in (POLICY_BIOS, POLICY_BIOS_PIBT):
             # Maintain the chokepoint token every control tick so any rival learns
             # as early as possible and no second robot slips into the single lane.
             self._bios_claim(t, sensors, self._next_cell(), outbox)
@@ -240,7 +243,11 @@ class AMRBrain:
         if act.safety_stop and self.goal is not None:
             if self._stall_since is None:
                 self._stall_since = t
-        elif abs(act.v) > 0.05:
+        else:
+            # This timestamp represents a Layer-0 refusal, not generic lack of
+            # translation. Clear it as soon as safety releases—even if the next valid
+            # action is turn-in-place—or the stale flag recreates a traffic hold that
+            # prevents that recovery turn forever.
             self._stall_since = None
 
         if t - self._t_hb >= 1.0 / self.cfg.rates.heartbeat_hz:
@@ -278,7 +285,7 @@ class AMRBrain:
         # allowed to argue with it.
         if sensors.clearance_omni_m <= spec.omni_stop_m:
             self.stats["safety_stops"] += 1
-            creeping = (self.policy in (POLICY_BIOS, POLICY_DECENTRALIZED_PIBT)
+            creeping = (self.policy in (POLICY_BIOS, POLICY_BIOS_PIBT)
                         and sensors.t < self._creep_until
                         and act.v > 0.0)
             if creeping:
@@ -291,7 +298,7 @@ class AMRBrain:
                 v_allowed = self._speed_limit_from_traffic(sensors)
                 if v_allowed <= 0.02:
                     return Actuation(v=0.0, omega=act.omega, safety_stop=True)
-                v = min(act.v, 0.30, v_allowed)
+                v = min(act.v, 0.20, v_allowed)
                 return Actuation(v=v, omega=act.omega, safety_stop=False)
             return Actuation(v=0.0, omega=act.omega * 0.3, safety_stop=True)
 
@@ -381,8 +388,8 @@ class AMRBrain:
         coordinated = self.mode == MODE_CENTRAL and bool(self.path_times)
 
         if (loser_to is None and not coordinated
-                and self.policy == POLICY_DECENTRALIZED_PIBT):
-            loser_to = self._dpibt_coordinate(t, sensors, nxt)
+                and self.policy == POLICY_BIOS_PIBT):
+            loser_to = self._bios_pibt_coordinate(t, sensors, nxt)
         elif loser_to is None and not coordinated:
             # Are we moving *within* a block we have already entered? Then peers still
             # outside it have no standing, however high their priority. A committed
@@ -409,6 +416,26 @@ class AMRBrain:
                    and t - self._stall_since > self.cfg.traffic.deadlock_wait_s)
         if loser_to is None and stalled:
             loser_to = self._peer_ahead(sensors)
+            yielded_peer = self.peers.get(loser_to or "")
+            if (self.policy == POLICY_BIOS_PIBT and yielded_peer is not None
+                    and yielded_peer.state == ST_RETREAT
+                    and yielded_peer.cell != nxt):
+                # The peer is in a passing bay and our reserved route does not consume
+                # its cell. The conservative omni field can still touch both
+                # footprints at the mouth, so cross the verified gap at recovery speed
+                # instead of ordering the corridor owner to retreat back inside.
+                self._creep_until = max(self._creep_until, t + 6.0)
+                self._stall_since = None
+                loser_to = None
+                stalled = False
+            if self.policy == POLICY_BIOS_PIBT and loser_to is not None:
+                here_cid = self._controlled_block(sensors.cell)
+                blocker = self.peers.get(loser_to)
+                if (here_cid is not None and blocker is not None
+                        and self.blocks.id_of(blocker.cell) != here_cid):
+                    # The outside robot has room to pull aside. Reversing the inside
+                    # robot into its followers only moves the jam deeper into the lane.
+                    waiting_for_block = True
 
         if loser_to is not None:
             self._hold = True
@@ -431,18 +458,23 @@ class AMRBrain:
             # queued at the entrance stands exactly where the robot inside has to drive
             # to leave, so the two of them wait for each other with no cycle to detect
             # and no rule violated. Stepping aside is the only thing that breaks it.
-            if waiting_for_block and waited > self.cfg.traffic.yield_aside_s                     and self._blocker_is_inside(nxt):
-                bay = self._passing_bay(sensors.cell, nxt)
+            if (waiting_for_block
+                    and waited > self.cfg.traffic.yield_aside_s
+                    and self._blocker_is_inside(nxt)):
+                bay = self._passing_bay(sensors.cell, nxt, sensors.pose)
                 if bay is not None:
                     self.retreat_target = bay
                     self._retreat_for = self.blocked_on
+                    self._retreat_block_cid = self.blocks.id_of(nxt)
+                    self._retreat_origin = sensors.cell
+                    self._retreat_contested = nxt
                     self.state = ST_RETREAT
                     self._retreat_since = t
                     self.path = [sensors.cell, bay]
                     self.path_times = []
                     self.pidx = 1
                     self.stats["retreats"] += 1
-                    if self.policy == POLICY_DECENTRALIZED_PIBT:
+                    if self.policy == POLICY_BIOS_PIBT:
                         # The target was selected from currently free neighbours.  A
                         # short, speed-limited escape window lets the chassis move
                         # *away* from a close peer instead of remaining glued inside
@@ -453,7 +485,7 @@ class AMRBrain:
 
             limit = (self.cfg.traffic.block_wait_s if waiting_for_block
                      else self.cfg.traffic.deadlock_wait_s)
-            if self.policy == POLICY_DECENTRALIZED_PIBT and waiting_for_block:
+            if self.policy == POLICY_BIOS_PIBT and waiting_for_block:
                 # Lease expiry and physical ownership resolve this queue.  Running
                 # the legacy generic deadlock breaker after the long block timeout
                 # repeatedly injects sharp retreat paths at the aisle mouth, even
@@ -540,7 +572,13 @@ class AMRBrain:
         Waiting happens at the mouth, which is a junction by construction: there is
         room to pass there, so a waiting robot does not become the next obstruction.
         """
+        here_cid = self._controlled_block(here)
         cid = self._controlled_block(nxt)
+        if here_cid is not None and self.blocks.id_of(nxt) != here_cid:
+            # We are the traffic the exit-apron rule is trying to protect.  Applying
+            # that rule to a robot already leaving the block makes it yield to a
+            # follower behind it, so nobody can ever cross the mouth.
+            return None
         if cid is None:
             # Not a block cell - but it may be the cell right outside somebody's exit.
             # Having pulled aside to let a robot out, the worst thing to do next is
@@ -550,7 +588,7 @@ class AMRBrain:
         if self.blocks.id_of(here) == cid:
             return None                     # already committed inside this block
 
-        if self.policy in (POLICY_BIOS, POLICY_DECENTRALIZED_PIBT):
+        if self.policy in (POLICY_BIOS, POLICY_BIOS_PIBT):
             # The block token: either somebody physically inside, or an unexpired
             # claim some peer broadcast. Both close the race where two robots at
             # opposite mouths both see an empty block and both commit.
@@ -741,14 +779,14 @@ class AMRBrain:
 
     def _peer_outranks(self, peer: Peer,
                        legacy_my_key: tuple[float, str]) -> bool:
-        """Use the rich frozen key for D-PIBT and the legacy key elsewhere."""
-        if self.policy == POLICY_DECENTRALIZED_PIBT:
+        """Use the rich frozen key for BIOS_PIBT.1 and the legacy key elsewhere."""
+        if self.policy == POLICY_BIOS_PIBT:
             theirs = peer.priority_key or PriorityKey(robot_id=peer.rid)
             return theirs > self._pub_priority_key
         return (peer.priority, peer.rid) > legacy_my_key
 
-    def _dpibt_coordinate(self, t: float, sensors: Sensors,
-                          requested: Cell) -> str | None:
+    def _bios_pibt_coordinate(self, t: float, sensors: Sensors,
+                              requested: Cell) -> str | None:
         """Run replicated PIBT from the locally known peer snapshot.
 
         No robot commands another and there is no elected coordinator.  Each edge node
@@ -766,6 +804,19 @@ class AMRBrain:
         # hold flag before the centre is reached and strands every robot half a cell
         # into its route.
         if requested == sensors.cell:
+            return None
+
+        here_cid = self._controlled_block(sensors.cell)
+        if here_cid is not None and self.blocks.id_of(requested) != here_cid:
+            # The block owner must be allowed to clear its exit. Outside peers may
+            # advertise a future path through the apron, but feeding those intents
+            # into PIBT makes the inside robot yield back into the single-file lane.
+            # Side-bay peers have already yielded physically; cross their verified
+            # gap at the bounded recovery speed.
+            if any(p.state == ST_RETREAT and p.cell != requested
+                   and manhattan(p.cell, requested) <= 1
+                   for p in self.peers.values()):
+                self._creep_until = max(self._creep_until, t + 6.0)
             return None
 
         positions: dict[str, Cell] = {self.rid: sensors.cell}
@@ -809,7 +860,23 @@ class AMRBrain:
         chosen = decision.next_cells[self.rid]
         if chosen == sensors.cell:
             self.stats["priority_waits"] += 1
+            # A discrete "stay" means stay at the cell centre, not wherever braking
+            # happened to stop the continuous chassis. Backing to that centre opens
+            # the intersection clearance the winning robot needs.
+            if dist((sensors.pose[0], sensors.pose[1]),
+                    cell_center(sensors.cell, self.cfg.cell_m)) > 0.22 * self.cfg.cell_m:
+                self._creep_until = max(self._creep_until, t + 6.0)
             return decision.blocked_by.get(self.rid) or inherited or "pibt-wait"
+
+        # PIBT can authorize a safe convoy transition where the rear robot enters the
+        # front robot's current cell while the front robot simultaneously vacates it.
+        # Both chassis may already sit inside the conservative omni standstill field;
+        # without a locally bounded creep neither can execute the collision-free
+        # discrete configuration.  The forward speed envelope is still enforced, so
+        # the follower cannot close on the peer ahead.
+        requested_occupied = any(p.cell == requested for p in self.peers.values())
+        if inherited is not None or requested_occupied:
+            self._creep_until = max(self._creep_until, t + 6.0)
 
         if chosen != requested:
             # Priority inheritance has actively displaced us.  Execute exactly one
@@ -873,35 +940,64 @@ class AMRBrain:
         self.blocked_since = t
 
         cycle = self._find_cycle()
+        cycle_loser = False
         if cycle:
             self.stats["deadlocks_detected"] += 1
-            keys = [(self.peers[r].priority, r) if r in self.peers
-                    else self._arbitration_key() for r in cycle]
+            if self.policy == POLICY_BIOS_PIBT:
+                keys = {
+                    r: (self._pub_priority_key if r == self.rid else
+                        (self.peers[r].priority_key or PriorityKey(robot_id=r)))
+                    for r in cycle
+                }
+                loser = min(cycle, key=lambda r: keys[r])
+            else:
+                keys = [(self.peers[r].priority, r) if r in self.peers
+                        else self._arbitration_key() for r in cycle]
+                loser = min(keys)[1]
             # Lowest key in the cycle gives way. Everyone computes the same winner
             # from the same broadcast data, so the choice needs no agreement protocol.
-            if min(keys)[1] != self.rid:
+            if loser != self.rid:
                 return
+            cycle_loser = True
 
-        self.penalty[contested] = self.penalty.get(contested, 0.0) + \
-            self.cfg.traffic.replan_penalty
-        before = list(self.path)
-        self._replan(t, sensors.cell)
-        if self.path and self.path != before:
-            return
+        if not cycle_loser:
+            self.penalty[contested] = self.penalty.get(contested, 0.0) + \
+                self.cfg.traffic.replan_penalty
+            before = list(self.path)
+            self._replan(t, sensors.cell)
+            if self.path and self.path != before:
+                if self.policy == POLICY_BIOS_PIBT:
+                    # The replacement first step is away from the contested cell, but
+                    # a close peer can still sit inside the omni standstill field.
+                    self._creep_until = t + 6.0
+                return
 
         # No alternative route exists - a single-file aisle. Physically give way by
         # reversing into the nearest free side cell. This is what a human driver does
         # in a one-lane corridor, and no amount of messaging substitutes for it.
-        bay = self._passing_bay(sensors.cell, contested)
+        blocker = self.peers.get(self.blocked_on or "")
+        give_way_from = blocker.cell if cycle_loser and blocker is not None else contested
+        bay = self._passing_bay(sensors.cell, give_way_from, sensors.pose)
         if bay is not None:
             self.retreat_target = bay
             self._retreat_for = self.blocked_on
+            blocker_cid = (self.blocks.id_of(blocker.cell)
+                           if blocker is not None else None)
+            contested_cid = self.blocks.id_of(contested)
+            if blocker_cid is not None:
+                self._retreat_block_cid = blocker_cid
+            elif contested_cid is not None:
+                self._retreat_block_cid = contested_cid
+            else:
+                self._retreat_block_cid = self.blocks.id_of(sensors.cell)
+            self._retreat_origin = sensors.cell
+            self._retreat_contested = give_way_from
             self.state = ST_RETREAT
             self._retreat_since = t
             self.path = [sensors.cell, bay]
             self.pidx = 1
             self.stats["retreats"] += 1
-            if self.policy == POLICY_DECENTRALIZED_PIBT:
+            if self.policy == POLICY_BIOS_PIBT:
                 self._creep_until = t + 6.0
             self.blocked_since = None
 
@@ -973,6 +1069,9 @@ class AMRBrain:
         self._stall_since = None
         self.retreat_target = None
         self._retreat_for = None
+        self._retreat_block_cid = None
+        self._retreat_origin = None
+        self._retreat_contested = None
         self.state = self._state_for_task()
         self.stats["retreats"] += 1
         # Arm Layer 0's creep so we can actually break out of the stick. Long enough
@@ -1012,7 +1111,12 @@ class AMRBrain:
         about_to = (c_nxt is not None and c_nxt != c_here
                     and self._controlled_block(nxt) is not None)
         cid = c_here if inside else c_nxt
-        take = inside or (about_to and self._bios_lock(cid, t) is None)
+        # A robot queued behind another at the same mouth must not claim the block.
+        # The first traffic pass names that front robot in ``blocked_on``; only a gate
+        # hold represents a legitimate two-phase claim attempt.
+        eligible_at_mouth = not self._hold or self.blocked_on == "gate"
+        take = inside or (about_to and eligible_at_mouth
+                          and self._bios_lock(cid, t) is None)
 
         if take and cid is not None:
             if self._claim_cid != cid:
@@ -1022,7 +1126,7 @@ class AMRBrain:
                 # steal the token before the current winner can cross the mouth.
                 self._claim_priority_key = (
                     self._pub_priority_key
-                    if self.policy == POLICY_DECENTRALIZED_PIBT else None)
+                    if self.policy == POLICY_BIOS_PIBT else None)
                 self._last_claim_t = -1e9     # force an immediate claim broadcast
             if t - self._last_claim_t >= 0.5:  # keep-alive every ~2 heartbeats
                 self._last_claim_t = t
@@ -1061,7 +1165,8 @@ class AMRBrain:
             cur = p.blocked_on
         return None
 
-    def _passing_bay(self, here: Cell, contested: Cell) -> Cell | None:
+    def _passing_bay(self, here: Cell, contested: Cell,
+                     pose: tuple[float, float, float] | None = None) -> Cell | None:
         """The free neighbour FURTHEST from the conflict - somewhere to get out of the way.
 
         Furthest, not nearest: the point of the manoeuvre is to open the cell the other
@@ -1071,7 +1176,9 @@ class AMRBrain:
         """
         occupied = {p.cell for p in self.peers.values()}
         axis = (contested[0] - here[0], contested[1] - here[1])
-        best, best_key = None, (-1, -1.0)
+        origin_xy = ((pose[0], pose[1]) if pose is not None
+                     else cell_center(here, self.cfg.cell_m))
+        best, best_key = None, (-1, -1.0, -1.0)
         for n in self.env.neighbors(here):
             if n == contested or n in occupied:
                 continue
@@ -1082,10 +1189,38 @@ class AMRBrain:
             # backing up, and it is the difference between giving way and giving way
             # slowly.
             perpendicular = 1 if (step[0] * axis[0] + step[1] * axis[1]) == 0 else 0
-            key = (perpendicular, float(manhattan(n, contested)))
+            target_xy = cell_center(n, self.cfg.cell_m)
+            peer_clearance = min(
+                (segment_point_distance(origin_xy, target_xy,
+                                        (p.pose[0], p.pose[1]))
+                 for p in self.peers.values()),
+                default=99.0)
+            key = (perpendicular, peer_clearance, float(manhattan(n, contested)))
             if key > best_key:
                 best, best_key = n, key
         return best
+
+    def _is_safe_retreat_bay(self, target: Cell | None) -> bool:
+        """Whether a completed retreat is physically clear of controlled traffic.
+
+        A degree-two cell inside a single-file block is a reverse waypoint, not a
+        passing bay.  Waiting there for the winner to pass would leave the yielding
+        robot parked in the shared lane and deadlock every entrance to it.
+        """
+        if target is None:
+            return False
+        if self._retreat_origin is not None and self._retreat_contested is not None:
+            step = (target[0] - self._retreat_origin[0],
+                    target[1] - self._retreat_origin[1])
+            axis = (self._retreat_contested[0] - self._retreat_origin[0],
+                    self._retreat_contested[1] - self._retreat_origin[1])
+            if step[0] * axis[0] + step[1] * axis[1] != 0:
+                return False
+        if self._retreat_block_cid is not None:
+            # A perpendicular aisle segment can itself have degree two; it is still a
+            # valid bay when it belongs to a different corridor component.
+            return self.blocks.id_of(target) != self._retreat_block_cid
+        return self.env.degree(target) >= 3
 
     # ================================================================== Layer 2
 
@@ -1122,20 +1257,41 @@ class AMRBrain:
             # was wrong, the robot was nudged - must expire rather than latch, or the
             # robot sits in a manoeuvre state forever while the fleet routes around it.
             done = self.retreat_target is None or sensors.cell == self.retreat_target
-            blocker = self.peers.get(self._retreat_for or "")
-            blocker_near = (blocker is not None
-                            and manhattan(blocker.cell, sensors.cell) <= 2)
-            # Once the bay is reached, stay there until the robot we yielded to has
-            # actually passed.  Immediately replanning back onto the mouth simply
-            # recreates the same conflict and turns a correct pull-aside into an
-            # oscillation.  An incomplete manoeuvre still gets a short timeout.
-            if done and blocker_near \
-                    and t - self._retreat_since < self.cfg.traffic.block_wait_s:
+            retreat_age = t - self._retreat_since
+            safe_bay = self._is_safe_retreat_bay(self.retreat_target)
+            lane_occupied = (self._retreat_block_cid is not None and any(
+                self.blocks.id_of(p.cell) == self._retreat_block_cid
+                and p.goal is not None and p.state != ST_IDLE
+                for p in self.peers.values()))
+            # A true side bay waits for the controlled lane to drain. A waypoint
+            # still inside a corridor must be released immediately so the robot can
+            # continue reversing out. Peer records expire, so a lost heartbeat cannot
+            # latch the yielding robot after the physical lane becomes clear.
+            if done and safe_bay and lane_occupied:
                 return
-            if (done and not blocker_near) or (not done and t - self._retreat_since > 6.0) \
-                    or t - self._retreat_since > self.cfg.traffic.block_wait_s:
+            if (done and not safe_bay and self._retreat_block_cid is not None
+                    and self.blocks.id_of(sensors.cell) != self._retreat_block_cid):
+                # Reversing out of a lane reaches its mouth but can still park on the
+                # exit axis. Take one perpendicular step at the junction to become a
+                # real passing bay before waiting for the lane to drain.
+                previous = self._retreat_origin or sensors.cell
+                extension = self._passing_bay(sensors.cell, previous, sensors.pose)
+                if extension is not None:
+                    self._retreat_origin = sensors.cell
+                    self._retreat_contested = previous
+                    self.retreat_target = extension
+                    self.path = [sensors.cell, extension]
+                    self.path_times = []
+                    self.pidx = 1
+                    self._retreat_since = t
+                    self._creep_until = t + 6.0
+                    return
+            if done or retreat_age > 6.0:
                 self.retreat_target = None
                 self._retreat_for = None
+                self._retreat_block_cid = None
+                self._retreat_origin = None
+                self._retreat_contested = None
                 self.state = self._state_for_task()
                 self._replan(t, sensors.cell)
             return
@@ -1295,17 +1451,61 @@ class AMRBrain:
     def _follow(self, t: float, sensors: Sensors) -> Actuation:
         """Pure-pursuit-ish waypoint follower. Shared by every policy, on purpose."""
         spec = self.cfg.robot
-        # During a BIOS unstick the traffic layer may still be holding, but we armed a
-        # free-cell step that must land or the robot is glued forever - drive through.
-        if self._hold and not (self.policy in (POLICY_BIOS, POLICY_DECENTRALIZED_PIBT)
-                               and sensors.t < self._creep_until):
+        if self._hold:
+            # PIBT's discrete "wait" is executed at the current cell centre. Braking
+            # can leave a chassis close to the boundary, where it blocks the admitted
+            # perpendicular move despite occupying a different grid cell. A bounded
+            # move back to its own centre restores the geometry without entering any
+            # cell the resolver denied.
+            pos = (sensors.pose[0], sensors.pose[1])
+            centre = cell_center(sensors.cell, self.cfg.cell_m)
+            if (self.policy == POLICY_BIOS_PIBT
+                    and sensors.t < self._creep_until
+                    and dist(pos, centre) > 0.12):
+                err = angle_diff(bearing(pos, centre), sensors.pose[2])
+                if abs(err) > 0.35:
+                    if abs(sensors.v) > 0.08:
+                        return Actuation(0.0, 0.0)
+                    return Actuation(
+                        0.0, clamp(2.2 * err, -spec.omega_max, spec.omega_max))
+                return Actuation(
+                    min(0.20, math.sqrt(2 * spec.a_max * dist(pos, centre))),
+                    clamp(1.8 * err, -spec.omega_max, spec.omega_max))
+            # A hold forbids translation, not steering. Keeping the wheels locked at
+            # their old heading can leave the named peer forever inside the forward
+            # cone, so Layer 0 keeps reporting the same stall and the hold becomes
+            # self-sustaining. Turning in place cannot consume the reserved cell.
+            if self.path and self.pidx < len(self.path):
+                target = cell_center(self.path[self.pidx], self.cfg.cell_m)
+                err = angle_diff(bearing(pos, target), sensors.pose[2])
+                if abs(err) > 0.08:
+                    return Actuation(
+                        0.0, clamp(2.2 * err, -spec.omega_max, spec.omega_max))
             return Actuation(0.0, 0.0)
         if not self.path or self.pidx >= len(self.path):
             return Actuation(0.0, 0.0)
 
         pos = (sensors.pose[0], sensors.pose[1])
-        target = cell_center(self.path[self.pidx], self.cfg.cell_m)
-        if dist(pos, target) < 0.12:
+        target_cell = self.path[self.pidx]
+        target = cell_center(target_cell, self.cfg.cell_m)
+
+        # Conflict recovery can stop a chassis off the centreline.  A* assumes each
+        # transition begins at the source-cell centre; driving diagonally from an
+        # off-axis pose to the next waypoint can cut a rack corner and then repeat the
+        # same rejected motion forever.  Re-acquire the current cell's centreline
+        # first.  Progress along the intended axis is deliberately ignored, otherwise
+        # every normal cell-boundary crossing would look like an offset to undo.
+        recentering = False
+        if target_cell != sensors.cell and manhattan(target_cell, sensors.cell) == 1:
+            centre = cell_center(sensors.cell, self.cfg.cell_m)
+            dx = target_cell[0] - sensors.cell[0]
+            lateral_error = (abs(pos[1] - centre[1]) if dx
+                             else abs(pos[0] - centre[0]))
+            if lateral_error > 0.22 * self.cfg.cell_m:
+                target = centre
+                recentering = True
+
+        if not recentering and dist(pos, target) < 0.12:
             self.pidx += 1
             if self.pidx >= len(self.path):
                 return Actuation(0.0, 0.0)
@@ -1316,6 +1516,8 @@ class AMRBrain:
             # Turn in place. A differential-drive AMR that arcs into a 1 m aisle
             # clips the shelving; the planner assumes cell-centre travel and the
             # controller has to actually deliver it.
+            if abs(sensors.v) > 0.08:
+                return Actuation(0.0, 0.0)
             return Actuation(0.0, clamp(2.2 * err, -spec.omega_max, spec.omega_max))
 
         # Brake for the next TURN, not just for the final waypoint. A differential
@@ -1324,9 +1526,11 @@ class AMRBrain:
         # most of a metre into the shelving while it does. Decelerating against the
         # distance to the end of the current straight run is what makes cell-centre
         # travel - which the planner assumes - actually happen.
-        remaining = self._straight_run_m(pos)
+        remaining = dist(pos, target) if recentering else self._straight_run_m(pos)
         v_profile = math.sqrt(max(0.0, 2 * spec.a_max * remaining) + spec.v_turn ** 2)
         v = min(spec.v_max * max(0.2, math.cos(err)), v_profile)
+        if recentering:
+            v = min(v, 0.25)
         return Actuation(v, clamp(1.8 * err, -spec.omega_max, spec.omega_max))
 
     def _straight_run_m(self, pos) -> float:
@@ -1348,7 +1552,15 @@ class AMRBrain:
     def _next_cell(self) -> Cell | None:
         if not self.path or self.pidx >= len(self.path):
             return None
-        return self.path[self.pidx]
+        i = self.pidx
+        # The follower may still be centring itself in the cell its pose estimator
+        # already reports. Traffic coordination must look one cell further: waiting
+        # until that centring waypoint is consumed starts a corridor stop only after
+        # the chassis has reached the mouth, too late for its braking distance.
+        while (self._last_cell is not None and i < len(self.path)
+               and self.path[i] == self._last_cell):
+            i += 1
+        return self.path[i] if i < len(self.path) else None
 
     def _state_for_task(self) -> str:
         if self.task is None:
@@ -1390,7 +1602,7 @@ class AMRBrain:
         return base + 50.0 * float(int(waited / 5.0))
 
     def _priority_key(self, t: float, sensors: Sensors) -> PriorityKey:
-        """Build the published D-PIBT key from operational facts, not weights."""
+        """Build the published BIOS_PIBT.1 key from operational facts, not weights."""
         waited = 0.0 if self.blocked_since is None else t - self.blocked_since
         service = 0.0 if self.task is None else t - self._task_started_t
         distance = 0 if self.goal is None else manhattan(sensors.cell, self.goal)
@@ -1425,7 +1637,7 @@ class AMRBrain:
         # the same number for the whole heartbeat period.
         self._pub_priority = self._priority(t)
         wire_key = None
-        if self.policy == POLICY_DECENTRALIZED_PIBT:
+        if self.policy == POLICY_BIOS_PIBT:
             self._pub_priority_key = self._priority_key(t, sensors)
             wire_key = self._pub_priority_key.to_wire()
         outbox.append(msg.heartbeat(

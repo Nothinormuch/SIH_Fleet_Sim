@@ -8,8 +8,8 @@ benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 ```bash
 python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m pytest tests -q                # 26 tests
-python run.py --scenario open_floor_control --policy decentralized_pibt --robots 4
+python -m pytest tests -q                # 30 tests
+python run.py --scenario open_floor_control --policy BIOS_PIBT.1 --robots 4
 python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
 ```
 
@@ -18,7 +18,7 @@ only, so a robot node drops onto a bare Raspberry Pi image with no build step.
 
 ## Decentralized priority algorithm
 
-The `decentralized_pibt` policy is the focus of this branch. Every AMR broadcasts a
+The `BIOS_PIBT.1` policy is the focus of this branch. Every AMR broadcasts a
 frozen lexicographic priority plus its next-cell intent, reconstructs a local fleet
 snapshot, and runs the same deterministic **Priority Inheritance with Backtracking
 (PIBT)** resolver. No process assigns moves and the dashboard is a passive observer.
@@ -136,7 +136,7 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `central` | Fleet manager plans everything with prioritised space-time A*. Robots follow the schedule; no peer negotiation. | **The strong baseline the statement omits** — what every deployed fleet actually runs. Beating only stop-and-wait proves nothing. |
 | `hierarchical` | Central plans when reachable, P2P negotiation when not, Layer 0 always. | The proposal. Full decentralisation as a fallback, not an ideal. |
 | `BIOS_1.0.0` | Decentralized block leases plus an aggressive local unstick manoeuvre. | Existing experimental liveness policy retained for comparison. |
-| `decentralized_pibt` | Replicated PIBT next-cell resolution, rich priorities, temporary branch-exit priority and expiring corridor leases. | The new edge-only priority policy implemented on this branch. |
+| `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities, temporary branch-exit priority and expiring corridor leases. | The new edge-only priority policy implemented on this branch. |
 
 `--seeds N` pools runs so the safety statistics have enough exposure to mean something.
 
@@ -151,13 +151,13 @@ model including the dead-zone result, the Poisson statistics, the end-to-end
 single-robot path, priority serialization, deterministic PIBT inheritance, backtracking,
 rotation handling, and tree-appendage detection.
 
-**Current development result (seed 0, four robots):** `decentralized_pibt` completes the
-16-task `open_floor_control` run in 153.3 s with zero inter-robot contacts, while
-`stop_and_wait` times out at 9/16. In `dense_aisles`, both policies currently complete
-5/16 before timeout with zero inter-robot contacts. The deliberately extreme
-`crossing_chokepoint` case still times out (1/12); abrupt continuous give-way manoeuvres
-also produce rack contacts there. These are development measurements, not a published
-20% success claim.
+**Current development result (three seeds, four robots):** `BIOS_PIBT.1` completes all
+16 `open_floor_control` tasks in every seed (183.2–230.6 s). At the pinned cutoffs it
+completes 15/16, 15/16 and 16/16 tasks in `dense_aisles`, and 10/12, 6/12 and 10/12 in
+the deliberately extreme `crossing_chokepoint` case. There are zero inter-robot contacts
+across all nine runs (3.745 robot-hours). Extended crossing runs finish all 12 tasks in
+538.0 s, 758.2 s and 532.1 s respectively, showing eventual progress rather than a
+latched deadlock. These are development measurements, not a published 20% success claim.
 
 No speedup percentage is published yet, because there is not yet an honest one to publish.
 `metrics.compare()` deliberately returns `"incomparable"` rather than a ratio when a

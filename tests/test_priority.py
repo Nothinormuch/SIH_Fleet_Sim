@@ -2,9 +2,11 @@
 
 import random
 
-from src.environment import FREE, Warehouse, open_floor
+from src.amr import AMRBrain, POLICIES, POLICY_BIOS_PIBT
+from src.environment import FREE, Warehouse, chokepoint_warehouse, open_floor
 from src.messages import block_claim, decode, encode
 from src.priority import PriorityKey, pibt_step
+from src.settings import DEFAULT
 from src.topology import analyse_topology
 
 
@@ -105,3 +107,34 @@ def test_block_lease_round_trip_carries_local_ttl_and_frozen_key():
     assert restored is not None
     assert restored.body["ttl"] == 4.0
     assert PriorityKey.from_wire(restored.body["pk"], restored.src) == key
+
+
+def test_policy_is_exposed_under_bios_pibt_name():
+    assert POLICY_BIOS_PIBT == "BIOS_PIBT.1"
+    assert POLICY_BIOS_PIBT in POLICIES
+
+
+def test_coordination_looks_past_current_centering_waypoint():
+    brain = AMRBrain("AMR01", open_floor(4, 3), DEFAULT,
+                     policy=POLICY_BIOS_PIBT)
+    brain.path = [(1, 1), (2, 1), (3, 1)]
+    brain.pidx = 0
+    brain._last_cell = (1, 1)
+
+    assert brain._next_cell() == (2, 1)
+
+
+def test_corridor_waypoint_is_not_treated_as_a_passing_bay():
+    env = chokepoint_warehouse(length=5)
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT)
+
+    assert not brain._is_safe_retreat_bay((6, env.height // 2))
+    assert brain._is_safe_retreat_bay((5, env.height // 2 + 1))
+
+
+def test_robot_inside_controlled_block_is_never_stopped_at_its_exit():
+    env = chokepoint_warehouse(length=5)
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT)
+    y = env.height // 2
+
+    assert brain._block_conflict(1.0, (10, y), (11, y), (0.0, "AMR01")) is None

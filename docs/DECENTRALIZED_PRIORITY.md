@@ -1,7 +1,7 @@
 # Decentralized AMR Priority and Path Conflict Resolution
 
 This branch implements an edge-only coordination policy named
-`decentralized_pibt`. Its purpose is narrow and testable: decide which AMR may occupy
+`BIOS_PIBT.1`. Its purpose is narrow and testable: decide which AMR may occupy
 the next grid cell, displace lower-priority traffic when space exists, and serialize
 entry to single-file warehouse aisles without a fleet-manager decision.
 
@@ -132,13 +132,17 @@ python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
 python run.py --scenario crossing_chokepoint --policy all --robots 4 --seeds 3
 ```
 
-Development snapshot, seed 0 with four AMRs:
+Development snapshot, three seeds with four AMRs:
 
-| Scenario | Stop-and-wait | Decentralized PIBT | Inter-robot contacts |
-| --- | ---: | ---: | ---: |
-| `open_floor_control` | 9/16 tasks, timeout | 16/16 in 153.3 s | 0 |
-| `dense_aisles` | 5/16 tasks, timeout | 5/16, timeout | 0 |
-| `crossing_chokepoint` | 0/12 tasks, timeout | 1/12, timeout | 0 |
+| Scenario | BIOS_PIBT.1 results by seed | Inter-robot contacts |
+| --- | ---: | ---: |
+| `open_floor_control` | 16/16 in 204.4 s; 16/16 in 230.6 s; 16/16 in 183.2 s | 0 |
+| `dense_aisles` | 15/16; 15/16; 16/16 in 291.8 s | 0 |
+| `crossing_chokepoint` (420 s cutoff) | 10/12; 6/12; 10/12 | 0 |
+
+At an extended cutoff, the same crossing seeds finish all 12 tasks in 538.0 s,
+758.2 s and 532.1 s. Across the nine pinned runs, the policy records zero inter-robot
+contacts over 3.745 robot-hours.
 
 This is evidence that the resolver improves progress, but it is **not** evidence of the
 required 20% makespan reduction: a makespan ratio is undefined when the baseline does
@@ -148,12 +152,13 @@ not finish. `metrics.compare()` intentionally reports that comparison as incompa
 
 PIBT assumes discrete, synchronized moves. This simulator has asynchronous lossy
 messages, noisy cell estimates, acceleration limits, turn-in-place dynamics, and a
-continuous protective field. A valid grid displacement can therefore be physically
-awkward to execute. Rack-lined stress scenarios can still record rack contacts during
-abrupt give-way/retreat manoeuvres, and the extreme single-corridor case does not
-converge.
+continuous protective field. `BIOS_PIBT.1` now bridges that gap with early look-ahead
+admission, cell-centre recovery, brake-before-turn control and swept-clearance passing
+bay selection. The three-seed matrix records no inter-robot contacts and the extended
+single-corridor runs converge, but two dense seeds do not finish their final task before
+the pinned 600 s cutoff. Throughput still needs improvement.
 
-The next step is not another priority weight. It is a two-phase **motion primitive**:
+The next step is to formalize the current recovery into a two-phase **motion primitive**:
 
 1. reserve the target cell and publish the inherited move;
 2. brake to a stable cell centre;
@@ -161,5 +166,5 @@ The next step is not another priority weight. It is a two-phase **motion primiti
 4. execute the reserved one-cell transition with a bounded time window;
 5. acknowledge completion or expire the reservation and recompute.
 
-Only after that controller bridge is implemented should this project run multi-seed
-parameter sweeps and publish a 20% completion-time result.
+Only after that acknowledged primitive is complete—and both policies finish the same
+pinned workload—should this project publish a 20% completion-time result.

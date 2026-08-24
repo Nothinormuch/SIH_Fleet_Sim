@@ -30,7 +30,7 @@ from dataclasses import replace
 
 from . import messages as msg
 from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
-                  POLICY_STOP_WAIT, POLICY_BIOS, POLICY_DECENTRALIZED_PIBT, Task)
+                  POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS_PIBT, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
 from .scenarios import SCENARIOS, Scenario
@@ -73,7 +73,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     for j, walk in enumerate(sc.humans):
         world.add_human(f"H{j + 1}", walk)
 
-    # stop_and_wait has no fleet manager by definition. BIOS and decentralized_pibt
+    # stop_and_wait has no fleet manager by definition. BIOS and BIOS_PIBT.1
     # also run without one by design; `central` depends on the manager and
     # `hierarchical` merely prefers it.
     manager = None
@@ -140,7 +140,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                  "peers": sorted(b.peers.keys()),
                  "blocked_on": b.blocked_on,
                  "priority_key": (b._pub_priority_key.to_wire()
-                                  if b.policy == POLICY_DECENTRALIZED_PIBT else None),
+                                  if b.policy == POLICY_BIOS_PIBT else None),
                  "done": len(b.completed)}
                 for r, b in sorted(brains.items())
             ]
@@ -309,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
     if POLICY_STOP_WAIT in by_policy:
         print()
         for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS,
-                     POLICY_DECENTRALIZED_PIBT):
+                     POLICY_BIOS_PIBT):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")

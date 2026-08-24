@@ -162,7 +162,7 @@ class TrafficSpec:
     # BIOS_1.0.0 block-token lifetime. Held only while physically inside the block
     # (re-broadcast every heartbeat), this just needs to cover entry + propagation.
     bios_claim_ttl_s: float = 4.0
-    # D-PIBT priorities age in stable discrete epochs and inheritance recursion is
+    # BIOS_PIBT.1 priorities age in stable discrete epochs and inheritance recursion is
     # bounded defensively even though a physical conflict chain cannot exceed N.
     priority_age_quantum_s: float = 1.0
     priority_max_depth: int = 64
