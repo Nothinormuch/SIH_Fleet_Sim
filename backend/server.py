@@ -75,7 +75,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(payload).encode("utf-8"), "application/json")
 
     def log_message(self, fmt: str, *args) -> None:
-        sys.stderr.write("  %s\n" % (fmt % args))
+        # PyInstaller windowed apps intentionally have no stderr stream.
+        if sys.stderr is not None:
+            sys.stderr.write("  %s\n" % (fmt % args))
 
     # ------------------------------------------------------------------ routing
 
@@ -94,7 +96,8 @@ class Handler(BaseHTTPRequestHandler):
         except BrokenPipeError:
             pass                                   # browser navigated away mid-response
         except Exception:
-            traceback.print_exc()
+            if sys.stderr is not None:
+                traceback.print_exc(file=sys.stderr)
             try:
                 self._json(500, {"error": "internal error",
                                  "detail": traceback.format_exc()})
@@ -160,18 +163,33 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, target.read_bytes(), ctype)
 
 
-def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
+def make_server(host: str = "127.0.0.1", port: int = 8000) -> ThreadingHTTPServer:
+    """Create a bound dashboard server without starting its blocking event loop.
+
+    ``port=0`` asks the operating system for a free ephemeral port. The desktop
+    launcher uses that form so opening two copies cannot fail because port 8000 is
+    already occupied. Keeping construction separate from ``serve`` also gives the
+    native shell explicit ownership of shutdown.
+    """
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True
-    print(f"\n  SIH_Fleet_Sim dashboard  ->  http://{host}:{port}\n"
-          f"  serving {FRONTEND}\n"
-          f"  scenarios: {', '.join(sorted(SCENARIOS))}\n"
-          f"  policies:  {', '.join(sorted(POLICIES))}\n"
-          f"  Ctrl-C to stop\n", flush=True)
+    return httpd
+
+
+def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
+    httpd = make_server(host, port)
+    actual_port = int(httpd.server_address[1])
+    if sys.stdout is not None:
+        print(f"\n  SIH_Fleet_Sim dashboard  ->  http://{host}:{actual_port}\n"
+              f"  serving {FRONTEND}\n"
+              f"  scenarios: {', '.join(sorted(SCENARIOS))}\n"
+              f"  policies:  {', '.join(sorted(POLICIES))}\n"
+              f"  Ctrl-C to stop\n", flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\n  stopping")
+        if sys.stdout is not None:
+            print("\n  stopping")
     finally:
         httpd.server_close()
 

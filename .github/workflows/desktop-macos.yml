@@ -1,0 +1,65 @@
+name: Build macOS desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/decentralized-priority-pibt
+    paths:
+      - ".github/workflows/desktop-macos.yml"
+      - "backend/**"
+      - "desktop/**"
+      - "frontend/**"
+      - "src/**"
+      - "tests/**"
+      - "requirements-desktop.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-desktop.txt
+
+      - name: Install desktop build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-desktop.txt pytest
+
+      - name: Run regression suite
+        run: python -m pytest tests -q
+
+      - name: Build native application
+        run: python desktop/build_desktop.py
+
+      - name: Smoke-test frozen backend and assets
+        run: '"dist/BIOS Fleet Simulator.app/Contents/MacOS/BIOS Fleet Simulator" --smoke-test'
+
+      - name: Verify app signature
+        run: codesign --verify --deep --strict "dist/BIOS Fleet Simulator.app"
+
+      - name: Package application
+        run: >-
+          ditto -c -k --sequesterRsrc --keepParent
+          "dist/BIOS Fleet Simulator.app"
+          "dist/BIOS-Fleet-Simulator-macOS.zip"
+
+      - name: Upload macOS application
+        uses: actions/upload-artifact@v4
+        with:
+          name: BIOS-Fleet-Simulator-macOS
+          path: dist/BIOS-Fleet-Simulator-macOS.zip
+          if-no-files-found: error
+          retention-days: 14

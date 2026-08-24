@@ -1,12 +1,13 @@
 # Environments
 venv/
 env/
+.venv/
 
 # Python cache
 __pycache__/
 *.pyc
 
-# PyInstaller build files (for when you make the .exe)
+# PyInstaller build files
 build/
 dist/
 *.spec
