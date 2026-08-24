@@ -195,6 +195,8 @@
   aspect-ratio: 1;
   border-radius: 8px;
   overflow: hidden;
+  background: #080c12;
+  border: 1px solid rgba(0,240,255,.12);
 }
 
 .hud-mm {
@@ -383,8 +385,8 @@
 .hud-fleet {
   --glow: #00f0ff;
   --glow-rgb: 0,240,255;
-  top: 92px;
-  left: 240px;
+  top: 24px;
+  left: 205px;
   width: 200px;
   max-height: 200px;
   overflow-y: auto;

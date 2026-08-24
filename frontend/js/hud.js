@@ -41,6 +41,12 @@
     active: 0,
     auctionEvents: [],
     auctionLastMs: 0,
+    // For smoother auction event animation - keep events visible for 2000ms
+    auctionEventHistory: [],
+    auctionEventTimestamps: [],
+    // New state for auction events to persist for 2000ms
+    auctionPersistedEvents: [],
+    auctionFadeStartTime: 0,
   };
 
   const byId = id => document.getElementById(id);
@@ -84,8 +90,16 @@
   /* ------------------------------------------------------------ minimap */
 
   function worldToMM(wx, wy) {
-    return [mmDim.ox + wx * mmDim.cell,
-            mmDim.oy + (S.map.height - wy) * mmDim.cell];
+    // Scale world coordinates to fill the full minimap canvas
+    if (!S.map) return [cssW / 2, cssH / 2];
+    const cssW = mm ? (mm.canvas.width / (window.devicePixelRatio || 1)) : 150;
+    const cssH = mm ? (mm.canvas.height / (window.devicePixelRatio || 1)) : 150;
+    const scaleX = cssW / Math.max(1, S.map.width || 1);
+    const scaleY = cssH / Math.max(1, S.map.height || 1);
+    const scale = Math.max(scaleX, scaleY);
+    const mx = (wx || 0) * scale + (cssW - (S.map.width || 1) * scale) / 2;
+    const my = (cssH - (wy || 0) * scale) - (cssH - (S.map.height || 1) * scale) / 2;
+    return [mx, my];
   }
 
   function buildStaticMinimap(map) {
@@ -145,39 +159,97 @@
     const cssH = ctx.canvas.height / dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
-    if (mmStatic) ctx.drawImage(mmStatic, 0, 0, cssW, cssH);
+
+    // Clear everything - start fresh with dark grid background
+    ctx.fillStyle = '#080c12';
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    // Draw faint grid lines (warehouse floor)
+    ctx.strokeStyle = 'rgba(0,240,255,.1)';
+    ctx.lineWidth = 0.5;
+    const gridCells = 12;
+    for (let i = 1; i < gridCells; i++) {
+      const gx = (cssW / gridCells) * i;
+      const gy = (cssH / gridCells) * i;
+      // Vertical grid lines
+      ctx.beginPath();
+      ctx.moveTo(gx, 0); ctx.lineTo(gx, cssH); ctx.stroke();
+      // Horizontal grid lines
+      ctx.beginPath();
+      ctx.moveTo(0, gy); ctx.lineTo(cssW, gy); ctx.stroke();
+    }
 
     const f = S.lastFrame;
     if (f) {
-      // Draw tasks (pending) as small green squares
+      // --- ROBOTS: cyan circles with heading line ---
+      for (const r of (f.robots || [])) {
+        // If no x/y from frame, skip or place at center
+        let rx = r.x || 0, ry = r.y || 0;
+        // Scale to minimap (normalize to cssW/cssH area)
+        const [mx, my] = worldToMM(rx, ry);
+        const rsize = Math.max(3, 10);
+
+        ctx.save();
+        // Glowing cyan circle
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = '#00f0ff';
+        ctx.beginPath();
+        ctx.arc(mx, my, rsize, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Heading line
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 1.5;
+        const hdist = rsize * 2.5;
+        ctx.beginPath();
+        ctx.moveTo(mx, my);
+        ctx.lineTo(mx + Math.cos(r.th || 0) * hdist, my - Math.sin(r.th || 0) * hdist);
+        ctx.stroke();
+
+        // Cargo indicator (amber square when carrying load)
+        if (r.carry) {
+          ctx.fillStyle = '#f5b843';
+          ctx.fillRect(mx - 2, my - 2, 4, 4);
+        }
+        ctx.restore();
+      }
+
+      // --- TASKS: green squares (pending assignments) ---
       if (f.tasks) {
         for (const task of f.tasks) {
           if (task && task.x !== undefined && task.y !== undefined) {
-            const [x, y] = worldToMM(task.x, task.y);
+            const [mx, my] = worldToMM(task.x, task.y);
             ctx.save();
-            ctx.fillStyle = 'rgba(57,255,138,.6)';
-            ctx.fillRect(x - 2, y - 2, 4, 4);
+            ctx.fillStyle = 'rgba(57,255,138,.9)';
+            ctx.shadowColor = '#39ff8a';
+            ctx.shadowBlur = 4;
+            ctx.fillRect(mx - 2.5, my - 2.5, 5, 5);
+            // Small cyan border
             ctx.strokeStyle = '#39ff8a';
             ctx.lineWidth = 0.8;
-            ctx.strokeRect(x - 2, y - 2, 4, 4);
+            ctx.strokeRect(mx - 2.5, my - 2.5, 5, 5);
             ctx.restore();
           }
         }
       }
 
-      // Draw goal points as diamonds (cyan outline)
+      // --- GOALS / DESTINATIONS: cyan diamonds ---
       if (f.goals) {
         for (const goal of f.goals) {
           if (goal && goal.x !== undefined && goal.y !== undefined) {
-            const [x, y] = worldToMM(goal.x, goal.y);
+            const [mx, my] = worldToMM(goal.x, goal.y);
             ctx.save();
             ctx.strokeStyle = '#00f0ff';
-            ctx.lineWidth = 0.8;
+            ctx.lineWidth = 1.2;
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 5;
             ctx.beginPath();
-            ctx.moveTo(x, y - 2.5);
-            ctx.lineTo(x + 2.5, y);
-            ctx.lineTo(x, y + 2.5);
-            ctx.lineTo(x - 2.5, y);
+            ctx.moveTo(mx, my - 4);
+            ctx.lineTo(mx + 4, my);
+            ctx.lineTo(mx, my + 4);
+            ctx.lineTo(mx - 4, my);
             ctx.closePath();
             ctx.stroke();
             ctx.restore();
@@ -185,62 +257,21 @@
         }
       }
 
-      // Draw robots as circles with heading indicator
-      for (const r of (f.robots || [])) {
-        const col = colFor(r.id);
-        const [x, y] = worldToMM(r.x, r.y);
-        const rsize = Math.max(2, mmDim.cell * 0.34);
-
-        ctx.save();
-        ctx.fillStyle = col;
-        ctx.globalAlpha = 0.8;
-        ctx.beginPath();
-        ctx.arc(x, y, rsize, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Draw heading indicator (small line)
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 1;
-        const hdist = rsize * 1.5;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + Math.cos(r.th || 0) * hdist, y - Math.sin(r.th || 0) * hdist);
-        ctx.stroke();
-
-        // Draw cargo indicator (small square at center if carrying)
-        if (r.carry) {
-          ctx.fillStyle = '#f5b843';
-          ctx.globalAlpha = 0.7;
-          ctx.fillRect(x - 1, y - 1, 2, 2);
-        }
-        ctx.restore();
-      }
-
-      // Draw humans as dashed circles (red)
+      // --- HUMANS: red dashed outline circles ---
       for (const h of (f.humans || [])) {
-        const [x, y] = worldToMM(h.x, h.y);
+        const [mx, my] = worldToMM(h.x, h.y);
         ctx.save();
-        ctx.strokeStyle = 'rgba(255,95,87,.8)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#ff5f57';
         ctx.setLineDash([2, 2]);
+        ctx.lineWidth = 1;
+        ctx.shadowColor = '#ff5f57';
+        ctx.shadowBlur = 4;
         ctx.beginPath();
-        ctx.arc(x, y, Math.max(2.5, mmDim.cell * 0.42), 0, Math.PI * 2);
+        ctx.arc(mx, my, 6, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
     }
-
-    // Contained scan bar
-    const ph = ((now || 0) % 3400) / 3400;
-    const y = ph * (cssH + 30) - 15;
-    const g = ctx.createLinearGradient(0, y - 14, 0, y + 14);
-    g.addColorStop(0, 'rgba(0,240,255,0)');
-    g.addColorStop(.5, 'rgba(0,240,255,.32)');
-    g.addColorStop(1, 'rgba(0,240,255,0)');
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = g;
-    ctx.fillRect(0, y - 14, cssW, 28);
-    ctx.globalCompositeOperation = 'source-over';
   }
 
   function fleetHealth(summary, meta) {
@@ -492,7 +523,7 @@
     const bids = frameEvents.filter(e => e.event === 'BID').length;
     const awards = frameEvents.filter(e => e.event === 'AWARD').length;
 
-    // Track auction rate (events per second)
+    // Track auction rate (events per second) with smoothing
     const timeDelta = now - S.auctionLastMs;
     const rate = timeDelta > 0 ? (frameEvents.length / (timeDelta / 1000)).toFixed(1) : 0;
     S.auctionLastMs = now;
@@ -501,21 +532,51 @@
     if (el.auctionAwards) el.auctionAwards.textContent = fmt(awards, 0);
     if (el.auctionRate) el.auctionRate.textContent = rate + '/s';
 
-    // Show live auction events (last 3-4 events)
-    let html = '';
-    const recent = frameEvents.slice(-4);
-    for (const evt of recent) {
+    // Build persisted events: combine new events with recently seen ones,
+    // keeping each visible for 2000ms for smoother animation
+    const PERSIST_MS = 2000;
+    const nowMs = now || performance.now();
+
+    // Add new frame events with timestamp
+    for (const evt of frameEvents) {
+      // Only add if not already in persisted events (by matching event type + robot/task)
       const eventType = evt.event || '?';
       const bidder = evt.robot || evt.bidder || '—';
       const taskId = evt.task || evt.task_id || '?';
-      const color = eventType === 'AWARD' ? '#39ff8a' : eventType === 'BID' ? '#00f0ff' : '#f5b843';
-      html += `<div class="hud-auction-event" style="color: ${color}">
-        <span class="hud-auction-type">${eventType}</span>
-        <span class="hud-auction-who">${bidder}</span>
-        <span class="hud-auction-task">T${taskId}</span>
+      const key = eventType + '|' + bidder + '|' + taskId;
+      const exists = S.auctionPersistedEvents.some(p => p.key === key && (nowMs - p.time) < PERSIST_MS);
+      if (!exists) {
+        S.auctionPersistedEvents.push({
+          eventType, bidder, taskId,
+          time: nowMs,
+          color: eventType === 'AWARD' ? '#39ff8a' : eventType === 'BID' ? '#00f0ff' : '#f5b843',
+          key: key,
+        });
+      }
+    }
+
+    // Filter out events older than PERSIST_MS (smooth fade out)
+    S.auctionPersistedEvents = S.auctionPersistedEvents.filter(p => (nowMs - p.time) < PERSIST_MS);
+
+    // Show events (last 4, sorted by time descending) with smooth animation
+    let html = '';
+    // Sort by time descending (newest first) for display, but keep visible long enough
+    const sortedEvents = S.auctionPersistedEvents.sort((a, b) => b.time - a.time).slice(0, 4);
+
+    for (const evt of sortedEvents) {
+      const timeElapsed = nowMs - evt.time;
+      const opacity = Math.max(0.15, 1 - (timeElapsed / PERSIST_MS)); // Fade out over 2s
+      html += `<div class="hud-auction-event" style="color: ${evt.color}; opacity: ${opacity.toFixed(2)}; transition: opacity 0.3s ease;">
+        <span class="hud-auction-type">${evt.eventType}</span>
+        <span class="hud-auction-who">${evt.bidder}</span>
+        <span class="hud-auction-task">T${evt.taskId}</span>
       </div>`;
     }
-    el.auctionLive.innerHTML = html || '<div style="color: rgba(255,255,255,.3); font-size: 9px;">No auctions</div>';
+
+    if (html === '') {
+      html = '<div style="color: rgba(255,255,255,.25); font-size: 9px; opacity: 0.5;">Waiting for auctions...</div>';
+    }
+    el.auctionLive.innerHTML = html;
   }
 
   function loop(now) {
