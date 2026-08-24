@@ -8,49 +8,13 @@ benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 ```bash
 python backend/server.py                 # dashboard -> http://127.0.0.1:8000
-python -m desktop.app                    # native local desktop window
-python -m pytest tests -q                # 38 tests
+python -m pytest tests -q                # 34 tests
 python run.py --scenario open_floor_control --policy BIOS_PIBT.2 --robots 4
 python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
 ```
 
 The simulation core and the benchmark have **no third-party dependencies** — stdlib
 only, so a robot node drops onto a bare Raspberry Pi image with no build step.
-
-## Local desktop app
-
-The desktop edition runs the same simulator and dashboard entirely on the machine, in
-its own native window. It binds a random loopback-only port, opens no browser tab, needs
-no internet or cloud service, and stops the local server when the window closes. The
-dashboard remains a passive observer; wrapping it in a desktop window does not turn it
-into a fleet coordinator.
-
-On macOS, from the repository root:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements-desktop.txt
-
-# Run directly during development
-python -m desktop.app
-
-# Build a double-clickable macOS application
-python desktop/build_desktop.py
-open "dist/BIOS Fleet Simulator.app"
-```
-
-The last command creates `dist/BIOS Fleet Simulator.app`. It can be dragged into the
-macOS Applications folder and launched like any other app. The same builder produces a
-Windows `.exe` or Linux executable when run on that operating system; desktop bundles
-must be built on their target OS.
-
-Every push that changes the desktop runtime on the feature branch also builds and
-smoke-tests the macOS application in GitHub Actions. Download the
-`BIOS-Fleet-Simulator-macOS` artifact, unzip it, and move the app to Applications. The
-bundle is ad-hoc signed for local/demo use rather than Apple-notarized, so a downloaded
-copy may need **right-click → Open** on its first launch.
 
 ## Decentralized priority algorithm
 
@@ -129,9 +93,6 @@ src/
   main.py          the headless runner and CLI
 backend/
   server.py        stdlib HTTP server: serves the frontend, runs sims on request
-desktop/
-  app.py           native pywebview launcher with loopback server lifecycle
-  build_desktop.py reproducible macOS/Windows/Linux PyInstaller bundle builder
 frontend/
   index.html       dashboard shell
   css/style.css    palette shared with the generated asset set
@@ -140,7 +101,7 @@ frontend/
   js/network.js    the coordination layer: intent, peer links, wait-for arrows
   js/main.js       fetch, interpolated playback, panel binding
   assets/          generated sprite set (256 px per cell)
-tests/             core, priority and desktop regression tests
+tests/             34 regression tests
 docs/              BIOS_PIBT_2_PROTOCOL.md plus V1 design, critique and findings
 reference/         asset prompt pack and loader spec
 ```

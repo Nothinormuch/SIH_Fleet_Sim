@@ -12,7 +12,6 @@
   <div class="brand">
     <span class="ps">SIH26123</span>
     <span class="title">Edge-AI Distributed Fleet Coordination · AMR Warehouse</span>
-    <span class="desktop-badge" id="desktopBadge">LOCAL DESKTOP · EDGE ONLY</span>
   </div>
   <div class="link-state" id="linkState">
     <span class="dot" id="mgrDot"></span><span id="mgrText">fleet manager</span>
@@ -96,10 +95,5 @@
 <script src="/js/amr.js"></script>
 <script src="/js/network.js"></script>
 <script src="/js/main.js"></script>
-<script>
-  if (new URLSearchParams(window.location.search).get('desktop') === '1') {
-    document.documentElement.classList.add('desktop-runtime');
-  }
-</script>
 </body>
 </html>

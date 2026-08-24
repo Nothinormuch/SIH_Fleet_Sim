@@ -58,18 +58,6 @@ html, body {
   color: var(--ink-dim); font-size: 13px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.desktop-badge {
-  display: none;
-  flex: 0 0 auto;
-  font: 650 9px/1 var(--mono);
-  letter-spacing: .08em;
-  color: var(--ok);
-  background: rgba(70,211,154,.1);
-  border: 1px solid rgba(70,211,154,.35);
-  border-radius: 999px;
-  padding: 5px 8px;
-}
-.desktop-runtime .desktop-badge { display: inline-flex; }
 .link-state {
   display: flex; align-items: center; gap: 8px;
   font: 500 12px/1 var(--mono); color: var(--ink-dim);
