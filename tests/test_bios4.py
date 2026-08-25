@@ -25,6 +25,7 @@ from src.scenarios import SCENARIOS
 
 # ------------------------------------------------------------------ the network
 
+
 def test_param_count_matches_the_layer_shape():
     assert PolicyNet.n_params(4, 3, 2) == 4 * 3 + 3 + 3 * 2 + 2
     m = random_model(seed=0, n_hidden=16)
@@ -54,6 +55,7 @@ def test_zero_weights_give_zero_logits():
 
 # ------------------------------------------------------------------ action masking
 
+
 def test_act_never_returns_a_masked_action():
     m = random_model(seed=7)
     x = [0.3] * N_FEATURES
@@ -81,6 +83,7 @@ def test_act_ignores_a_high_scoring_illegal_action():
 
 
 # ------------------------------------------------------------------ the model file
+
 
 def test_model_survives_a_json_round_trip():
     m = random_model(seed=11)
@@ -141,6 +144,7 @@ def test_non_json_upload_is_refused_rather_than_crashing():
 
 # ------------------------------------------------------------------ observation
 
+
 def test_observation_is_the_right_length_and_bounded():
     """Every feature is squashed or clipped on purpose: an unbounded input lets one
     quantity (a stuck timer that ran for 400 s) swamp every other signal in the layer."""
@@ -166,6 +170,7 @@ def test_observation_is_the_right_length_and_bounded():
 
 
 # ------------------------------------------------------------------ the guarantees
+#
 # These are the tests that justify the architecture. Everything above checks that the
 # machinery works; these check that it does not MATTER whether the machinery works.
 
@@ -241,3 +246,32 @@ def test_reroute_is_rate_limited():
     # 4 robots x 60 s at the 10 Hz traffic rate is 2400 opportunities; the 3 s cooldown
     # caps it near 4 x 20 even when the model asks on every single tick.
     assert res.replans <= 4 * 30, f"reroute cooldown is not holding: {res.replans}"
+
+def test_the_model_actually_drives_the_policy():
+    """The regression guard the other integration tests do not provide.
+
+    Every assertion above this one holds just as well when the model is ignored
+    entirely and BIOS_4 quietly falls through to another policy's code path -
+    which is exactly what a merge once did to it. `always-hold` and
+    `always-proceed` differ in the one place inference is observable from
+    outside: hold parks every robot on the liveness valve, proceed never touches
+    it. If those two ever agree, the model is not being consulted.
+    """
+    sc = replace(SCENARIOS["crossing_chokepoint"](4), duration_s=60.0)
+    held = run_scenario(sc, "BIOS_4", seed=2, policy_model=_Always(ACT_HOLD))
+    proceeded = run_scenario(sc, "BIOS_4", seed=2, policy_model=_Always(ACT_PROCEED))
+
+    assert held.bios4_unstick > 0, "always-hold never reached the liveness valve"
+    assert proceeded.bios4_unstick == 0, "always-proceed should never be stuck"
+    assert held.bios4_unstick != proceeded.bios4_unstick
+
+
+def test_progress_cells_is_actually_measured():
+    """`progress_cells` is the dense reward `evolve.py` trains against.
+
+    When the accumulator went missing it reported a clean 0 for every policy, so
+    nothing crashed and nothing failed - training simply optimised a constant.
+    A reward channel that silently reads zero is worse than one that raises.
+    """
+    sc = replace(SCENARIOS["crossing_chokepoint"](4), duration_s=60.0)
+    assert run_scenario(sc, "stop_and_wait", seed=2).progress_cells > 0

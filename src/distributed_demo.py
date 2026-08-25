@@ -18,9 +18,13 @@ import json
 import multiprocessing as mp
 import os
 import platform
-import resource
 import time
 from multiprocessing.connection import Connection
+
+try:  # POSIX only. The deployment target (Raspberry Pi) has it; Windows does not.
+    import resource
+except ImportError:  # pragma: no cover - platform dependent
+    resource = None
 
 from . import messages as msg
 from .amr import AMRBrain, POLICY_BIOS_PIBT_V5, Task
@@ -99,10 +103,51 @@ def _robot_worker(connection: Connection, rid: str, env, home,
 
 
 def _max_rss_mb() -> float:
-    """Normalise ru_maxrss, which is bytes on macOS and KiB on Linux/Pi."""
-    maximum = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-    divisor = 1024.0 * 1024.0 if platform.system() == "Darwin" else 1024.0
-    return round(maximum / divisor, 3)
+    """Peak resident set size in MiB.
+
+    This number is reported as evidence, so the Windows branch measures rather
+    than returning a convenient 0.0 - a fabricated zero in an evidence field is
+    worse than an import error, because nothing ever catches it.
+    """
+    if resource is not None:
+        maximum = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        # ru_maxrss is bytes on macOS and KiB on Linux/Pi.
+        divisor = 1024.0 * 1024.0 if platform.system() == "Darwin" else 1024.0
+        return round(maximum / divisor, 3)
+
+    import ctypes
+    from ctypes import wintypes
+
+    class _MemCounters(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD),
+                    ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t)]
+
+    # The signatures are declared rather than left to ctypes' defaults: a HANDLE
+    # is pointer-sized, and defaulting it to int truncates the pseudo-handle on
+    # 64-bit, which fails in a way that looks like the API refusing the call.
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.GetCurrentProcess.argtypes = []
+    psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+    psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE,
+                                           ctypes.POINTER(_MemCounters),
+                                           wintypes.DWORD]
+
+    counters = _MemCounters()
+    counters.cb = ctypes.sizeof(counters)
+    if not psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(),
+                                      ctypes.byref(counters), counters.cb):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return round(counters.PeakWorkingSetSize / (1024.0 * 1024.0), 3)
 
 
 def run_distributed_demo(scenario_name: str = "open_floor_control",
