@@ -183,6 +183,15 @@ class TrafficSpec:
     # eventually learned from a peer; the WMS is not required to coordinate retries.
     task_gossip_period_s: float = 1.0
     completion_gossip_period_s: float = 1.0
+    # BIOS 5 energy-feasible auction. Energy is a hard admission constraint; these
+    # values are declared here so experiments cannot quietly tune them per seed.
+    energy_reserve_frac: float = 0.15
+    energy_uncertainty_frac: float = 0.10
+    energy_loaded_multiplier: float = 1.35
+    energy_service_s: float = 12.0
+    energy_candidate_bids: int = 3
+    energy_charge_trigger_frac: float = 0.15
+    energy_rejoin_frac: float = 0.45
 
 
 @dataclass(frozen=True)

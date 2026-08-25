@@ -3,7 +3,8 @@
 import random
 
 from src.amr import (AMRBrain, CELL_ZONE_BASE, POLICIES, POLICY_BIOS_PIBT,
-                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, Peer,
+                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
+                     POLICY_BIOS_PIBT_V5, Peer,
                      ST_IDLE, Task)
 from src.environment import (FREE, Warehouse, chokepoint_warehouse,
                              classic_warehouse, open_floor)
@@ -122,6 +123,41 @@ def test_policy_is_exposed_under_bios_pibt_name():
     assert POLICY_BIOS_PIBT_V2 in POLICIES
     assert POLICY_BIOS_PIBT_V3 == "BIOS_PIBT.3"
     assert POLICY_BIOS_PIBT_V3 in POLICIES
+    assert POLICY_BIOS_PIBT_V5 == "BIOS_PIBT.5"
+    assert POLICY_BIOS_PIBT_V5 in POLICIES
+
+
+def test_v5_rejects_energy_infeasible_task_and_accepts_charged_robot():
+    env = open_floor(10, 10)
+    world = World(env, DEFAULT, seed=0)
+    state = world.add_robot("AMR01", (1, 1))
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    task = Task("LONG", (8, 1), (8, 8))
+
+    state.battery_wh = 0.15 * DEFAULT.robot.battery_full_wh
+    low = world.sense("AMR01")
+    state.battery_wh = 0.80 * DEFAULT.robot.battery_full_wh
+    high = world.sense("AMR01")
+
+    assert not brain._energy_feasible(task, low)[0]
+    assert brain._energy_feasible(task, high)[0]
+
+
+def test_v5_candidate_filter_prefers_nearest_healthy_robots_then_expands():
+    env = open_floor(12, 4)
+    brain = AMRBrain("AMR04", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    task = Task("T", (1, 1), (10, 1), announced_t=0.0)
+    brain.peers = {
+        "AMR01": Peer("AMR01", cell=(1, 1), last_seen=1.0),
+        "AMR02": Peer("AMR02", cell=(2, 1), last_seen=1.0),
+        "AMR03": Peer("AMR03", cell=(3, 1), last_seen=1.0),
+    }
+    sensors = type("S", (), {"cell": (9, 1)})()
+
+    assert not brain._energy_candidate(task, 1.0, sensors)
+    assert brain._energy_candidate(task, 21.0, sensors)
 
 
 def test_v3_peer_catalog_gossips_a_missed_task_without_a_manager():
