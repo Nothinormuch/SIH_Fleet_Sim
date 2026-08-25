@@ -2,7 +2,7 @@
 
 ## Five-minute live sequence
 
-1. Start `python backend/server.py` and show `blocked_aisle` with `BIOS_PIBT.3`.
+1. Start `python backend/server.py` and show `blocked_aisle` with `BIOS_PIBT.5`.
    Point out that the dropped pallet never broadcasts; onboard sensing promotes it to a
    temporary blocked cell and replans around it.
 2. Show `human_in_aisle`. The worker is non-cooperative and never appears in peer

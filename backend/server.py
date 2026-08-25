@@ -83,7 +83,7 @@ def parse_run_request(payload: object) -> dict[str, object]:
         return value
 
     scenario = str(scalar("scenario", "open_floor_control"))
-    policy = str(scalar("policy", "BIOS_PIBT.3"))
+    policy = str(scalar("policy", "BIOS_PIBT.5"))
     allocation_policy = str(scalar("allocation_policy", "auction"))
     if scenario not in SCENARIOS:
         raise RequestValidationError(f"unknown scenario {scenario!r}")

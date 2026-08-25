@@ -107,6 +107,12 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
             "announced_t": task.announced_t,
             "auction_epoch": task.auction_epoch,
             "bid_deadline": task.bid_deadline,
+            "cargo_type": task.cargo_type,
+            "cargo_weight": task.cargo_weight,
+            "priority": task.priority,
+            "deadline": task.deadline,
+            "lease_owner": task.lease_owner,
+            "lease_until": task.lease_until,
         }
 
     if allocation in ACTIVE_ALLOCATION_POLICIES:
@@ -122,7 +128,7 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
         }
 
     payload = {
-        "schema": 1,
+        "schema": 2,
         "scenario": sc.name,
         "environment": sc.env.to_json(),
         "starts": [list(cell) for cell in sc.starts],

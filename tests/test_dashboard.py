@@ -40,6 +40,7 @@ def test_run_request_validation_rejects_clamping_and_combined_overload():
     assert parsed["robots"] == 100
     assert parsed["duration"] == 120.0
     assert parsed["seed"] == 9
+    assert parsed["policy"] == "BIOS_PIBT.5"
 
 
 def test_dashboard_run_is_post_only_and_security_headers_are_present():

@@ -40,7 +40,7 @@ async function boot() {
     const r = await fetch('/api/scenarios');
     const { scenarios, policies, allocation_policies } = await r.json();
     fill(el('scenario'), scenarios, 'open_floor_control');
-    fill(el('policy'), policies, 'BIOS_PIBT.3');
+    fill(el('policy'), policies, 'BIOS_PIBT.5');
     fill(el('allocationPolicy'), allocation_policies, 'auction');
   } catch (e) {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
@@ -549,7 +549,8 @@ function updateManagerDot(frame) {
     return;
   }
   if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'
-      || routePolicy === 'BIOS_PIBT.3' || routePolicy === 'BIOS_1.0.0') {
+      || routePolicy === 'BIOS_PIBT.3' || routePolicy === 'BIOS_PIBT.5'
+      || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot up';
     text.textContent = 'edge-only peer coordination · no manager';
     return;

@@ -4,7 +4,7 @@ This is the release gate for the problem statement's measurable success criterio
 at least a 20% reduction in total task-completion time relative to traditional
 stop-and-wait, while observing no inter-robot contact in the evaluated runs.
 
-The gate compares `BIOS_PIBT.3` against `stop_and_wait` under the same decentralized
+The gate compares `BIOS_PIBT.5` against `stop_and_wait` under the same decentralized
 `auction` allocation policy. It is intentionally stricter than comparing averages:
 every candidate run must complete, every paired workload must match, and the minimum
 per-seed improvement bound must pass.
@@ -18,7 +18,7 @@ per-seed improvement bound must pass.
 - Seeds: 0 through 29 for each fleet
 - Cutoff: 1200 simulated seconds
 - Baseline route policy: `stop_and_wait`
-- Candidate route policy: `BIOS_PIBT.3`
+- Candidate route policy: `BIOS_PIBT.5`
 - Allocation policy for both: `auction`
 - Required reduction: 20%
 
@@ -59,21 +59,21 @@ The overall verdict passes only when every fleet passes. The CLI exits `0` on pa
 
 ## Measured result
 
-Generated on 2026-08-24 with 5000 deterministic bootstrap resamples per fleet:
+Generated on 2026-08-25 with 5000 deterministic bootstrap resamples per fleet:
 
 | Robots | Candidate completion | Baseline completion | Candidate median | Candidate p95 | Minimum bound | Median bound | Median-bound bootstrap 95% interval |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 4 | 30/30 | 0/30 | 382.37 s | 405.20 s | 66.06% | 68.14% | 67.63–69.30% |
-| 6 | 30/30 | 0/30 | 543.38 s | 571.33 s | 51.03% | 54.72% | 54.20–55.28% |
-| 8 | 30/30 | 0/30 | 712.69 s | 759.51 s | 32.66% | 40.61% | 39.82–41.96% |
+| 4 | 30/30 | 0/30 | 384.03 s | 411.67 s | 63.64% | 68.00% | 67.44–68.73% |
+| 6 | 30/30 | 0/30 | 554.70 s | 582.13 s | 51.17% | 53.78% | 53.48–54.64% |
+| 8 | 30/30 | 0/30 | 721.33 s | 762.51 s | 34.16% | 39.89% | 38.38–40.32% |
 
 All 90 candidate runs completed all 1,620 tasks. The largest candidate makespan was
-808.04 s, below the 960 s value corresponding to a 20% bound at the 1200 s cutoff.
+790.12 s, below the 960 s value corresponding to a 20% bound at the 1200 s cutoff.
 There were zero observed robot/robot, robot/human and robot/rack contacts across
-87.3498 candidate robot-hours.
+88.6512 candidate robot-hours.
 
 Zero observed contacts do not prove an impossible collision rate of zero. The per-fleet
-one-sided 95% upper bounds reported in the JSON are 234.215, 109.204 and 62.502
+one-sided 95% upper bounds reported in the JSON are 231.809, 108.067 and 61.360
 robot/robot contacts per 1000 robot-hours for 4, 6 and 8 robots respectively. More
 exposure—not stronger wording—is what lowers those bounds.
 

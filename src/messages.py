@@ -55,7 +55,8 @@ MAX_ID_LENGTH = 64
 MAX_TASK_ID_LENGTH = 128
 MAX_INTENT_CELLS = 64
 MAX_PLAN_CELLS = 1024
-MAX_RELATIVE_TIME_S = 3600.0
+MAX_RELATIVE_TIME_S = 86_400.0
+CARGO_TYPES = ("normal", "fragile", "heavy", "hazardous")
 _ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
@@ -276,11 +277,16 @@ def _validate_dict(d: dict) -> str | None:
             return "invalid_intent"
     elif typ == TASK_NEW:
         ttl = body.get("ttl")
+        due = body.get("due")
         legacy_deadline = body.get("dl")
         if (not _task_id(body.get("task")) or not _cell(body.get("pk"))
                 or not _cell(body.get("dp"))
                 or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)
+                or body.get("ct", "normal") not in CARGO_TYPES
+                or not _number(body.get("cw", 0.0), 0.0, 1_000_000.0)
+                or not _integer(body.get("pr", 1), 1, 100)
                 or (ttl is not None and not _relative_time(ttl))
+                or (due is not None and not _relative_time(due))
                 or (legacy_deadline is not None
                     and not _number(legacy_deadline, 0.0, 1e15))):
             return "invalid_task"
@@ -379,13 +385,19 @@ def heartbeat(src: str, seq: int, t: float, pose: tuple[float, float, float],
 
 
 def task_new(src: str, seq: int, t: float, task_id: str, pick: Cell,
-             drop: Cell, epoch: int = 0, bid_until: float | None = None) -> Message:
+             drop: Cell, epoch: int = 0, bid_until: float | None = None,
+             cargo_type: str = "normal", cargo_weight: float = 0.0,
+             priority: int = 1, deadline: float | None = None) -> Message:
     body = {
         "task": task_id, "pk": list(pick), "dp": list(drop),
-        "e": int(epoch),
+        "e": int(epoch), "ct": cargo_type, "cw": float(cargo_weight),
+        "pr": int(priority),
     }
     if bid_until is not None:
         body["ttl"] = round(max(0.0, bid_until - t), 3)
+    if deadline is not None:
+        # Receiver-local TTL: edge-node monotonic clocks need not share an epoch.
+        body["due"] = round(max(0.0, deadline - t), 3)
     return Message(TASK_NEW, src, seq, t, body)
 
 

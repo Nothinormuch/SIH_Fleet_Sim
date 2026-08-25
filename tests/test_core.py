@@ -142,12 +142,15 @@ def test_v3_recovery_motion_must_increase_close_peer_clearance():
 
 def test_task_protocol_carries_epoch_deadline_and_lease():
     new = task_new("WMS", 1, 0.0, "T1", (1, 1), (2, 2),
-                   epoch=3, bid_until=0.6)
+                   epoch=3, bid_until=0.6, cargo_type="hazardous",
+                   cargo_weight=25.0, priority=4, deadline=90.0)
     offer = bid("AMR02", 2, 0.1, "T1", 7.5, epoch=3)
     claim = award("AMR02", 3, 0.7, "T1", 7.5,
                   epoch=3, lease_until=20.7)
 
     assert new.body["e"] == 3 and new.body["ttl"] == 0.6
+    assert new.body["ct"] == "hazardous" and new.body["cw"] == 25.0
+    assert new.body["pr"] == 4 and new.body["due"] == 90.0
     assert offer.body["e"] == 3
     assert claim.body["e"] == 3 and claim.body["ttl"] == 20.0
 
@@ -211,7 +214,9 @@ def test_received_protocol_times_are_derived_from_receiver_clock():
         intent("A", 1, sender_t, [(2, 2)],
                [(sender_t + 1.0, sender_t + 2.0)], 1.0, 0),
         task_new("WMS", 2, sender_t, "T1", (1, 1), (2, 2),
-                 bid_until=sender_t + 0.6),
+                 bid_until=sender_t + 0.6, cargo_type="fragile",
+                 cargo_weight=12.0, priority=3,
+                 deadline=sender_t + 120.0),
         award("A", 3, sender_t, "T1", 1.0,
               lease_until=sender_t + 20.0),
     ]
@@ -220,7 +225,13 @@ def test_received_protocol_times_are_derived_from_receiver_clock():
 
     assert brain.peers["A"].windows == [(8.0, 9.0)]
     assert brain.open_tasks["T1"].bid_deadline == pytest.approx(7.6)
+    assert brain.open_tasks["T1"].deadline == pytest.approx(127.0)
+    assert brain.open_tasks["T1"].cargo_type == "fragile"
+    assert brain.open_tasks["T1"].cargo_weight == 12.0
+    assert brain.open_tasks["T1"].priority == 3
     assert brain._task_claims["T1"][3] == pytest.approx(27.0)
+    assert brain.open_tasks["T1"].lease_owner == "A"
+    assert brain.open_tasks["T1"].lease_until == pytest.approx(27.0)
 
 
 def test_expired_peer_claim_reopens_a_new_auction_epoch():

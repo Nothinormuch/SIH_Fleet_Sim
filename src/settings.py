@@ -39,6 +39,9 @@ class RobotSpec:
     draw_move_w: float = 210.0
     draw_idle_w: float = 45.0
     charge_w: float = 900.0
+    # Every simulated AMR is the same model. Payload eligibility still varies per
+    # task, but never by inventing stronger/weaker robot classes.
+    max_payload_kg: float = 100.0
 
     def stop_field_m(self, v: float) -> float:
         """Distance needed to stop from speed `v`, plus reaction and margin.
@@ -195,6 +198,13 @@ class TrafficSpec:
     energy_bid_bundle: int = 12
     energy_charge_trigger_frac: float = 0.15
     energy_rejoin_frac: float = 0.45
+    # Cargo-aware BIOS 5 admission. Factors affect both loaded-task energy and the
+    # handling-time allowance; weight adds a bounded full-payload energy premium.
+    cargo_normal_factor: float = 1.0
+    cargo_fragile_factor: float = 1.1
+    cargo_heavy_factor: float = 1.4
+    cargo_hazardous_factor: float = 1.25
+    cargo_full_payload_energy_premium: float = 0.35
 
 
 @dataclass(frozen=True)

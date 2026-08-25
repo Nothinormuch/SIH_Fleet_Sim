@@ -2,10 +2,16 @@
 
 ## Status
 
-`BIOS_PIBT.5` is a software-only experimental extension of BIOS_PIBT.3. It does not
+`BIOS_PIBT.5` is the default software policy and an extension of BIOS_PIBT.3. It does not
 change Layer-0 stopping, PIBT movement resolution, cell/block leases, corridor waves,
-or completion gossip. It changes only which idle robots send task bids and when an
-idle robot returns to charging.
+or completion gossip. It changes which idle robots send task bids, how cargo urgency
+is ordered, and when an idle robot returns to charging.
+
+Tasks remain backward compatible. Missing fields mean `cargo_type="normal"`, zero
+weight, priority 1, and no hard completion deadline. Auction close time remains
+`bid_deadline`; delivery deadline is a separate receiver-local field transported as a
+relative TTL. The existing peer claim table remains authoritative for leases, while
+`Task.lease_owner` and `Task.lease_until` mirror it for inspection.
 
 ## Admission rule
 
@@ -13,13 +19,25 @@ For each robot/task pair the robot deterministically estimates energy for:
 
 1. its current cell to pickup;
 2. pickup to drop with a loaded-motion multiplier;
-3. fixed pickup/drop service time;
+3. cargo-adjusted pickup/drop handling time;
 4. drop to the nearest reachable charger;
 5. a declared uncertainty margin.
 
 The robot bids only when projected post-task energy is at least the declared emergency
 reserve. A fixed `battery > 80%` threshold is deliberately not used: the same task has
 different energy cost for robots at different locations.
+
+Every AMR is the same 100 kg-capacity model. Cargo uses configurable factors: normal
+1.0, fragile 1.1, heavy 1.4, and hazardous 1.25. The weight factor is
+`1 + 0.35 * cargo_weight / 100 kg`. Cargo and weight multiply committed task-motion
+energy; the post-drop charger leg is unladen. Cargo type also multiplies the 12-second
+handling allowance, so it is not a display-only field.
+
+A BIOS 5 bid is rejected when the robot is not idle, already owns work, is charging,
+has no valid pickup/drop path, exceeds payload capacity, would cross the 15% reserve
+after task plus docking, or cannot complete the drop before a hard deadline. Declared
+priority orders tasks first, then earliest hard deadline, then bid cost and stable IDs.
+The WMS only repeats task announcements and never selects or assigns an auction winner.
 
 ## Candidate reduction and liveness
 
@@ -41,6 +59,9 @@ auction. Missing peer state widens participation rather than suppressing it.
 - candidate replacement: live peer state; no task-age expansion
 - energy retry backoff when no task is feasible: 5 seconds
 - post-charge auction re-entry: 45%
+- identical-model payload capacity: 100 kg
+- full-payload energy premium: 35%
+- task order: priority, hard deadline, bid cost, stable IDs
 
 ## Refined paired result
 
@@ -61,8 +82,9 @@ reduced bids from 279,686 to 164,000 (41.36%) and total messages from 592,561 to
 reported two-decimal resolution. A rejected four-task-bundle experiment did reduce
 traffic further but stalled seed 2 at 3/16 tasks; it is not part of the implementation.
 
-These are eight-seed results, not the final acceptance matrix. They support continued
-evaluation but do not justify a universal speedup claim.
+These are energy-stress results, not the stop-and-wait acceptance comparison. They
+measure the benefit of sparse energy-feasible bidding without claiming validation
+accuracy or a universal speedup.
 
 ## Final smoke gates
 
@@ -84,10 +106,25 @@ python run.py --scenario energy_acceptance --robots 8 --seeds 8 \
   --policy BIOS_PIBT.5 --allocation-policy auction --json /tmp/bios5-energy.json
 ```
 
-## Required release evidence
+## Default-policy release evidence
 
-Before BIOS 5 becomes the default, run at least 30 paired seeds across multiple fleet
-sizes and packet-loss levels. The release comparison must report completion, makespan,
-bid and total message counts, energy suppressions, charging time, reassignments, final
-SOC distribution, and contacts. A policy fails the gate if it lowers messages by
-leaving tasks unfinished.
+The strict stop-and-wait gate ran 30 paired seeds at each of 4, 6 and 8 robots. BIOS 5
+completed 90/90 candidate runs and all 1,620 tasks; stop-and-wait completed 0/90 before
+the fixed 1,200-second cutoff. Minimum conservative reduction bounds were 63.64%,
+51.17% and 34.16%. No robot/robot, robot/human or robot/rack contacts were observed
+across 88.6512 candidate robot-hours.
+
+During release testing, an asymmetric auction view exposed a duplicate worker that
+continued after a peer had completed the same logical task. Completion convergence now
+cancels the duplicate, forces it to vacate its current traffic lane before bidding
+again, and has a dedicated regression test. The formerly failing 8-robot seed 10 then
+completed 24/24 tasks in 727.16 seconds.
+
+A separate 20% packet-loss seed exposed an unsafe liveness fallback: awarding a task
+before an empty cross-corridor approach could oppose an active loaded wave. BIOS 5 now
+elects one idle bidder to reposition only after two lease windows of quiescence, then
+re-auctions from the pickup side. The formerly failing seed completes 12/12 tasks in
+391.34 seconds with zero observed contacts.
+
+These results justify BIOS 5 as the software-demo default. They remain simulation
+evidence, not physical safety certification or a universal performance guarantee.

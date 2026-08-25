@@ -214,7 +214,9 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                 seq += 1
                 announcement = msg.task_new(
                     WMS_ID, seq, t, tk.tid, tk.pick, tk.drop, epoch=0,
-                    bid_until=t + cfg.traffic.auction_bid_window_s)
+                    bid_until=t + cfg.traffic.auction_bid_window_s,
+                    cargo_type=tk.cargo_type, cargo_weight=tk.cargo_weight,
+                    priority=tk.priority, deadline=tk.deadline)
                 net.send(t, WMS_ID, announcement)
                 if trace is not None:
                     auction_events.append(_auction_event(announcement))
@@ -419,7 +421,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Headless AMR fleet simulation (SIH26123).")
     ap.add_argument("--scenario", default="crossing_chokepoint",
                     choices=sorted(SCENARIOS))
-    ap.add_argument("--policy", default="all",
+    ap.add_argument("--policy", default=POLICY_BIOS_PIBT_V5,
                     choices=sorted(POLICIES) + ["all"],
                     help="route/traffic policy")
     ap.add_argument("--allocation-policy", choices=sorted(ALLOCATION_POLICIES),
