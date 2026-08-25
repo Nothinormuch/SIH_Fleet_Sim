@@ -186,6 +186,62 @@ permanent priority lease.
 
 ## BIOS_4 — what a learned coordination policy actually bought
 
+> **CORRECTION, 2026-08-25. The table below is superseded — do not quote it.** It was
+> measured against a simulator that no longer exists. Two things happened after it was
+> written.
+>
+> **1. The merge into `main` silently disabled BIOS_4.** Every self-contained file
+> survived (`src/bios4.py`, `src/evolve.py`, `models/bios4.json`, the tests, the dashboard
+> panel); every call site did not — the import in `amr.py`, `_bios4_traffic()`, the
+> `self.policy_model` assignment, the `_traffic_loop` dispatch, all six server endpoints
+> and the JS controller. `POLICY_BIOS4` stayed in `POLICIES`, so the policy remained
+> selectable and produced plausible numbers while running whatever path a
+> `DECENTRAL_POLICIES` member falls through to, and while discarding every uploaded model.
+> All 25 BIOS_4 tests still passed, because each of them is also true when the model is
+> ignored. `progress_cells` — the dense reward `evolve.py` optimises — lost its
+> accumulator in the same merge and read 0 for every policy.
+>
+> **2. With inference restored, the old weights had expired.** Re-measured on the same
+> held-out seeds 8–11 at 420 s, 4 robots — the config the original result used:
+>
+> | policy | tasks | prog | r-r | r-h | rack | min sep |
+> |---|---|---|---|---|---|---|
+> | `stop_and_wait` | 0/48 | 59 | 0 | 0 | 0 | 0.900 |
+> | `central` | 0/48 | 56 | 0 | 0 | 0 | 0.860 |
+> | `hierarchical` | 0/48 | 33 | 0 | 0 | 0 | 0.850 |
+> | `BIOS_1.0.0` | **7/48** | 97 | 0 | 0 | 0 | 0.736 |
+> | `BIOS_4` (2026-08-24 weights) | **0/48** | 52 | 0 | 0 | 0 | 0.855 |
+> | `BIOS_4` (retrained 2026-08-25) | **6/48** | 90 | 0 | 0 | 0 | **0.869** |
+>
+> **`BIOS_1.0.0` scores 7/48 both before and after the merge**, so the simulator did not
+> regress — the baseline is the control that proves it. The learned policy alone fell to
+> zero, because it is the only one whose behaviour was *fitted* to the old Layer-1
+> machinery. **A learned policy is a function of the dynamics it was evolved against**,
+> and the model file records its features and its seeds but nothing about the code
+> version, so a simulator change expires it silently with every format check passing.
+> Retraining against the current code recovers it: **0/48 → 6/48**, at the best
+> worst-separation of any policy measured.
+>
+> It still does not beat `BIOS_1.0.0` (6 vs 7). One training run, and the honest reading
+> is "matches the hand-written baseline at better separation", not "beats it".
+>
+> **A methodological trap worth recording**, because it nearly produced the wrong
+> conclusion here: the first re-measurement was run at **12 robots**, where
+> `stop_and_wait`, `central`, `hierarchical` and both BIOS_4 models all score 0 and
+> `BIOS_1.0.0` scores 2/144. At that fleet size the scenario is saturated and the
+> benchmark **cannot discriminate between any two policies** — every difference is
+> within the noise of near-total gridlock. A config where the baselines all read zero is
+> not a hard test, it is a broken instrument. Check that your benchmark separates known-
+> different policies before believing what it says about a new one.
+>
+> Worth stating precisely, because it is the design working: **safety did not degrade at
+> all.** Zero robot-robot, zero robot-human, zero rack contacts, and the best
+> worst-separation of any policy measured. The guarantees live in ordinary Python below
+> the model, so a stale BIOS_4 is *slow*, not dangerous — which is exactly the claim the
+> architecture was built to be able to make.
+>
+> The reasoning in this section still holds. The numbers do not.
+
 `BIOS_4` picks one of five verbs at the 10 Hz traffic layer — proceed, hold, yield to a
 passing bay, respect the block token, replan — from a 549-parameter network trained by an
 evolution strategy. It does not drive the wheels. Trained on seeds 0–2, **reported here on

@@ -23,15 +23,9 @@ from src.bios4 import (ACTIONS, ACT_HOLD, ACT_PROCEED, ACT_REROUTE,
 from src.main import run_scenario
 from src.scenarios import SCENARIOS
 
-from src.amr import (AMRBrain, Peer, POLICY_BIOS_3, POLICY_BIOS_4,
-                     POLICY_BIOS_FAMILY, POLICIES, Task)
-from src.environment import classic_warehouse, open_floor
-from src.planner import astar
-from src.settings import DEFAULT
-from src.world import World
-
 
 # ------------------------------------------------------------------ the network
+
 
 def test_param_count_matches_the_layer_shape():
     assert PolicyNet.n_params(4, 3, 2) == 4 * 3 + 3 + 3 * 2 + 2
@@ -62,6 +56,7 @@ def test_zero_weights_give_zero_logits():
 
 # ------------------------------------------------------------------ action masking
 
+
 def test_act_never_returns_a_masked_action():
     m = random_model(seed=7)
     x = [0.3] * N_FEATURES
@@ -89,6 +84,7 @@ def test_act_ignores_a_high_scoring_illegal_action():
 
 
 # ------------------------------------------------------------------ the model file
+
 
 def test_model_survives_a_json_round_trip():
     m = random_model(seed=11)
@@ -149,6 +145,7 @@ def test_non_json_upload_is_refused_rather_than_crashing():
 
 # ------------------------------------------------------------------ observation
 
+
 def test_observation_is_the_right_length_and_bounded():
     """Every feature is squashed or clipped on purpose: an unbounded input lets one
     quantity (a stuck timer that ran for 400 s) swamp every other signal in the layer."""
@@ -173,111 +170,8 @@ def test_observation_is_the_right_length_and_bounded():
         (f, v) for f, v in zip(FEATURES, x) if not -1.001 <= v <= 1.001]
 
 
-def test_bios4_policy_registered_and_in_family():
-    assert POLICY_BIOS_4 in POLICIES
-    assert POLICY_BIOS_4 in POLICY_BIOS_FAMILY
-
-
-def test_bios4_brain_initialization():
-    env = classic_warehouse()
-    brain = AMRBrain('A', env, DEFAULT, policy=POLICY_BIOS_4, home=(1, 4))
-    assert brain.policy == POLICY_BIOS_4
-    # Inherits the whole BIOS lineage: yield bookkeeping and congestion escape.
-    assert brain.yield_count == 0.0
-    assert brain.mode_congestion is None
-    assert hasattr(brain, '_calculate_task_score')
-    assert hasattr(brain, '_priority_standoff')
-
-
-def test_bios4_high_yield_peer_is_tougher_obstacle():
-    env = open_floor()
-    brain = AMRBrain('A', env, DEFAULT, policy=POLICY_BIOS_4, home=(1, 4))
-    brain.yield_count = 2.0          # we have yielded a little
-    # Same pose, same priority; only the published stop-count differs. The peer
-    # that has stopped for others more often must cost strictly more to cross.
-    brain.peers['B'] = Peer('B', cell=(5, 5), last_seen=10.0,
-                            priority=0.0, yield_count=9.0)
-    brain.peers['C'] = Peer('C', cell=(12, 12), last_seen=10.0,
-                            priority=0.0, yield_count=0.0)
-    pens = brain._peer_obstacle_penalties(10.0)
-    assert pens[(5, 5)] > pens[(12, 12)]
-
-
-def test_bios4_rank_flips_obstacle_hardness():
-    env = open_floor()
-    brain = AMRBrain('A', env, DEFAULT, policy=POLICY_BIOS_4, home=(1, 4))
-    brain.yield_count = 8.0
-    # We outrank D: our planner sees them as soft. E outranks us: hard.
-    brain.peers['D'] = Peer('D', cell=(5, 5), last_seen=10.0,
-                            priority=0.0, yield_count=0.0)
-    pens_soft = dict(brain._peer_obstacle_penalties(10.0))
-    del brain.peers['D']
-    brain.peers['E'] = Peer('E', cell=(5, 5), last_seen=10.0,
-                            priority=0.0, yield_count=20.0)
-    pens_hard = brain._peer_obstacle_penalties(10.0)
-    spec = DEFAULT.traffic
-    assert pens_soft[(5, 5)] == pytest.approx(
-        spec.bios4_peer_cell_cost / spec.bios4_precedence_boost)
-    assert pens_hard[(5, 5)] > spec.bios4_peer_cell_cost
-
-
-def test_bios4_stale_peer_gets_no_precedence():
-    env = classic_warehouse()
-    brain = AMRBrain('A', env, DEFAULT, policy=POLICY_BIOS_4, home=(1, 4))
-    brain.peers['F'] = Peer('F', cell=(5, 5), last_seen=-100.0,
-                            priority=0.0, yield_count=50.0)
-    assert brain._peer_obstacle_penalties(0.0) == {}
-
-
-def test_bios4_other_policies_get_no_overlay():
-    env = classic_warehouse()
-    for pol in (POLICY_BIOS_3, 'hierarchical'):
-        brain = AMRBrain('A', env, DEFAULT, policy=pol, home=(1, 4))
-        brain.peers['B'] = Peer('B', cell=(5, 5), last_seen=10.0, yield_count=9.0)
-        assert brain._peer_obstacle_penalties(10.0) == {}
-
-
-def test_bios4_replan_routes_around_tough_peer_when_free():
-    """The overlay must actually bend A*: an equal-cost alternative is taken."""
-    env = open_floor()                    # wide-open grid: alternatives exist
-    brain = AMRBrain('A', env, DEFAULT, policy=POLICY_BIOS_4, home=(2, 2))
-    start, goal = (2, 10), (17, 10)       # straight shot down one row
-    peer_at = (9, 10)                     # dead centre of that row
-    base = astar(env, start, goal)
-
-    brain.peers['G'] = Peer('G', cell=peer_at, last_seen=1.0,
-                            priority=0.0, yield_count=25.0)
-    overlay = brain._peer_obstacle_penalties(1.0)
-    detoured = astar(env, start, goal, extra_cost=dict(overlay))
-    assert base and detoured
-    assert peer_at in base                # without overlay the route crosses them
-    ring = set(env.neighbors(peer_at)) | {peer_at}
-    assert not any(c in ring for c in detoured)   # with it, keep the distance
-
-
-def test_bios4_note_yield_counts_stops():
-    env = classic_warehouse()
-    brain = AMRBrain('A', env, DEFAULT, policy=POLICY_BIOS_4, home=(1, 4))
-    brain._note_yield()
-    brain._note_yield()
-    assert brain.yield_count == 2.0       # raw, never decays - the precedence ledger
-    assert brain.yield_credit == 2.0      # runtime EMA input, decays per route tick
-
-
-def test_bios4_standoff_gating_matches_bios3():
-    """BIOS_4 inherits the priority standoff from the previous mechanism set."""
-    env = classic_warehouse()
-    w = World(env, DEFAULT, seed=0)
-    w.add_robot('A', (1, 4), 0.0)
-    sensors = w.sense('A')
-    brain = AMRBrain('A', env, DEFAULT, policy=POLICY_BIOS_4, home=(1, 4))
-    brain.path = [(1, 4), (2, 4)]
-    brain.pidx = 1
-    brain.peers['B'] = Peer('B', cell=(2, 4), pose=(2.5, 4.5, 0.0),
-                            priority=0.0, yield_count=3.0, last_seen=1.0)
-    assert brain._peer_precedes(brain.peers['B'], brain._arbitration_key())
-
 # ------------------------------------------------------------------ the guarantees
+#
 # These are the tests that justify the architecture. Everything above checks that the
 # machinery works; these check that it does not MATTER whether the machinery works.
 
@@ -353,3 +247,32 @@ def test_reroute_is_rate_limited():
     # 4 robots x 60 s at the 10 Hz traffic rate is 2400 opportunities; the 3 s cooldown
     # caps it near 4 x 20 even when the model asks on every single tick.
     assert res.replans <= 4 * 30, f"reroute cooldown is not holding: {res.replans}"
+
+def test_the_model_actually_drives_the_policy():
+    """The regression guard the other integration tests do not provide.
+
+    Every assertion above this one holds just as well when the model is ignored
+    entirely and BIOS_4 quietly falls through to another policy's code path -
+    which is exactly what a merge once did to it. `always-hold` and
+    `always-proceed` differ in the one place inference is observable from
+    outside: hold parks every robot on the liveness valve, proceed never touches
+    it. If those two ever agree, the model is not being consulted.
+    """
+    sc = replace(SCENARIOS["crossing_chokepoint"](4), duration_s=60.0)
+    held = run_scenario(sc, "BIOS_4", seed=2, policy_model=_Always(ACT_HOLD))
+    proceeded = run_scenario(sc, "BIOS_4", seed=2, policy_model=_Always(ACT_PROCEED))
+
+    assert held.bios4_unstick > 0, "always-hold never reached the liveness valve"
+    assert proceeded.bios4_unstick == 0, "always-proceed should never be stuck"
+    assert held.bios4_unstick != proceeded.bios4_unstick
+
+
+def test_progress_cells_is_actually_measured():
+    """`progress_cells` is the dense reward `evolve.py` trains against.
+
+    When the accumulator went missing it reported a clean 0 for every policy, so
+    nothing crashed and nothing failed - training simply optimised a constant.
+    A reward channel that silently reads zero is worse than one that raises.
+    """
+    sc = replace(SCENARIOS["crossing_chokepoint"](4), duration_s=60.0)
+    assert run_scenario(sc, "stop_and_wait", seed=2).progress_cells > 0

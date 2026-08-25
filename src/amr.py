@@ -44,6 +44,8 @@ import time
 from dataclasses import dataclass, field
 
 from . import messages as msg
+from .bios4 import (ACT_CLAIM, ACT_HOLD, ACT_PROCEED, ACT_REROUTE, ACT_YIELD,
+                    legal_actions, observe)
 from .environment import Warehouse, corridors
 from .geometry import (Cell, angle_diff, bearing, cell_center, clamp, dist,
                        manhattan, segment_point_distance, to_cell)
@@ -130,6 +132,11 @@ class AMRBrain:
         self.cfg = cfg
         self.policy = policy
         self.allocation_policy = allocation_policy
+        # The learned model, injected. None is a valid, defined state: BIOS_4
+        # degrades to always-hold and the liveness valve still moves the fleet.
+        self.policy_model = policy_model
+        self._bios4_action = ACT_HOLD
+        self._bios4_last_reroute = -1e9
         self.home = home
         # Single-file blocks, shared and cached across the fleet. Acquiring a whole
         # block before entering is what stops two robots meeting halfway down a
@@ -225,6 +232,12 @@ class AMRBrain:
         self._retreat_since = 0.0
         self._last_progress_t = 0.0
         self._last_cell: Cell | None = None
+        # Closest this robot has ever got to its CURRENT goal, and how many cells
+        # of net approach that represents. Monotone on purpose: crediting every
+        # step that happens to point goalwards would pay a robot to oscillate, and
+        # any fitness function built on it would be optimised by twitching in place.
+        self._best_goal_d: int | None = None
+        self._progress_goal: Cell | None = None
         # BIOS_1.0.0: when an unstick step is armed we allow Layer 0 to creep out of
         # a peer-jam instead of freezing; window closes once the step has landed.
         self._creep_until = -1e9
@@ -289,6 +302,21 @@ class AMRBrain:
             self._last_progress_t = t
             self._priority_grace_since = None
             self._priority_grace_until = -1e9
+
+        # Net approach to the current goal. This is the DENSE signal the BIOS_4
+        # fitness is built on - over a short episode the task count is nearly all
+        # zeros, so evolution has nothing to climb without it.
+        if self.goal is None or self.goal != self._progress_goal:
+            self._progress_goal = self.goal
+            self._best_goal_d = (None if self.goal is None
+                                 else manhattan(cell, self.goal))
+        else:
+            d = manhattan(cell, self.goal)
+            if self._best_goal_d is None:
+                self._best_goal_d = d
+            elif d < self._best_goal_d:
+                self.stats["progress_cells"] += self._best_goal_d - d
+                self._best_goal_d = d
 
         self._observe_dynamic_obstacles(t, sensors)
 
@@ -355,7 +383,7 @@ class AMRBrain:
         # allowed to argue with it.
         if sensors.clearance_omni_m <= spec.omni_stop_m:
             self.stats["safety_stops"] += 1
-            creeping = (self.policy in (POLICY_BIOS, *PIBT_POLICIES)
+            creeping = (self.policy in (POLICY_BIOS, POLICY_BIOS4, *PIBT_POLICIES)
                         and sensors.t < self._creep_until
                         and act.v > 0.0)
             if (creeping and self.policy == POLICY_BIOS_PIBT_V3
@@ -447,6 +475,10 @@ class AMRBrain:
             # them, so waiting for them to clear first can never terminate. Layer 0
             # still protects the reverse, which is the guarantee that actually matters.
             self._track_block(t, False, None)
+            return
+
+        if self.policy == POLICY_BIOS4:
+            self._bios4_traffic(t, sensors, outbox)
             return
 
         if self.policy == POLICY_STOP_WAIT:
@@ -1610,6 +1642,118 @@ class AMRBrain:
             self._claim_cid = None
             self._claim_priority_key = None
             self._last_claim_t = -1e9
+
+    # ---------------------------------------------------------------- BIOS_4
+
+    _BIOS4_STAT = ("bios4_proceed", "bios4_hold", "bios4_yield",
+                   "bios4_claim", "bios4_reroute")
+
+    def _bios4_traffic(self, t: float, sensors: Sensors,
+                       outbox: list[msg.Message]) -> None:
+        """Layer 1 for the learned policy: the model picks a verb, code keeps the guarantees.
+
+        The split IS the design. Everything that has to be true regardless of what a
+        network happened to learn stays in ordinary Python - the liveness valve below,
+        the legality mask, and Layer 0 underneath all of it. The model only ever chooses
+        between verbs that were already safe to execute, so a badly trained BIOS_4 is
+        slow. It is not unsafe, and it does not deadlock.
+
+        That is also the only version of this a judge should accept. "We trained a model
+        and it seems not to deadlock" is not a liveness argument; "the model cannot
+        prevent the unstick timer from firing" is.
+        """
+        nxt = self._next_cell()
+
+        # Liveness backstop, ABOVE the model and not negotiable. Same valve and same
+        # timer as BIOS_1.0.0: held still too long, edge into any free adjacent cell.
+        # A network that learned to always hold still cannot suppress this.
+        if (nxt is not None and self.blocked_since is not None
+                and t - self.blocked_since > self.cfg.traffic.bios_unstick_s):
+            self.stats["bios4_unstick"] += 1
+            self._bios_unstick(t, sensors, nxt, outbox)
+            return
+
+        if nxt is None:
+            self._track_block(t, False, None)
+            return
+
+        action = ACT_HOLD
+        if self.policy_model is not None:
+            action = self.policy_model.act(observe(self, t, sensors, nxt),
+                                           legal_actions(self, t, sensors, nxt))
+        self._bios4_action = action
+        self.stats[self._BIOS4_STAT[action]] += 1
+
+        # Who we would be waiting for. Recorded on EVERY hold, because `blocked_on` is
+        # what the wait-for graph is assembled from: a robot that holds without naming a
+        # blocker is invisible to cycle detection, and a deadlock it is part of cannot be
+        # found by anybody - including itself.
+        contender = self._bios4_contender(t, sensors, nxt)
+
+        if action == ACT_PROCEED:
+            self._hold = False
+            self._track_block(t, False, None)
+            return
+
+        if action == ACT_CLAIM:
+            # Conservative block entry: wait at the mouth until the token is ours. The
+            # claim itself goes out from _bios_claim on the main tick; this verb is the
+            # decision to RESPECT it rather than drive in regardless.
+            cid = self.blocks.id_of(nxt)
+            lock = self._bios_lock(cid, t) if cid is not None else None
+            if lock is None or lock[0] == self.rid:
+                self._hold = False
+                self._track_block(t, False, None)
+            else:
+                self._hold = True
+                self._track_block(t, True, lock[0])
+            return
+
+        if action == ACT_YIELD:
+            bay = self._passing_bay(sensors.cell, nxt)
+            if bay is not None:
+                self.retreat_target = bay
+                self.state = ST_RETREAT
+                self._retreat_since = t
+                self.path = [sensors.cell, bay]
+                self.path_times = []
+                self.pidx = 1
+                self.stats["retreats"] += 1
+                self.blocked_since = None
+                self._hold = False
+                return
+            # Nowhere to pull aside. Fall through to waiting rather than pretending the
+            # manoeuvre happened - a yield that does not move is a hold, and it has to
+            # be recorded as one or the wait-for graph loses an edge.
+            self._hold = True
+            self._track_block(t, True, contender)
+            return
+
+        if action == ACT_REROUTE:
+            self._bios4_last_reroute = t
+            self.penalty[nxt] = self.penalty.get(nxt, 0.0) +                 self.cfg.traffic.replan_penalty
+            self._replan(t, sensors.cell)
+            self._hold = False
+            self._track_block(t, False, None)
+            return
+
+        # ACT_HOLD, and the landing place for anything the mask removed.
+        self._hold = True
+        if self.blocked_since is None and contender is not None:
+            self.stats["yields"] += 1
+            outbox.append(msg.yield_to(self.rid, self._next_seq(), t, nxt, contender))
+        self._track_block(t, True, contender)
+
+    def _bios4_contender(self, t: float, sensors: Sensors, nxt: Cell) -> str | None:
+        """Who is in our way: by occupancy, by published intent, or failing both, by lidar.
+
+        The lidar fallback matters. A peer whose heartbeat we have lost is still
+        physically there, and a hold blamed on nobody is a hold no cycle detector can see.
+        """
+        for p in self.peers.values():
+            if p.cell == nxt or self._peer_intends(p, nxt, t):
+                return p.rid
+        return self._peer_ahead(sensors)
 
     def _find_cycle(self) -> list[str] | None:
         """Walk the wait-for chain from self; report the cycle if it returns to self."""

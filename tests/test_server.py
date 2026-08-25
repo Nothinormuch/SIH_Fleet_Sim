@@ -52,6 +52,11 @@ def _post(url: str, payload, raw: bytes | None = None):
         return r.status, json.loads(r.read())
 
 
+def _run(base_url: str, **kw):
+    """`/api/run` takes a validated JSON body, not a query string."""
+    return _post(f"{base_url}/api/run", kw)
+
+
 def _expect_error(fn, code: int):
     """urllib raises on 4xx/5xx, and the BODY is the interesting part - these endpoints
     are supposed to explain themselves, so the tests assert on what they say."""
@@ -74,14 +79,13 @@ def test_bios4_without_a_model_is_refused_with_a_useful_message(base_url):
     why the endpoint refuses it. An untrained control rendered as a trained policy is
     worse than an error, because nothing on screen says which one you are looking at."""
     body = _expect_error(
-        lambda: _get(f"{base_url}/api/run?policy=BIOS_4&scenario=crossing_chokepoint"),
-        400)
+        lambda: _run(base_url, policy="BIOS_4", scenario="crossing_chokepoint"), 400)
     assert "train one or upload one" in body["error"]
 
 
 def test_unknown_model_id_says_models_are_in_memory(base_url):
     body = _expect_error(
-        lambda: _get(f"{base_url}/api/run?policy=BIOS_4&model=deadbeef1234"), 404)
+        lambda: _run(base_url, policy="BIOS_4", model="deadbeef1234"), 404)
     assert "restarts" in body["hint"]
 
 
@@ -96,8 +100,7 @@ def test_upload_then_run(base_url):
     assert body["params"] == len(model.w)
     mid = body["model"]
 
-    status, run, _ = _get(f"{base_url}/api/run?policy=BIOS_4&robots=2&duration=20"
-                          f"&model={mid}")
+    status, run = _run(base_url, policy="BIOS_4", robots=2, duration=20, model=mid)
     assert status == 200
     assert run["meta"]["policy"] == "BIOS_4"
     assert run["meta"]["model"]["note"] == "test", "provenance did not survive the upload"
