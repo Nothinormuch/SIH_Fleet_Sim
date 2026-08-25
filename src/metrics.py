@@ -127,6 +127,9 @@ class PolicyResult:
     dynamic_obstacles_detected: int = 0
     dynamic_reroutes: int = 0
     task_reassignments: int = 0
+    auction_bids_sent: int = 0
+    energy_bids_suppressed: int = 0
+    energy_no_eligible_rounds: int = 0
     safety_stop_ticks: int = 0
     seconds_degraded: float = 0.0
 

@@ -22,8 +22,8 @@ only, so a robot node drops onto a bare Raspberry Pi image with no build step.
 
 ## Decentralized priority algorithm
 
-The default policy is `BIOS_PIBT.3` with peer `auction` allocation. It combines V2's
-traffic layer with decentralized batch task allocation and congestion admission. Every
+The default policy is `BIOS_PIBT.5` with peer `auction` allocation. It combines V3's
+traffic layer with battery-aware priority/deadline cargo allocation. Every
 AMR broadcasts a
 frozen lexicographic priority plus its next-cell intent. On grid-like rack maps it
 plans on a strongly connected one-way circulation graph and takes an expiring,
@@ -155,13 +155,20 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `BIOS_1.0.0` | Decentralized block leases plus an aggressive local unstick manoeuvre. | Existing experimental liveness policy retained for comparison. |
 | `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
 | `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
-| `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Default fully decentralized route + allocation policy. |
+| `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Retained decentralized comparison policy. |
+| `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, payload/cargo factors, priority/deadline ordering, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Default fully decentralized route + allocation policy. |
 
 Task ownership is selected independently of the route policy. `auction` lets peers
 broadcast bids and converge on deterministic leased awards; this is the fully
 decentralized V3 mode. `hungarian` lets the optional fleet manager minimise the
 robot-to-task cost matrix and exists only as a comparison baseline. Keeping allocation
 and traffic separate makes their performance effects measurable rather than conflated.
+
+The BIOS 5 energy and cargo model is specified in
+[`docs/BIOS_PIBT_5_ENERGY_AUCTION.md`](docs/BIOS_PIBT_5_ENERGY_AUCTION.md). Its refined
+eight-seed energy-stress result improves completion from 7/8 to 8/8 while reducing
+aggregate auction bids by 47.20% and total messages by 24.64%. Its separate SIH release
+gate passes 90/90 candidate runs across 4-, 6-, and 8-robot fleets.
 
 `--seeds N` pools runs so the safety statistics have enough exposure to mean something.
 
@@ -199,11 +206,11 @@ memorisation score. Result and caveats: `docs/FINDINGS.md`.
 ## Status — read this before quoting any number
 
 The strict SIH acceptance benchmark now passes all 90 paired seeds across 4-, 6- and
-8-robot fleets. `BIOS_PIBT.3` completes 30/30 runs at every fleet size; stop-and-wait
+8-robot fleets. `BIOS_PIBT.5` completes 30/30 runs at every fleet size; stop-and-wait
 completes 0/30 before the fixed 1200 s cutoff. The minimum conservative per-seed
-completion-time reduction bounds are **66.06%**, **51.03%** and **32.66%** respectively,
+completion-time reduction bounds are **63.64%**, **51.17%** and **34.16%** respectively,
 all above the required 20%. All 1,620 candidate tasks complete with zero observed
-robot/robot, robot/human or robot/rack contacts across 87.3498 robot-hours.
+robot/robot, robot/human or robot/rack contacts across 88.6512 robot-hours.
 
 These are right-censored lower bounds, not exact speedups: the baseline makespans are
 unknown because the baseline never finishes. A candidate result at time `C` and an
@@ -215,7 +222,7 @@ See [`docs/SIH_ACCEPTANCE_BENCHMARK.md`](docs/SIH_ACCEPTANCE_BENCHMARK.md) for t
 method, limitations and commands. Raw evidence is checked in as
 [`artifacts/benchmarks/sih-acceptance.json`](artifacts/benchmarks/sih-acceptance.json)
 and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv).
-All 93 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
+All 129 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
 checks also pass.
 
 ## The dashboard

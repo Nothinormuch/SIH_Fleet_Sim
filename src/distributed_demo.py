@@ -23,7 +23,7 @@ import time
 from multiprocessing.connection import Connection
 
 from . import messages as msg
-from .amr import AMRBrain, POLICY_BIOS_PIBT_V3, Task
+from .amr import AMRBrain, POLICY_BIOS_PIBT_V5, Task
 from .edge_runtime import EdgeRuntime
 from .scenarios import SCENARIOS
 from .settings import DEFAULT
@@ -108,7 +108,7 @@ def _max_rss_mb() -> float:
 def run_distributed_demo(scenario_name: str = "open_floor_control",
                          robots: int = 3, seed: int = 0,
                          duration_s: float = 5.0,
-                         policy: str = POLICY_BIOS_PIBT_V3,
+                         policy: str = POLICY_BIOS_PIBT_V5,
                          allocation_policy: str = ALLOCATION_PREASSIGNED,
                          group: str = DEFAULT_GROUP,
                          port: int = DEFAULT_PORT,
@@ -171,6 +171,9 @@ def run_distributed_demo(scenario_name: str = "open_floor_control",
                 task_source.send(msg.task_new(
                     "WMS", sequence, 0.0, task.tid, task.pick, task.drop,
                     epoch=0, bid_until=DEFAULT.traffic.auction_bid_window_s,
+                    cargo_type=task.cargo_type,
+                    cargo_weight=task.cargo_weight,
+                    priority=task.priority, deadline=task.deadline,
                 ))
 
         dt = 1.0 / DEFAULT.rates.world_hz
@@ -268,7 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--robots", type=int, default=3)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--duration", type=float, default=5.0)
-    parser.add_argument("--policy", default=POLICY_BIOS_PIBT_V3)
+    parser.add_argument("--policy", default=POLICY_BIOS_PIBT_V5)
     parser.add_argument("--allocation-policy",
                         choices=(ALLOCATION_PREASSIGNED, ALLOCATION_AUCTION),
                         default=ALLOCATION_PREASSIGNED)

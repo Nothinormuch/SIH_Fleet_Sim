@@ -39,6 +39,9 @@ class RobotSpec:
     draw_move_w: float = 210.0
     draw_idle_w: float = 45.0
     charge_w: float = 900.0
+    # Every simulated AMR is the same model. Payload eligibility still varies per
+    # task, but never by inventing stronger/weaker robot classes.
+    max_payload_kg: float = 100.0
 
     def stop_field_m(self, v: float) -> float:
         """Distance needed to stop from speed `v`, plus reaction and margin.
@@ -183,6 +186,25 @@ class TrafficSpec:
     # eventually learned from a peer; the WMS is not required to coordinate retries.
     task_gossip_period_s: float = 1.0
     completion_gossip_period_s: float = 1.0
+    # BIOS 5 energy-feasible auction. Energy is a hard admission constraint; these
+    # values are declared here so experiments cannot quietly tune them per seed.
+    energy_reserve_frac: float = 0.15
+    energy_uncertainty_frac: float = 0.10
+    energy_loaded_multiplier: float = 1.35
+    energy_service_s: float = 12.0
+    energy_candidate_bids: int = 3
+    # Broadcasting every feasible task every auction window made allocation traffic
+    # dominate the network without improving the winner set.
+    energy_bid_bundle: int = 12
+    energy_charge_trigger_frac: float = 0.15
+    energy_rejoin_frac: float = 0.45
+    # Cargo-aware BIOS 5 admission. Factors affect both loaded-task energy and the
+    # handling-time allowance; weight adds a bounded full-payload energy premium.
+    cargo_normal_factor: float = 1.0
+    cargo_fragile_factor: float = 1.1
+    cargo_heavy_factor: float = 1.4
+    cargo_hazardous_factor: float = 1.25
+    cargo_full_payload_energy_premium: float = 0.35
 
 
 @dataclass(frozen=True)

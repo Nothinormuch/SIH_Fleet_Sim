@@ -30,7 +30,7 @@ from dataclasses import replace
 from . import messages as msg
 from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
                   POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS_PIBT,
-                  POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
+                  POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V5,
                   POLICY_DECENTRALIZED, POLICY_BIOS4,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
@@ -122,7 +122,11 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     brains: dict[str, AMRBrain] = {}
     for i, start in enumerate(sc.starts):
         rid = f"AMR{i + 1:02d}"
-        world.add_robot(rid, start, 0.0)
+        robot_state = world.add_robot(rid, start, 0.0)
+        if i < len(sc.initial_battery_fracs):
+            robot_state.battery_wh = (
+                max(0.0, min(1.0, sc.initial_battery_fracs[i]))
+                * cfg.robot.battery_full_wh)
         b = AMRBrain(rid, sc.env, cfg, policy=policy, home=start,
                      allocation_policy=allocation_policy, policy_model=policy_model)
         b.queue = ([] if uses_allocation else
@@ -210,7 +214,9 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                 seq += 1
                 announcement = msg.task_new(
                     WMS_ID, seq, t, tk.tid, tk.pick, tk.drop, epoch=0,
-                    bid_until=t + cfg.traffic.auction_bid_window_s)
+                    bid_until=t + cfg.traffic.auction_bid_window_s,
+                    cargo_type=tk.cargo_type, cargo_weight=tk.cargo_weight,
+                    priority=tk.priority, deadline=tk.deadline)
                 net.send(t, WMS_ID, announcement)
                 if trace is not None:
                     auction_events.append(_auction_event(announcement))
@@ -326,6 +332,9 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         dynamic_obstacles_detected=int(agg("dynamic_obstacles_detected")),
         dynamic_reroutes=int(agg("dynamic_reroutes")),
         task_reassignments=int(agg("task_reassignments")),
+        auction_bids_sent=int(agg("auction_bids_sent")),
+        energy_bids_suppressed=int(agg("energy_bids_suppressed")),
+        energy_no_eligible_rounds=int(agg("energy_no_eligible_rounds")),
         safety_stop_ticks=int(agg("safety_stops")),
         seconds_degraded=round(agg("seconds_degraded") / max(1, n), 1),
         msgs_sent=int(agg("msgs_sent")),
@@ -412,7 +421,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Headless AMR fleet simulation (SIH26123).")
     ap.add_argument("--scenario", default="crossing_chokepoint",
                     choices=sorted(SCENARIOS))
-    ap.add_argument("--policy", default="all",
+    ap.add_argument("--policy", default=POLICY_BIOS_PIBT_V5,
                     choices=sorted(POLICIES) + ["all"],
                     help="route/traffic policy")
     ap.add_argument("--allocation-policy", choices=sorted(ALLOCATION_POLICIES),
@@ -467,7 +476,8 @@ def main(argv: list[str] | None = None) -> int:
         print()
         for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS,
                      POLICY_DECENTRALIZED, POLICY_BIOS_PIBT,
-                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, POLICY_BIOS4):
+                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
+                     POLICY_BIOS_PIBT_V5, POLICY_BIOS4):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")

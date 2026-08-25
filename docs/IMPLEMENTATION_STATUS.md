@@ -25,7 +25,7 @@ warehouse environment. Those items must not be represented as completed by simul
 | Packet loss and partitions | Verified in simulation | 150/150 runs complete through 20% loss and partition/heal, zero observed contacts |
 | Robot process failure | Verified in simulation | 30/30 crash cases complete; 60 reassignment observations |
 | Dynamic human/obstacle response | Implemented and tested | Persistent local detection, protective stop and reroute scenarios |
-| SIH performance target | Passes | 90/90 candidate runs; minimum conservative bounds 66.06%, 51.03%, 32.66% |
+| SIH performance target | Passes | BIOS 5: 90/90 candidate runs; minimum conservative bounds 63.64%, 51.17%, 34.16% |
 | Deployment reproducibility | Implemented | `pyproject.toml`, pinned ranges, venv instructions, systemd unit and example environment |
 | Dashboard/API hardening | Implemented | POST-only bounded endpoint, strict schema, CSP/security headers and escaped output |
 | Raspberry Pi proof | Still external | Run the supplied process/timing procedure on the actual target Pi |

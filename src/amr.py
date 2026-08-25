@@ -63,12 +63,14 @@ POLICY_BIOS = "BIOS_1.0.0"
 POLICY_BIOS_PIBT = "BIOS_PIBT.1"
 POLICY_BIOS_PIBT_V2 = "BIOS_PIBT.2"
 POLICY_BIOS_PIBT_V3 = "BIOS_PIBT.3"
+POLICY_BIOS_PIBT_V5 = "BIOS_PIBT.5"
 POLICY_DECENTRALIZED = "decentralized"
 # The learned neuroevolution policy. 549-parameter PolicyNet; same Layer-1
 # arbitration slot as the BIOS family. See bios4.py for architecture.
 POLICY_BIOS4 = "BIOS_4"
 _BIOS_FAMILY = (POLICY_BIOS, POLICY_BIOS4)
-DIRECTED_POLICIES = (POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3)
+V3_AUCTION_POLICIES = (POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V5)
+DIRECTED_POLICIES = (POLICY_BIOS_PIBT_V2, *V3_AUCTION_POLICIES)
 PIBT_POLICIES = (POLICY_BIOS_PIBT, *DIRECTED_POLICIES)
 DECENTRAL_POLICIES = (POLICY_BIOS, POLICY_DECENTRALIZED, *PIBT_POLICIES, POLICY_BIOS4)
 CENTRAL_POLICIES = (POLICY_CENTRAL,)
@@ -96,6 +98,15 @@ class Task:
     announced_t: float = 0.0
     auction_epoch: int = 0
     bid_deadline: float = 0.0
+    cargo_type: str = "normal"
+    cargo_weight: float = 0.0
+    priority: int = 1
+    # Receiver-local absolute completion deadline. It is sent on the wire only as a
+    # remaining-time TTL because independent edge nodes have unrelated clock epochs.
+    deadline: float | None = None
+    # Local mirror for observability; `_task_claims` remains authoritative.
+    lease_owner: str | None = None
+    lease_until: float = 0.0
 
 
 @dataclass
@@ -113,6 +124,7 @@ class Peer:
     intent: list[Cell] = field(default_factory=list)
     windows: list[tuple[float, float]] = field(default_factory=list)
     priority_key: PriorityKey | None = None
+    battery_frac: float = 1.0
 
 
 class AMRBrain:
@@ -175,6 +187,22 @@ class AMRBrain:
         self._bid_opened: dict[str, float] = {}
         self._last_lease_broadcast = -1e9
         self._v3_round_started: float | None = None
+        self._energy_retry_after = -1e9
+        # A duplicate worker canceled by peer completion must first leave the lane it
+        # occupied. Becoming goal-less in a single-file block turns an otherwise
+        # correct convergence event into a permanent physical obstruction.
+        self._needs_duplicate_vacate = False
+        # BIOS 5 may need to move one idle bidder to the pickup side of an empty
+        # two-way chokepoint before the next auction.  This is deliberately not a
+        # task award: an AMR approaching against the task's loaded direction while
+        # already holding that task can deadlock with the current cargo wave.
+        self._auction_reposition_target: Cell | None = None
+        # Static energy requirements used to rank peers. The warehouse and task
+        # endpoints do not move, so recomputing the same A* legs every 0.6 s would
+        # turn a network optimization into a planner CPU regression.
+        self._energy_required_cache: dict[
+            tuple[Cell, str, Cell, Cell, str, float], tuple[float, float] | None
+        ] = {}
         # block -> (entry mouth, immutable task ids in this directional batch)
         self._v3_corridor_waves: dict[int, tuple[Cell, tuple[str, ...]]] = {}
         self._last_catalog_broadcast = -1e9
@@ -265,6 +293,8 @@ class AMRBrain:
             "progress_cells": 0,
             # Edge-integration resilience tracking
             "dynamic_obstacles_detected": 0, "dynamic_reroutes": 0, "task_reassignments": 0,
+            "auction_bids_sent": 0, "energy_bids_suppressed": 0,
+            "energy_no_eligible_rounds": 0,
         }
 
     # ================================================================== main tick
@@ -358,7 +388,7 @@ class AMRBrain:
             creeping = (self.policy in (POLICY_BIOS, *PIBT_POLICIES)
                         and sensors.t < self._creep_until
                         and act.v > 0.0)
-            if (creeping and self.policy == POLICY_BIOS_PIBT_V3
+            if (creeping and self.policy in V3_AUCTION_POLICIES
                     and not self._escape_motion_increases_clearance(sensors, act)):
                 # A verified escape cell is not enough: while turning off-centre the
                 # first centimetres of an otherwise valid move can still arc toward a
@@ -459,7 +489,7 @@ class AMRBrain:
             self._track_block(t, self._hold, blocker)
             return
 
-        if (self.policy == POLICY_BIOS_PIBT_V3
+        if (self.policy in V3_AUCTION_POLICIES
                 and self._repair_duplicate_cell(t, sensors)):
             return
 
@@ -517,7 +547,7 @@ class AMRBrain:
                 and self.circulation.enabled):
             loser_to = self._bios_v2_coordinate(t, sensors, nxt)
         elif (loser_to is None and not coordinated
-                and self.policy == POLICY_BIOS_PIBT_V3):
+                and self.policy in V3_AUCTION_POLICIES):
             loser_to = self._bios_v3_cell_coordinate(t, sensors, nxt)
             if loser_to is None:
                 loser_to = self._bios_pibt_coordinate(t, sensors, nxt)
@@ -579,7 +609,7 @@ class AMRBrain:
 
         if loser_to is not None:
             self._hold = True
-            if (self.policy == POLICY_BIOS_PIBT_V3
+            if (self.policy in V3_AUCTION_POLICIES
                     and not self.circulation.enabled):
                 # Stop a yielding follower at its own cell centre, not wherever the
                 # peer intent or block claim happened to reach it. Braking near the
@@ -613,7 +643,7 @@ class AMRBrain:
             if (waiting_for_block
                     and waited > self.cfg.traffic.yield_aside_s
                     and self._blocker_is_inside(nxt)
-                    and self.policy != POLICY_BIOS_PIBT_V3):
+                    and self.policy not in V3_AUCTION_POLICIES):
                 bay = self._passing_bay(sensors.cell, nxt, sensors.pose)
                 if bay is not None:
                     self.retreat_target = bay
@@ -644,7 +674,7 @@ class AMRBrain:
                 # repeatedly injects sharp retreat paths at the aisle mouth, even
                 # though no wait-for cycle exists.
                 return
-            if (self.policy == POLICY_BIOS_PIBT_V3 and waited > limit):
+            if (self.policy in V3_AUCTION_POLICIES and waited > limit):
                 # V3 never injects a physical reverse/retreat into live traffic. A
                 # stale peer or merge disagreement is handled by an expiring lease and
                 # a new legal A* route, preserving the directed-flow safety invariant.
@@ -856,7 +886,7 @@ class AMRBrain:
         horizon covers ``feeder -> mouth -> first block cell``; an actual occupant in
         the mouth then stops the follower while a full cell of braking room remains.
         """
-        if self.policy != POLICY_BIOS_PIBT_V3 or self.circulation.enabled:
+        if self.policy not in V3_AUCTION_POLICIES or self.circulation.enabled:
             return None
         future = self._future_path_cells(3)
         if len(future) < 2 or not any(
@@ -1363,7 +1393,7 @@ class AMRBrain:
                 self.state = ST_BLOCKED
         else:
             if (self.blocked_since is not None
-                    and self.policy == POLICY_BIOS_PIBT_V3):
+                    and self.policy in V3_AUCTION_POLICIES):
                 self._priority_grace_since = self.blocked_since
                 self._priority_grace_until = max(
                     self._priority_grace_until, t + 6.0)
@@ -1869,22 +1899,50 @@ class AMRBrain:
 
     def _task_loop(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
-        if self.task is None and sensors.battery_frac < 0.15 and self.env.docks:
+        charge_trigger = (self.cfg.traffic.energy_charge_trigger_frac
+                          if self.policy == POLICY_BIOS_PIBT_V5 else 0.15)
+        if self.task is None and sensors.battery_frac < charge_trigger and self.env.docks:
             self.goal = min(self.env.docks, key=lambda d: manhattan(sensors.cell, d))
             self.state = ST_CHARGING
         if self.state == ST_CHARGING:
-            if sensors.battery_frac > 0.9:
+            rejoin = (self.cfg.traffic.energy_rejoin_frac
+                      if self.policy == POLICY_BIOS_PIBT_V5 else 0.9)
+            if sensors.battery_frac > rejoin:
                 self.state = ST_IDLE
                 self.goal = None
             else:
                 return
 
         if self.task is None:
+            if self._needs_duplicate_vacate:
+                if self.goal is None:
+                    self._force_duplicate_vacate(t, sensors.cell)
+                elif self._arrived(sensors, self.goal):
+                    self.goal = None
+                    self.path = []
+                    self.path_times = []
+                    self.pidx = 0
+                    self._needs_duplicate_vacate = False
+                if self._needs_duplicate_vacate:
+                    return
+            if self._auction_reposition_target is not None:
+                target = self._auction_reposition_target
+                if self._arrived(sensors, target):
+                    self.goal = None
+                    self.path = []
+                    self.path_times = []
+                    self.pidx = 0
+                    self._auction_reposition_target = None
+                else:
+                    if self.goal != target:
+                        self.goal = target
+                        self._replan(t, sensors.cell)
+                    return
             # Parking/vacate motion is independent of task allocation. This must run
             # before the auction branch: otherwise an auction-enabled idle robot that
             # reaches its one-cell vacate target keeps that goal forever, never calls
             # `_vacate_if_in_the_way` again, and becomes a permanent wall in a bay.
-            if (not (self.policy == POLICY_BIOS_PIBT_V3
+            if (not (self.policy in V3_AUCTION_POLICIES
                      and self.circulation.enabled)
                     and self.goal is not None
                     and self._arrived(sensors, self.goal)):
@@ -1947,11 +2005,39 @@ class AMRBrain:
         index = max(0, int(digits or "1") - 1)
         return sorted(self.env.docks)[index % len(self.env.docks)]
 
+    def _force_duplicate_vacate(self, t: float, here: Cell) -> None:
+        """Move a canceled duplicate out of traffic before bidding again."""
+        taken = {peer.cell for peer in self.peers.values()} | {
+            cell for peer in self.peers.values() for cell in peer.intent
+        }
+        cid = self._controlled_block(here)
+        targets: list[Cell] = []
+        if cid is not None:
+            for end in self.blocks.ends.get(cid, ()):
+                targets.extend(
+                    neighbor for neighbor in self.env.neighbors(end)
+                    if self._controlled_block(neighbor) != cid
+                    and neighbor not in taken)
+        else:
+            targets = [
+                neighbor for neighbor in self.env.neighbors(here)
+                if self._controlled_block(neighbor) is None
+                and neighbor not in taken
+            ]
+        if not targets:
+            # Normal idle-vacate logic will retry when peer intents move.
+            self._needs_duplicate_vacate = False
+            return
+        target = min(set(targets), key=lambda cell: (manhattan(here, cell), cell))
+        self.goal = target
+        self.state = ST_IDLE
+        self._replan(t, here)
+
     def _arrived(self, sensors: Sensors, target: Cell) -> bool:
         """Task service occurs at the cell centre, not at its quantised boundary."""
         if sensors.cell != target:
             return False
-        if (self.policy != POLICY_BIOS_PIBT_V3
+        if (self.policy not in V3_AUCTION_POLICIES
                 and (self.policy not in DIRECTED_POLICIES
                      or not self.circulation.enabled)):
             return True
@@ -1976,7 +2062,7 @@ class AMRBrain:
             cell for p in self.peers.values() for cell in p.intent
         }
         options = [n for n in self.env.neighbors(here) if n not in taken]
-        if self.policy == POLICY_BIOS_PIBT_V3 and not self.circulation.enabled:
+        if self.policy in V3_AUCTION_POLICIES and not self.circulation.enabled:
             here_cid = self._controlled_block(here)
             if here_cid is None:
                 # Parking motion never consumes a bidirectional traffic block. Only
@@ -1993,7 +2079,7 @@ class AMRBrain:
                         manhattan(n, exit_cell), n))
         if options:
             self.goal = min(options, key=lambda c: manhattan(c, self.home))
-            if (self.policy == POLICY_BIOS_PIBT_V3
+            if (self.policy in V3_AUCTION_POLICIES
                     and not self.circulation.enabled
                     and self._controlled_block(here) is not None):
                 self.goal = options[0]
@@ -2009,7 +2095,7 @@ class AMRBrain:
         temporary duplicate winners, but the higher epoch and deterministic claim
         ordering converge when the partition heals.
         """
-        if self.policy == POLICY_BIOS_PIBT_V3:
+        if self.policy in V3_AUCTION_POLICIES:
             self._run_v3_batch_auction(t, sensors, outbox)
             return
 
@@ -2033,6 +2119,10 @@ class AMRBrain:
         opened = self._bid_opened.get(target.tid)
         if opened is None:
             self._bid_opened[target.tid] = t
+            if (self.policy == POLICY_BIOS_PIBT_V5
+                    and not self._energy_feasible(target, sensors, t=t)[0]):
+                self.stats["energy_bids_suppressed"] += 1
+                return
             cost = self._bid_cost(target, sensors)
             self._bids.setdefault(target.tid, {})[
                 (target.auction_epoch, self.rid)] = cost
@@ -2040,6 +2130,7 @@ class AMRBrain:
             outbox.append(msg.bid(
                 self.rid, self._next_seq(), t, target.tid, cost,
                 epoch=target.auction_epoch))
+            self.stats["auction_bids_sent"] += 1
             return
 
         if t < target.bid_deadline:
@@ -2079,6 +2170,13 @@ class AMRBrain:
         active tasks. Awards remain expiring peer claims, so incomplete views converge
         after communication resumes rather than requiring a coordinator.
         """
+        # The WMS only announces work. This method is reached through `_task_loop`,
+        # but the guard is explicit so no direct caller can make a working or charging
+        # robot participate in another auction.
+        if self.task is not None or self.state != ST_IDLE:
+            return
+        if self.policy == POLICY_BIOS_PIBT_V5 and t < self._energy_retry_after:
+            return
         available = [
             task for task in self.open_tasks.values()
             if task.tid not in self.completed_tasks
@@ -2091,18 +2189,37 @@ class AMRBrain:
 
         if self._v3_round_started is None:
             self._v3_round_started = t
-            ranked = sorted(
-                ((self._v3_bid_cost(task, sensors), task.tid, task)
-                 for task in available),
-                key=lambda item: (item[0], item[1]))
-            limit = max(1, self.cfg.traffic.auction_batch_bids)
-            for cost, _tid, task in ranked[:limit]:
+            eligible = []
+            for task in available:
+                if self.policy == POLICY_BIOS_PIBT_V5:
+                    feasible, _required, _reserve = self._energy_feasible(
+                        task, sensors, t=t)
+                    if (not feasible
+                            or not self._energy_candidate(task, t, sensors)):
+                        self.stats["energy_bids_suppressed"] += 1
+                        continue
+                eligible.append((
+                    self._task_urgency(task, t),
+                    self._v3_bid_cost(task, sensors), task.tid, task))
+            ranked = sorted(eligible, key=lambda item: (item[0], item[1], item[2]))
+            if not ranked and self.policy == POLICY_BIOS_PIBT_V5:
+                self.stats["energy_no_eligible_rounds"] += 1
+                self._energy_retry_after = t + max(
+                    5.0, 2.0 * self.cfg.traffic.auction_bid_window_s)
+                self._v3_round_started = None
+                return
+            limit = (min(len(ranked),
+                         max(1, self.cfg.traffic.energy_bid_bundle))
+                     if self.policy == POLICY_BIOS_PIBT_V5
+                     else max(1, self.cfg.traffic.auction_batch_bids))
+            for _urgency, cost, _tid, task in ranked[:limit]:
                 key = (task.auction_epoch, self.rid)
                 self._bids.setdefault(task.tid, {})[key] = cost
                 self._bid_seen_t[(task.tid, task.auction_epoch, self.rid)] = t
                 outbox.append(msg.bid(
                     self.rid, self._next_seq(), t, task.tid, cost,
                     epoch=task.auction_epoch))
+                self.stats["auction_bids_sent"] += 1
             return
 
         if t - self._v3_round_started < self.cfg.traffic.auction_bid_window_s:
@@ -2201,7 +2318,10 @@ class AMRBrain:
                                else best_by_task.values())
         ordered_candidates = sorted(
             matching_candidates,
-            key=lambda item: (item[1] not in anchor_tasks, *item))
+            key=lambda item: (
+                item[1] not in anchor_tasks,
+                self._task_urgency(available_by_id[item[1]], t),
+                item[0], item[1], item[2], item[3]))
         for cost, tid, rid, epoch in ordered_candidates:
             if rid in used_robots or tid in used_tasks:
                 continue
@@ -2216,8 +2336,9 @@ class AMRBrain:
                           else self.peers[rid].cell)
             if self._approach_crosses_task_corridor(task, robot_cell):
                 # Do not send an AMR through the admitted wave empty merely to reach
-                # a pickup on the far side. It waits there for the reverse wave and
-                # will then be the cheapest/closest bidder without repositioning.
+                # a pickup on the far side.  BIOS 5 handles the all-robots-stranded
+                # case below as a separate, idle repositioning phase; awarding first
+                # would make the empty approach oppose the task's loaded direction.
                 continue
             if any(
                 cid in corridor_phase and corridor_phase[cid] != entry
@@ -2249,6 +2370,10 @@ class AMRBrain:
 
         self._v3_round_started = None
         if won is None:
+            if self.policy == POLICY_BIOS_PIBT_V5 and not assignments:
+                self._v5_reposition_stranded_bidder(
+                    t, sensors, available_by_id, candidates, best_by_task,
+                    corridor_load, corridor_allowed_tasks, anchor_tasks)
             return
         tid, cost, epoch = won
         task = self.open_tasks.get(tid)
@@ -2260,6 +2385,74 @@ class AMRBrain:
             self.rid, self._next_seq(), t, tid, cost,
             epoch=epoch, lease_until=lease_until))
 
+    def _v5_reposition_stranded_bidder(
+            self, t: float, sensors: Sensors, available: dict[str, Task],
+            candidates: list[tuple[float, str, str, int]],
+            best_by_task: dict[str, tuple[float, str, str, int]],
+            corridor_load: dict[int, int],
+            corridor_allowed_tasks: dict[int, set[str]],
+            anchor_tasks: set[str]) -> bool:
+        """Move one idle winner to a stranded pickup before awarding cargo work.
+
+        If every fresh bidder for a task is on the wrong side of its loaded corridor,
+        the normal auction correctly refuses to award it.  Once the corridor is empty,
+        the same deterministic best bid elects one AMR to cross *while still idle*.
+        It bids again only after reaching the pickup side.  Block leases continue to
+        serialize imperfect views, so this remains peer-only and partition tolerant.
+        """
+        by_task: dict[str, list[tuple[float, str, str, int]]] = {}
+        for candidate in candidates:
+            by_task.setdefault(candidate[1], []).append(candidate)
+        # Never launch speculative motion while a visible peer still owns motion.
+        # The age guard spans two claim leases, so a just-announced batch has time to
+        # form and circulate even when this receiver missed some of its first bids.
+        if any(
+            t - peer.last_seen <= self.cfg.traffic.peer_stale_s
+            and (peer.state != ST_IDLE or peer.goal is not None)
+            for peer in self.peers.values()
+        ):
+            return False
+        settle_s = 2.0 * self.cfg.traffic.auction_lease_s
+        ordered_tasks = sorted(
+            available.values(),
+            key=lambda task: (
+                task.tid not in anchor_tasks,
+                self._task_urgency(task, t), task.tid))
+        for task in ordered_tasks:
+            if t - task.announced_t < settle_s:
+                continue
+            directions = self._task_corridor_directions(task)
+            if not directions:
+                continue
+            if any(task.tid not in corridor_allowed_tasks.get(cid, {task.tid})
+                   for cid in directions):
+                continue
+            if any(corridor_load.get(cid, 0) > 0 for cid in directions):
+                continue
+            task_candidates = by_task.get(task.tid, [])
+            if not task_candidates:
+                continue
+            if any(
+                not self._approach_crosses_task_corridor(
+                    task,
+                    sensors.cell if rid == self.rid else self.peers[rid].cell)
+                for _cost, _tid, rid, _epoch in task_candidates
+            ):
+                continue
+            elected = best_by_task.get(task.tid)
+            if elected is None:
+                continue
+            if elected[2] == self.rid:
+                self._auction_reposition_target = task.pick
+                self.goal = task.pick
+                self.state = ST_IDLE
+                self._replan(t, sensors.cell)
+                return True
+            # Every peer evaluates the same highest-ranked serviceable task before
+            # considering another corridor, limiting speculative empty motion.
+            return False
+        return False
+
     def _bid_cost(self, task: Task, sensors: Sensors) -> float:
         """Estimate total local work using the same A* model as navigation."""
         to_pick = astar(self.env, sensors.cell, task.pick, extra_cost=self.penalty)
@@ -2268,7 +2461,151 @@ class AMRBrain:
             return 1e9
         distance = (max(0, len(to_pick) - 1) + max(0, len(to_drop) - 1))
         battery_penalty = max(0.0, 0.25 - sensors.battery_frac) * 20.0
-        return float(distance) + battery_penalty
+        handling_cells = 0.0
+        if self.policy == POLICY_BIOS_PIBT_V5:
+            cargo_factor = self._cargo_factor(task.cargo_type)
+            if cargo_factor is None:
+                return 1e9
+            cruise_mps = max(0.1, 0.65 * self.cfg.robot.v_max)
+            handling_cells = (
+                self.cfg.traffic.energy_service_s * cargo_factor
+                * cruise_mps / self.cfg.cell_m)
+        return float(distance) + handling_cells + battery_penalty
+
+    def _task_urgency(self, task: Task, t: float) -> tuple:
+        """Stable priority/deadline order shared by every auction participant.
+
+        Priority is the business rule and the earliest hard deadline breaks equal
+        priorities. Cargo does not alter urgency; it changes feasibility and cost.
+        No receiver-local arrival timestamp participates in this order.
+        """
+        return (
+            -max(1, int(task.priority)),
+            task.deadline is None,
+            task.deadline if task.deadline is not None else math.inf,
+        )
+
+    def _cargo_factor(self, cargo_type: str) -> float | None:
+        traffic = self.cfg.traffic
+        return {
+            "normal": traffic.cargo_normal_factor,
+            "fragile": traffic.cargo_fragile_factor,
+            "heavy": traffic.cargo_heavy_factor,
+            "hazardous": traffic.cargo_hazardous_factor,
+        }.get(cargo_type)
+
+    def _energy_feasible(self, task: Task,
+                         sensors: Sensors, t: float = 0.0
+                         ) -> tuple[bool, float, float]:
+        """Predict full-commitment energy and the reserve left after the nearest dock.
+
+        This is the complete BIOS 5 eligibility gate: path, identical-model payload
+        capacity, cargo-adjusted task energy, return-to-dock reserve and hard delivery
+        deadline. Caller state separately guarantees that only an idle robot bids.
+        """
+        if (task.cargo_weight < 0.0
+                or task.cargo_weight > self.cfg.robot.max_payload_kg):
+            return False, 1.0, -1.0
+        estimate = self._task_estimate(task, sensors.cell,
+                                       extra_cost=self.penalty)
+        if estimate is None:
+            return False, 1.0, -1.0
+        required, completion_s = estimate
+        projected_reserve = sensors.battery_frac - required
+        battery_ok = projected_reserve >= self.cfg.traffic.energy_reserve_frac
+        deadline_ok = (task.deadline is None
+                       or t + completion_s <= task.deadline)
+        return battery_ok and deadline_ok, required, projected_reserve
+
+    def _energy_required(self, task: Task, start: Cell,
+                         extra_cost: dict[Cell, float] | None = None) -> float | None:
+        """Return predicted battery fraction for task completion plus docking."""
+        estimate = self._task_estimate(task, start, extra_cost=extra_cost)
+        return None if estimate is None else estimate[0]
+
+    def _task_estimate(self, task: Task, start: Cell,
+                       extra_cost: dict[Cell, float] | None = None
+                       ) -> tuple[float, float] | None:
+        """Return ``(battery fraction through docking, seconds through drop)``."""
+        cache_key = (
+            start, task.tid, task.pick, task.drop,
+            task.cargo_type, float(task.cargo_weight))
+        if extra_cost is None and cache_key in self._energy_required_cache:
+            return self._energy_required_cache[cache_key]
+
+        cargo_factor = self._cargo_factor(task.cargo_type)
+        if cargo_factor is None or task.cargo_weight < 0.0:
+            if extra_cost is None:
+                self._energy_required_cache[cache_key] = None
+            return None
+        to_pick = astar(self.env, start, task.pick, extra_cost=extra_cost)
+        to_drop = astar(self.env, task.pick, task.drop, extra_cost=extra_cost)
+        if not to_pick or not to_drop:
+            if extra_cost is None:
+                self._energy_required_cache[cache_key] = None
+            return None
+        charger_cells = []
+        for dock in self.env.docks:
+            path = astar(self.env, task.drop, dock)
+            if path:
+                charger_cells.append(max(0, len(path) - 1))
+        charger_steps = min(charger_cells) if charger_cells else 0
+        loaded_steps = max(0, len(to_drop) - 1)
+        spec = self.cfg.robot
+        traffic = self.cfg.traffic
+        cruise_mps = max(0.1, 0.65 * spec.v_max)
+        approach_steps = max(0, len(to_pick) - 1)
+        approach_s = approach_steps * self.cfg.cell_m / cruise_mps
+        dock_s = charger_steps * self.cfg.cell_m / cruise_mps
+        loaded_s = loaded_steps * self.cfg.cell_m / cruise_mps
+        handling_s = traffic.energy_service_s * cargo_factor
+        weight_factor = 1.0 + traffic.cargo_full_payload_energy_premium * (
+            task.cargo_weight / max(1e-9, spec.max_payload_kg))
+        # Cargo modifies the committed task motion (approach + loaded leg), while the
+        # post-drop trip to a charger is correctly unladen.
+        energy_wh = (
+            spec.draw_move_w
+            * (approach_s + traffic.energy_loaded_multiplier * loaded_s)
+            * cargo_factor * weight_factor / 3600.0
+            + spec.draw_move_w * dock_s / 3600.0
+            + spec.draw_idle_w * handling_s / 3600.0
+        )
+        required = energy_wh / spec.battery_full_wh
+        required *= 1.0 + traffic.energy_uncertainty_frac
+        result = (required, approach_s + loaded_s + handling_s)
+        if extra_cost is None:
+            self._energy_required_cache[cache_key] = result
+        return result
+
+    def _energy_candidate(self, task: Task, t: float, sensors: Sensors) -> bool:
+        """Whether this robot is among the nearest healthy candidates for a task.
+
+        This is a traffic optimization, not a safety rule. Missing/stale peers are
+        omitted, which widens participation during loss instead of suppressing work.
+        """
+        candidates = [(manhattan(sensors.cell, task.pick), self.rid)]
+        for peer in self.peers.values():
+            if (t - peer.last_seen > self.cfg.traffic.peer_stale_s
+                    or peer.state != ST_IDLE or peer.goal is not None
+                    or peer.battery_frac < self.cfg.traffic.energy_charge_trigger_frac):
+                continue
+            required = self._energy_required(task, peer.cell)
+            if (required is None
+                    or peer.battery_frac - required
+                    < self.cfg.traffic.energy_reserve_frac):
+                continue
+            estimate = self._task_estimate(task, peer.cell)
+            if (estimate is None
+                    or (task.deadline is not None
+                        and t + estimate[1] > task.deadline)):
+                continue
+            candidates.append((manhattan(peer.cell, task.pick), peer.rid))
+        candidates.sort()
+        # Busy, charging, failed and stale peers naturally leave this live set, so the
+        # next feasible robot enters top-k without turning an old task into an open
+        # auction that every robot fights over forever.
+        count = max(1, self.cfg.traffic.energy_candidate_bids)
+        return self.rid in {rid for _distance, rid in candidates[:count]}
 
     def _task_corridor_directions(self, task: Task) -> dict[int, Cell]:
         """Return each bidirectional block and the mouth used to enter it.
@@ -2334,6 +2671,10 @@ class AMRBrain:
                     and self.task is not None and self.task.tid == tid):
                 self._drop_current_task()
         self._task_claims[tid] = claim
+        task = self.open_tasks.get(tid)
+        if task is not None:
+            task.lease_owner = claim[2]
+            task.lease_until = claim[3]
         return True
 
     @staticmethod
@@ -2349,6 +2690,8 @@ class AMRBrain:
         self._bid_opened.pop(task.tid, None)
         self._bids.pop(task.tid, None)
         self._task_claims.pop(task.tid, None)
+        task.lease_owner = None
+        task.lease_until = 0.0
         self._awarded.discard(task.tid)
 
     def _expire_task_claims(self, t: float) -> None:
@@ -2638,8 +2981,8 @@ class AMRBrain:
             return
         self._last_lease_broadcast = t
         lease_until = t + self.cfg.traffic.auction_lease_s
-        self._task_claims[self.task.tid] = (
-            claim[0], claim[1], self.rid, lease_until)
+        self._record_task_claim(
+            self.task.tid, (claim[0], claim[1], self.rid, lease_until))
         outbox.append(msg.award(
             self.rid, self._next_seq(), t, self.task.tid, claim[1],
             epoch=claim[0], lease_until=lease_until))
@@ -2647,7 +2990,7 @@ class AMRBrain:
     def _broadcast_task_catalog(self, t: float,
                                 outbox: list[msg.Message]) -> None:
         """Gossip one unfinished task so missed WMS announcements eventually heal."""
-        if (self.policy != POLICY_BIOS_PIBT_V3 or not self._auction_enabled()
+        if (self.policy not in V3_AUCTION_POLICIES or not self._auction_enabled()
                 or t - self._last_catalog_broadcast
                 < self.cfg.traffic.task_gossip_period_s):
             return
@@ -2664,12 +3007,14 @@ class AMRBrain:
             self.rid, self._next_seq(), t, task.tid, task.pick, task.drop,
             epoch=task.auction_epoch,
             bid_until=max(task.bid_deadline,
-                          t + self.cfg.traffic.auction_bid_window_s)))
+                          t + self.cfg.traffic.auction_bid_window_s),
+            cargo_type=task.cargo_type, cargo_weight=task.cargo_weight,
+            priority=task.priority, deadline=task.deadline))
 
     def _broadcast_completion_catalog(self, t: float,
                                       outbox: list[msg.Message]) -> None:
         """Gossip one completion so a lost one-shot TASK_DONE cannot stall a wave."""
-        if (self.policy != POLICY_BIOS_PIBT_V3 or not self._auction_enabled()
+        if (self.policy not in V3_AUCTION_POLICIES or not self._auction_enabled()
                 or (self.circulation.enabled and self.cfg.net.loss <= 0.0)
                 or t - self._last_completion_broadcast
                 < self.cfg.traffic.completion_gossip_period_s):
@@ -2726,6 +3071,7 @@ class AMRBrain:
                 p.state = b.get("s", ST_IDLE)
                 p.goal = msg.as_cell(b["g"]) if b.get("g") else None
                 p.priority_key = PriorityKey.from_wire(b.get("pk"), m.src)
+                p.battery_frac = float(b.get("b", p.battery_frac))
                 p.last_seen = t
                 # INTENT is sent only while a route has cells to advertise.  An idle
                 # peer therefore sends no empty INTENT packet to overwrite its last
@@ -2749,6 +3095,12 @@ class AMRBrain:
                 if tid in self.completed_tasks:
                     continue
                 epoch = int(b.get("e", 0))
+                cargo_type = str(b.get("ct", "normal"))
+                cargo_weight = float(b.get("cw", 0.0))
+                task_priority = int(b.get("pr", 1))
+                due = b.get("due")
+                task_deadline = (None if due is None
+                                 else t + float(due))
                 ttl = b.get("ttl")
                 if ttl is not None:
                     deadline = t + min(float(ttl),
@@ -2762,13 +3114,42 @@ class AMRBrain:
                 current = self.open_tasks.get(tid)
                 if current is None:
                     self.open_tasks[tid] = Task(
-                        tid, msg.as_cell(b["pk"]), msg.as_cell(b["dp"]),
-                        t, epoch, float(deadline))
+                        tid=tid, pick=msg.as_cell(b["pk"]),
+                        drop=msg.as_cell(b["dp"]), announced_t=t,
+                        auction_epoch=epoch, bid_deadline=float(deadline),
+                        cargo_type=cargo_type, cargo_weight=cargo_weight,
+                        priority=task_priority, deadline=task_deadline)
                 elif epoch > current.auction_epoch:
                     current.auction_epoch = epoch
                     current.bid_deadline = float(deadline)
+                    current.cargo_type = cargo_type
+                    current.cargo_weight = cargo_weight
+                    current.priority = task_priority
+                    current.deadline = task_deadline
                     self._bids.pop(tid, None)
                     self._bid_opened.pop(tid, None)
+                else:
+                    # Same-epoch catalog repair may come from an older peer that knew
+                    # only the legacy fields. Enrich a legacy record once, but never
+                    # let a later legacy repeat erase cargo semantics.
+                    incoming_extended = (
+                        cargo_type != "normal" or cargo_weight != 0.0
+                        or task_priority != 1 or task_deadline is not None)
+                    current_extended = (
+                        current.cargo_type != "normal"
+                        or current.cargo_weight != 0.0
+                        or current.priority != 1 or current.deadline is not None)
+                    if incoming_extended and not current_extended:
+                        current.cargo_type = cargo_type
+                        current.cargo_weight = cargo_weight
+                        current.priority = task_priority
+                    if current.deadline is None and task_deadline is not None:
+                        current.deadline = task_deadline
+                claim = self._task_claims.get(tid)
+                task_record = self.open_tasks.get(tid)
+                if claim is not None and task_record is not None:
+                    task_record.lease_owner = claim[2]
+                    task_record.lease_until = claim[3]
             elif m.type == msg.BID:
                 tid = b["task"]
                 epoch = int(b.get("e", 0))
@@ -2815,6 +3196,14 @@ class AMRBrain:
                     self._awarded.add(tid)
             elif m.type == msg.TASK_DONE:
                 tid = b["task"]
+                # A partition or asymmetric bid view can briefly create duplicate
+                # winners. Completion is the convergence point: a robot still
+                # executing that same logical task must cancel its stale copy or it
+                # remains live traffic forever and can block unrelated final work.
+                if (self.policy == POLICY_BIOS_PIBT_V5
+                        and self.task is not None and self.task.tid == tid):
+                    self._drop_current_task()
+                    self._needs_duplicate_vacate = True
                 self.open_tasks.pop(tid, None)
                 self.completed_tasks.add(tid)
                 self._task_claims.pop(tid, None)

@@ -83,6 +83,7 @@ main {
   position: relative;
   display: flex; flex-direction: column;
   min-width: 0;
+  container: fleet-stage / inline-size;
   background:
     radial-gradient(1200px 700px at 50% 35%, #101822 0%, var(--bg-sunken) 100%);
 }
@@ -217,6 +218,8 @@ main {
 .pip-tool-btn {
   font: 600 10px/1 var(--mono);
   padding: 3px 6px;
+  min-width: 24px;
+  min-height: 24px;
   background: var(--bg-sunken);
   border: 1px solid var(--line-soft);
   color: var(--ink-dim);
@@ -293,8 +296,9 @@ main {
 
 #scrub {
   flex: 1 1 auto; min-width: 0;
-  appearance: none; height: 5px; border-radius: 3px;
-  background: var(--line); outline: none;
+  appearance: none; height: 24px; border-radius: 3px;
+  background: linear-gradient(var(--line), var(--line)) center / 100% 5px no-repeat;
+  outline: none;
 }
 #scrub::-webkit-slider-thumb {
   appearance: none; width: 15px; height: 15px; border-radius: 50%;
@@ -323,6 +327,12 @@ button.primary {
 button.primary:hover { filter: brightness(1.08); }
 button:disabled { opacity: .45; cursor: progress; }
 select { cursor: pointer; }
+
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(53,198,244,.45);
+}
 
 /* ------------------------------------------------------------------ panel */
 
@@ -486,6 +496,82 @@ select { cursor: pointer; }
 @media (max-width: 1080px) {
   main { grid-template-columns: 1fr; grid-template-rows: minmax(0,1fr) auto; }
   .panel { border-left: none; border-top: 1px solid var(--line); max-height: 46vh; }
+}
+
+/* The legend and transport are normal flex children below the canvas. The old
+   top/left offsets still shifted the legend over the transport after its position
+   changed from absolute to relative. Resetting them gives both rows real space. */
+.overlay-legend {
+  top: auto;
+  left: auto;
+  width: 100%;
+  min-height: 34px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  border-radius: 0;
+}
+
+.pip-container { bottom: 104px; }
+
+@media (max-height: 760px) {
+  .pip-container { width: 260px; bottom: 100px; }
+  .pip-view-wrap { height: 148px; }
+}
+
+@media (max-width: 760px) {
+  .bar { padding-inline: 10px; }
+  .title { font-size: 11px; }
+  .link-state { font-size: 0; gap: 0; }
+
+  .camera-toolbar {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: calc(100% - 16px);
+    overflow-x: auto;
+    justify-content: flex-start;
+    scrollbar-width: thin;
+  }
+  .cam-label { display: none; }
+  .cam-group { flex: 0 0 auto; }
+  .cam-btn, .cam-btn-icon { min-height: 30px; }
+  .cam-select { max-width: 106px; }
+
+  .overlay-legend { min-height: 38px; padding: 8px; }
+  .transport { gap: 8px; padding: 8px; }
+  .transport .clock { font-size: 10px; }
+  .speed { font-size: 0; gap: 0; }
+  .speed select { font-size: 12px; }
+  .primary { min-height: 36px; }
+
+  .panel { padding: 10px; gap: 10px; }
+  .card { padding: 12px; }
+}
+
+@media (max-width: 430px) {
+  .ps { font-size: 10px; }
+  .title { display: none; }
+  .grid2 { grid-template-columns: 1fr; }
+  .run-cell span { display: none; }
+  .camera-toolbar { gap: 5px; padding: 5px 7px; }
+  .cam-group { gap: 3px; padding-right: 5px; }
+  .cam-btn { padding-inline: 7px; }
+  #camModePov, #camZoomVal { display: none; }
+  .cam-zoom-group { display: none; }
+  .cam-pip-group .cam-btn,
+  .cam-hud-group .cam-btn { font-size: 0; min-width: 38px; }
+  .cam-pip-group .cam-btn::after { content: "PiP"; font: 700 10px/1 var(--mono); }
+  .cam-hud-group .cam-btn::after { content: "HUD"; font: 700 10px/1 var(--mono); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
 }
 
 

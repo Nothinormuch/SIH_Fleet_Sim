@@ -76,6 +76,8 @@ class Scenario:
     # Optional unassigned workload. Allocation policies can also flatten the normal
     # round-robin queues, so task allocation is selected by policy rather than map.
     unassigned: list[Task] = field(default_factory=list)
+    # Optional per-robot starting state of charge for energy-allocation experiments.
+    initial_battery_fracs: list[float] = field(default_factory=list)
     seed: int = 0
 
     @property
@@ -105,6 +107,12 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
             "announced_t": task.announced_t,
             "auction_epoch": task.auction_epoch,
             "bid_deadline": task.bid_deadline,
+            "cargo_type": task.cargo_type,
+            "cargo_weight": task.cargo_weight,
+            "priority": task.priority,
+            "deadline": task.deadline,
+            "lease_owner": task.lease_owner,
+            "lease_until": task.lease_until,
         }
 
     if allocation in ACTIVE_ALLOCATION_POLICIES:
@@ -120,7 +128,7 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
         }
 
     payload = {
-        "schema": 1,
+        "schema": 2,
         "scenario": sc.name,
         "environment": sc.env.to_json(),
         "starts": [list(cell) for cell in sc.starts],
@@ -134,6 +142,7 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
         "partition_groups": sc.partition_groups,
         "robot_fail_at": sc.robot_fail_at,
         "robot_restart_at": sc.robot_restart_at,
+        "initial_battery_fracs": sc.initial_battery_fracs,
         "obstacles": [asdict(event) for event in sc.obstacles],
         "pose_noise_m": sc.pose_noise_m,
         "seed": sc.seed,
@@ -404,21 +413,6 @@ def partition_recovery(n_robots: int = 4, tasks_per_robot: int = 1,
     )
 
 
-def auction_test(n_robots: int = 8, n_tasks: int = 32, seed: int = 0) -> Scenario:
-    """Task allocation under test: nothing pre-assigned, robots bid over multicast."""
-    env = classic_warehouse()
-    rng = random.Random(seed)
-    picks = _aisle_cells(env)
-    drops = list(env.stations) + list(env.docks)
-    tasks = [Task(f"T{i:03d}", rng.choice(picks), rng.choice(drops), 0.0)
-             for i in range(n_tasks)]
-    sc = Scenario("auction_test", env, _spread_starts(env, n_robots, rng),
-                  [[] for _ in range(n_robots)], duration_s=600.0,
-                  kill_manager_at=45.0, use_auction=True, seed=seed)
-    sc.unassigned = tasks
-    return sc
-
-
 def sih_acceptance_overlap(n_robots: int = 4, tasks_per_robot: int = 3,
                            seed: int = 0) -> Scenario:
     """Pinned SIH success-criterion workload with overlapping chokepoint paths.
@@ -450,6 +444,17 @@ def sih_acceptance_overlap(n_robots: int = 4, tasks_per_robot: int = 3,
     )
 
 
+def energy_acceptance(n_robots: int = 8, tasks_per_robot: int = 2,
+                      seed: int = 0) -> Scenario:
+    """Pinned completion workload with heterogeneous starting battery state."""
+    sc = sih_acceptance_overlap(
+        n_robots=n_robots, tasks_per_robot=tasks_per_robot, seed=seed)
+    sc.name = "energy_acceptance"
+    levels = (0.12, 0.18, 0.28, 0.42, 0.58, 0.72, 0.86, 0.96)
+    sc.initial_battery_fracs = [levels[i % len(levels)] for i in range(n_robots)]
+    return sc
+
+
 SCENARIOS = {
     "crossing_chokepoint": crossing_chokepoint,
     "dense_aisles": dense_aisles,
@@ -461,6 +466,6 @@ SCENARIOS = {
     "blocked_aisle": blocked_aisle,
     "robot_failure_reassignment": robot_failure_reassignment,
     "partition_recovery": partition_recovery,
-    "auction_test": auction_test,
     "sih_acceptance_overlap": sih_acceptance_overlap,
+    "energy_acceptance": energy_acceptance,
 }

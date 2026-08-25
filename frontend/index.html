@@ -32,20 +32,24 @@
         <button id="camModeFollow" class="cam-btn" title="Close Follow Cam (Key: V)">Follow</button>
         <button id="camModePov" class="cam-btn" title="Robot POV Heading Angle (Key: V)">POV Angle</button>
       </div>
-      <div class="cam-group">
+      <div class="cam-group cam-target-group">
         <span class="cam-label">TARGET</span>
         <select id="camTargetSelect" class="cam-select">
           <option value="">Overview (None)</option>
         </select>
       </div>
-      <div class="cam-group">
+      <div class="cam-group cam-zoom-group">
         <span class="cam-label">ZOOM</span>
         <button id="camZoomOut" class="cam-btn-icon" title="Zoom Out (Key: Z)">&minus;</button>
         <span id="camZoomVal" class="cam-val">2.8&times;</span>
         <button id="camZoomIn" class="cam-btn-icon" title="Zoom In (Key: X)">&plus;</button>
       </div>
-      <div class="cam-group">
+      <div class="cam-group cam-pip-group">
         <button id="camPipToggle" class="cam-btn active" title="Toggle Picture-in-Picture Viewfinder">📷 Live PiP</button>
+      </div>
+      <div class="cam-group cam-hud-group">
+        <button id="hudDetailsToggle" class="cam-btn" aria-controls="hud"
+                aria-expanded="false" title="Show tactical HUD panels">HUD details</button>
       </div>
     </div>
 

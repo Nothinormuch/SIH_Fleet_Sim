@@ -26,6 +26,7 @@ const App = {
   zoomLevel: 2.8,
   pipEnabled: true,
   pipPov: false,
+  hudDetails: false,
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -39,7 +40,7 @@ async function boot() {
     const r = await fetch('/api/scenarios');
     const { scenarios, policies, allocation_policies } = await r.json();
     fill(el('scenario'), scenarios, 'open_floor_control');
-    fill(el('policy'), policies, 'BIOS_PIBT.3');
+    fill(el('policy'), policies, 'BIOS_PIBT.5');
     fill(el('allocationPolicy'), allocation_policies, 'auction');
   } catch (e) {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
@@ -67,11 +68,17 @@ async function boot() {
 
   // PiP Viewfinder Controls
   el('camPipToggle').addEventListener('click', togglePip);
+  el('hudDetailsToggle').addEventListener('click', toggleHudDetails);
   el('pipCloseBtn').addEventListener('click', togglePip);
   el('pipPovToggle').addEventListener('click', togglePipPov);
   el('pipFocusMainBtn').addEventListener('click', () => {
     if (App.selectedRobotId) setCameraMode('follow');
   });
+
+  // A live camera consumes most of a phone-sized stage. Start it closed below the
+  // tablet breakpoint; the operator can still open it explicitly from the toolbar.
+  if (!window.matchMedia('(min-width: 1081px)').matches) App.pipEnabled = false;
+  syncOverlayState();
 
   // Canvas Click to Focus Robot
   el('floor').addEventListener('click', onCanvasClick);
@@ -146,6 +153,7 @@ function selectRobot(id) {
   if (id && el('pipContainer').classList.contains('hidden') && App.pipEnabled) {
     el('pipContainer').classList.remove('hidden');
     el('camPipToggle').classList.add('active');
+    syncOverlayState();
   }
   draw();
 }
@@ -172,16 +180,44 @@ function adjustZoom(delta) {
 }
 
 function togglePip() {
+  if (!App.pipEnabled && App.hudDetails) setHudDetails(false);
   App.pipEnabled = !App.pipEnabled;
-  const container = el('pipContainer');
-  const toggleBtn = el('camPipToggle');
-  if (App.pipEnabled) {
-    container.classList.remove('hidden');
-    toggleBtn.classList.add('active');
-    draw();
-  } else {
-    container.classList.add('hidden');
-    toggleBtn.classList.remove('active');
+  syncOverlayState();
+  if (App.pipEnabled) draw();
+}
+
+function toggleHudDetails() {
+  setHudDetails(!App.hudDetails);
+}
+
+function setHudDetails(enabled) {
+  App.hudDetails = enabled;
+  // Tactical cards and PiP compete for the same safe canvas region. Make the modes
+  // mutually exclusive instead of letting one silently cover the other.
+  if (enabled) App.pipEnabled = false;
+  syncOverlayState();
+}
+
+function syncOverlayState() {
+  const stage = document.querySelector('.stage');
+  const hud = el('hud');
+  const pip = el('pipContainer');
+  const pipButton = el('camPipToggle');
+  const hudButton = el('hudDetailsToggle');
+  if (stage) {
+    stage.classList.toggle('pip-open', App.pipEnabled);
+    stage.classList.toggle('hud-details-open', App.hudDetails);
+  }
+  if (hud) hud.classList.toggle('hud-details', App.hudDetails);
+  if (pip) pip.classList.toggle('hidden', !App.pipEnabled);
+  if (pipButton) {
+    pipButton.classList.toggle('active', App.pipEnabled);
+    pipButton.setAttribute('aria-pressed', String(App.pipEnabled));
+  }
+  if (hudButton) {
+    hudButton.classList.toggle('active', App.hudDetails);
+    hudButton.setAttribute('aria-expanded', String(App.hudDetails));
+    hudButton.textContent = App.hudDetails ? 'Core HUD' : 'HUD details';
   }
 }
 
@@ -513,7 +549,8 @@ function updateManagerDot(frame) {
     return;
   }
   if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'
-      || routePolicy === 'BIOS_PIBT.3' || routePolicy === 'BIOS_1.0.0') {
+      || routePolicy === 'BIOS_PIBT.3' || routePolicy === 'BIOS_PIBT.5'
+      || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot up';
     text.textContent = 'edge-only peer coordination · no manager';
     return;

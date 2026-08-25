@@ -3,11 +3,13 @@
 import random
 
 from src.amr import (AMRBrain, CELL_ZONE_BASE, POLICIES, POLICY_BIOS_PIBT,
-                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, Peer,
+                     POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
+                     POLICY_BIOS_PIBT_V5, Peer,
                      ST_IDLE, Task)
 from src.environment import (FREE, Warehouse, chokepoint_warehouse,
                              classic_warehouse, open_floor)
-from src.messages import BID, TASK_DONE, TASK_NEW, block_claim, decode, encode
+from src.messages import (BID, TASK_DONE, TASK_NEW, block_claim, decode, encode,
+                          task_done)
 from src.priority import PriorityKey, pibt_step
 from src.settings import DEFAULT
 from src.scenarios import dead_zone
@@ -122,6 +124,162 @@ def test_policy_is_exposed_under_bios_pibt_name():
     assert POLICY_BIOS_PIBT_V2 in POLICIES
     assert POLICY_BIOS_PIBT_V3 == "BIOS_PIBT.3"
     assert POLICY_BIOS_PIBT_V3 in POLICIES
+    assert POLICY_BIOS_PIBT_V5 == "BIOS_PIBT.5"
+    assert POLICY_BIOS_PIBT_V5 in POLICIES
+
+
+def test_v5_rejects_energy_infeasible_task_and_accepts_charged_robot():
+    env = open_floor(10, 10)
+    world = World(env, DEFAULT, seed=0)
+    state = world.add_robot("AMR01", (1, 1))
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    task = Task("LONG", (8, 1), (8, 8))
+
+    state.battery_wh = 0.15 * DEFAULT.robot.battery_full_wh
+    low = world.sense("AMR01")
+    state.battery_wh = 0.80 * DEFAULT.robot.battery_full_wh
+    high = world.sense("AMR01")
+
+    assert not brain._energy_feasible(task, low)[0]
+    assert brain._energy_feasible(task, high)[0]
+
+
+def test_v5_cargo_changes_handling_energy_and_enforces_identical_payload_limit():
+    env = open_floor(30, 10)
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    normal = Task("N", (4, 2), (20, 2))
+    heavy = Task("H", (4, 2), (20, 2), cargo_type="heavy",
+                 cargo_weight=80.0)
+    overweight = Task("X", (4, 2), (20, 2), cargo_type="heavy",
+                      cargo_weight=DEFAULT.robot.max_payload_kg + 1.0)
+    normal_energy, normal_eta = brain._task_estimate(normal, (1, 2))
+    heavy_energy, heavy_eta = brain._task_estimate(heavy, (1, 2))
+    sensors = type("S", (), {"cell": (1, 2), "battery_frac": 1.0})()
+
+    assert heavy_energy > normal_energy
+    assert heavy_eta > normal_eta
+    assert not brain._energy_feasible(overweight, sensors)[0]
+
+
+def test_v5_hard_deadline_requires_completion_not_only_pickup_arrival():
+    env = open_floor(30, 10)
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    task = Task("URGENT", (2, 2), (25, 2), priority=5, deadline=10.0)
+    sensors = type("S", (), {"cell": (1, 2), "battery_frac": 1.0})()
+
+    assert not brain._energy_feasible(task, sensors, t=0.0)[0]
+
+
+def test_v5_priority_keeps_urgent_task_inside_bounded_bid_bundle():
+    env = open_floor(30, 10)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR01", (1, 2))
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    brain.open_tasks = {
+        f"LOW{i:02d}": Task(f"LOW{i:02d}", (2 + i, 2), (20, 2))
+        for i in range(DEFAULT.traffic.energy_bid_bundle)
+    }
+    brain.open_tasks["URGENT"] = Task(
+        "URGENT", (28, 2), (25, 2), priority=5, deadline=120.0)
+    outbox = []
+
+    brain._run_v3_batch_auction(0.0, world.sense("AMR01"), outbox)
+
+    bid_tasks = {message.body["task"] for message in outbox}
+    assert len(outbox) == DEFAULT.traffic.energy_bid_bundle
+    assert "URGENT" in bid_tasks
+
+
+def test_v5_working_robot_cannot_enter_another_auction():
+    env = open_floor(10, 10)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR01", (1, 2))
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    brain.task = Task("ACTIVE", (2, 2), (8, 2))
+    brain.state = "to_pick"
+    brain.open_tasks["NEXT"] = Task("NEXT", (2, 3), (8, 3))
+    outbox = []
+
+    brain._run_v3_batch_auction(0.0, world.sense("AMR01"), outbox)
+
+    assert outbox == []
+
+
+def test_v5_repositions_idle_bidder_before_cross_corridor_task_award():
+    env = chokepoint_warehouse(length=13)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR01", (23, 1))
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    task = Task("ONLY", (1, 1), (23, 1), bid_deadline=0.6)
+    brain.open_tasks[task.tid] = task
+    outbox = []
+
+    brain._run_v3_batch_auction(40.0, world.sense("AMR01"), outbox)
+    brain._run_v3_batch_auction(40.7, world.sense("AMR01"), outbox)
+
+    assert brain.task is None
+    assert brain.state == ST_IDLE
+    assert brain._auction_reposition_target == task.pick
+    assert brain.goal == task.pick
+    assert brain.path
+
+
+def test_v5_candidate_filter_prefers_nearest_healthy_robots_without_age_expansion():
+    env = open_floor(12, 4)
+    brain = AMRBrain("AMR04", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    task = Task("T", (1, 1), (10, 1), announced_t=0.0)
+    brain.peers = {
+        "AMR01": Peer("AMR01", cell=(1, 1), last_seen=21.0),
+        "AMR02": Peer("AMR02", cell=(2, 1), last_seen=21.0),
+        "AMR03": Peer("AMR03", cell=(3, 1), last_seen=21.0),
+    }
+    sensors = type("S", (), {"cell": (9, 1), "battery_frac": 0.8})()
+
+    assert not brain._energy_candidate(task, 1.0, sensors)
+    assert not brain._energy_candidate(task, 21.0, sensors)
+
+
+def test_v5_candidate_filter_replaces_stale_and_energy_infeasible_peers():
+    env = open_floor(12, 4)
+    brain = AMRBrain("AMR04", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    task = Task("T", (1, 1), (10, 1), announced_t=0.0)
+    brain.peers = {
+        "AMR01": Peer("AMR01", cell=(1, 1), last_seen=-10.0),
+        # Above the generic 15% charge trigger but below this task's predicted
+        # reserve, so it must not consume a candidate slot.
+        "AMR02": Peer("AMR02", cell=(2, 1), last_seen=1.0,
+                      battery_frac=0.151),
+        "AMR03": Peer("AMR03", cell=(3, 1), last_seen=1.0),
+    }
+    sensors = type("S", (), {"cell": (9, 1), "battery_frac": 0.8})()
+
+    assert brain._energy_candidate(task, 1.0, sensors)
+
+
+def test_v5_caps_each_round_to_the_declared_bid_bundle():
+    env = open_floor(12, 4)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR01", (1, 1))
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    brain.open_tasks = {
+        f"T{i:02d}": Task(f"T{i:02d}", (2 + i % 8, 1), (10, 2))
+        for i in range(20)
+    }
+    outbox = []
+
+    brain._run_v3_batch_auction(0.0, world.sense("AMR01"), outbox)
+
+    assert len(outbox) == DEFAULT.traffic.energy_bid_bundle
+    assert brain.stats["auction_bids_sent"] == len(outbox)
 
 
 def test_v3_peer_catalog_gossips_a_missed_task_without_a_manager():
@@ -156,6 +314,37 @@ def test_v3_peer_catalog_repeats_completion_records():
     assert len(outbox) == 1
     assert outbox[0].type == TASK_DONE
     assert outbox[0].body["task"] == "T1"
+
+
+def test_peer_completion_cancels_a_duplicate_local_task():
+    env = open_floor(6, 6)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR01", (2, 2))
+    brain = AMRBrain(
+        "AMR01", env, DEFAULT,
+        policy=POLICY_BIOS_PIBT_V5,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    duplicate = Task("T1", (1, 1), (4, 4))
+    brain.task = duplicate
+    brain.state = "to_drop"
+    brain.goal = duplicate.drop
+    brain.open_tasks[duplicate.tid] = duplicate
+
+    brain._ingest(2.0, [task_done("AMR02", 1, 1.0, "T1")])
+
+    assert brain.task is None
+    assert brain.state == ST_IDLE
+    assert brain.goal is None
+    assert "T1" in brain.completed_tasks
+    brain.open_tasks["T2"] = Task("T2", (1, 1), (4, 4))
+    outbox = []
+
+    brain._task_loop(2.0, world.sense("AMR01"), outbox)
+
+    assert brain.goal is not None
+    assert brain._needs_duplicate_vacate
+    assert outbox == []
 
 
 def test_v3_chokepoint_wave_members_do_not_refill_mid_phase():

@@ -11,7 +11,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .amr import POLICY_BIOS_PIBT_V3
+from .amr import POLICY_BIOS_PIBT_V5
 from .main import run_scenario
 from .metrics import percentile
 from .scenarios import (partition_recovery, robot_failure_reassignment,
@@ -44,7 +44,7 @@ def _worker(args: tuple[str, int, float | None]):
     else:
         raise ValueError(f"unknown campaign kind {kind!r}")
     result = run_scenario(
-        scenario, POLICY_BIOS_PIBT_V3, seed=seed,
+        scenario, POLICY_BIOS_PIBT_V5, seed=seed,
         allocation_policy=ALLOCATION_AUCTION)
     return kind, loss, result
 
@@ -116,7 +116,7 @@ def run_fault_campaign(*, seeds: int = 30, first_seed: int = 0,
     return {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "policy": POLICY_BIOS_PIBT_V3,
+        "policy": POLICY_BIOS_PIBT_V5,
         "seeds": seeds,
         "first_seed": first_seed,
         "losses": losses,

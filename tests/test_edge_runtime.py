@@ -4,9 +4,9 @@ import socket
 
 import pytest
 
-from src.amr import AMRBrain, POLICY_BIOS_PIBT_V3
+from src.amr import AMRBrain, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V5
 from src.distributed_demo import run_distributed_demo
-from src.edge_runtime import EdgeRuntime, sensors_from_dict
+from src.edge_runtime import EdgeRuntime, build_parser, sensors_from_dict
 from src.environment import open_floor
 from src.settings import DEFAULT
 from src.world import World
@@ -35,6 +35,15 @@ def _available_udp_port() -> int:
         return sock.getsockname()[1]
     finally:
         sock.close()
+
+
+def test_edge_node_default_policy_is_bios5():
+    args = build_parser().parse_args([
+        "--robot-id", "AMR01", "--robot-index", "0",
+        "--sensor-port", "5001", "--actuator-port", "5002",
+    ])
+
+    assert args.policy == POLICY_BIOS_PIBT_V5
 
 
 def test_edge_runtime_uses_local_clock_and_emits_peer_traffic():
