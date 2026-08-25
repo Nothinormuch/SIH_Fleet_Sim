@@ -156,7 +156,7 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
 | `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
 | `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Default fully decentralized route + allocation policy. |
-| `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, nearest-candidate bidding, progressive expansion and charging re-entry. | Experimental software-only battery-aware auction; not yet the default. |
+| `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Experimental software-only battery-aware auction; not yet the default. |
 
 Task ownership is selected independently of the route policy. `auction` lets peers
 broadcast bids and converge on deterministic leased awards; this is the fully
@@ -165,9 +165,10 @@ robot-to-task cost matrix and exists only as a comparison baseline. Keeping allo
 and traffic separate makes their performance effects measurable rather than conflated.
 
 The experimental BIOS 5 energy model is specified in
-[`docs/BIOS_PIBT_5_ENERGY_AUCTION.md`](docs/BIOS_PIBT_5_ENERGY_AUCTION.md). Its initial
+[`docs/BIOS_PIBT_5_ENERGY_AUCTION.md`](docs/BIOS_PIBT_5_ENERGY_AUCTION.md). Its refined
 eight-seed paired result improves completion from 7/8 to 8/8 while reducing aggregate
-auction bids by 9.95%; the document states the limitations and larger release gate.
+auction bids by 47.20% and total messages by 24.64%; the document states the limitations
+and larger release gate.
 
 `--seeds N` pools runs so the safety statistics have enough exposure to mean something.
 

@@ -407,31 +407,6 @@ def partition_recovery(n_robots: int = 4, tasks_per_robot: int = 1,
     )
 
 
-def auction_test(n_robots: int = 8, n_tasks: int = 32, seed: int = 0) -> Scenario:
-    """Task allocation under test: nothing pre-assigned, robots bid over multicast."""
-    env = classic_warehouse()
-    rng = random.Random(seed)
-    picks = _aisle_cells(env)
-    drops = list(env.stations) + list(env.docks)
-    tasks = [Task(f"T{i:03d}", rng.choice(picks), rng.choice(drops), 0.0)
-             for i in range(n_tasks)]
-    sc = Scenario("auction_test", env, _spread_starts(env, n_robots, rng),
-                  [[] for _ in range(n_robots)], duration_s=600.0,
-                  kill_manager_at=45.0, use_auction=True, seed=seed)
-    sc.unassigned = tasks
-    return sc
-
-
-def energy_auction(n_robots: int = 8, n_tasks: int = 32,
-                   seed: int = 0) -> Scenario:
-    """Mixed-SOC allocation workload for BIOS 5 eligibility and charging behavior."""
-    sc = auction_test(n_robots=n_robots, n_tasks=n_tasks, seed=seed)
-    sc.name = "energy_auction"
-    levels = (0.12, 0.18, 0.28, 0.42, 0.58, 0.72, 0.86, 0.96)
-    sc.initial_battery_fracs = [levels[i % len(levels)] for i in range(n_robots)]
-    return sc
-
-
 def sih_acceptance_overlap(n_robots: int = 4, tasks_per_robot: int = 3,
                            seed: int = 0) -> Scenario:
     """Pinned SIH success-criterion workload with overlapping chokepoint paths.
@@ -485,8 +460,6 @@ SCENARIOS = {
     "blocked_aisle": blocked_aisle,
     "robot_failure_reassignment": robot_failure_reassignment,
     "partition_recovery": partition_recovery,
-    "auction_test": auction_test,
-    "energy_auction": energy_auction,
     "sih_acceptance_overlap": sih_acceptance_overlap,
     "energy_acceptance": energy_acceptance,
 }

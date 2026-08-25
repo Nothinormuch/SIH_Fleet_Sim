@@ -190,6 +190,9 @@ class TrafficSpec:
     energy_loaded_multiplier: float = 1.35
     energy_service_s: float = 12.0
     energy_candidate_bids: int = 3
+    # Broadcasting every feasible task every auction window made allocation traffic
+    # dominate the network without improving the winner set.
+    energy_bid_bundle: int = 12
     energy_charge_trigger_frac: float = 0.15
     energy_rejoin_frac: float = 0.45
 

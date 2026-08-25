@@ -179,6 +179,12 @@ class AMRBrain:
         self._last_lease_broadcast = -1e9
         self._v3_round_started: float | None = None
         self._energy_retry_after = -1e9
+        # Static energy requirements used to rank peers. The warehouse and task
+        # endpoints do not move, so recomputing the same A* legs every 0.6 s would
+        # turn a network optimization into a planner CPU regression.
+        self._energy_required_cache: dict[
+            tuple[Cell, str, Cell, Cell], float | None
+        ] = {}
         # block -> (entry mouth, immutable task ids in this directional batch)
         self._v3_corridor_waves: dict[int, tuple[Cell, tuple[str, ...]]] = {}
         self._last_catalog_broadcast = -1e9
@@ -2124,7 +2130,9 @@ class AMRBrain:
                     5.0, 2.0 * self.cfg.traffic.auction_bid_window_s)
                 self._v3_round_started = None
                 return
-            limit = (len(ranked) if self.policy == POLICY_BIOS_PIBT_V5
+            limit = (min(len(ranked),
+                         max(1, self.cfg.traffic.energy_bid_bundle))
+                     if self.policy == POLICY_BIOS_PIBT_V5
                      else max(1, self.cfg.traffic.auction_batch_bids))
             for cost, _tid, task in ranked[:limit]:
                 key = (task.auction_epoch, self.rid)
@@ -2309,10 +2317,27 @@ class AMRBrain:
         the trip from drop to a charger. It is intentionally conservative and fully
         deterministic; energy admission must not depend on message arrival order.
         """
-        to_pick = astar(self.env, sensors.cell, task.pick, extra_cost=self.penalty)
-        to_drop = astar(self.env, task.pick, task.drop, extra_cost=self.penalty)
-        if not to_pick or not to_drop:
+        required = self._energy_required(task, sensors.cell,
+                                         extra_cost=self.penalty)
+        if required is None:
             return False, 1.0, -1.0
+        projected_reserve = sensors.battery_frac - required
+        return (projected_reserve >= self.cfg.traffic.energy_reserve_frac,
+                required, projected_reserve)
+
+    def _energy_required(self, task: Task, start: Cell,
+                         extra_cost: dict[Cell, float] | None = None) -> float | None:
+        """Return predicted battery fraction for task completion plus docking."""
+        cache_key = (start, task.tid, task.pick, task.drop)
+        if extra_cost is None and cache_key in self._energy_required_cache:
+            return self._energy_required_cache[cache_key]
+
+        to_pick = astar(self.env, start, task.pick, extra_cost=extra_cost)
+        to_drop = astar(self.env, task.pick, task.drop, extra_cost=extra_cost)
+        if not to_pick or not to_drop:
+            if extra_cost is None:
+                self._energy_required_cache[cache_key] = None
+            return None
         charger_cells = []
         for dock in self.env.docks:
             path = astar(self.env, task.drop, dock)
@@ -2333,9 +2358,9 @@ class AMRBrain:
         )
         required = energy_wh / spec.battery_full_wh
         required *= 1.0 + traffic.energy_uncertainty_frac
-        projected_reserve = sensors.battery_frac - required
-        return (projected_reserve >= traffic.energy_reserve_frac,
-                required, projected_reserve)
+        if extra_cost is None:
+            self._energy_required_cache[cache_key] = required
+        return required
 
     def _energy_candidate(self, task: Task, t: float, sensors: Sensors) -> bool:
         """Whether this robot is among the nearest healthy candidates for a task.
@@ -2349,12 +2374,17 @@ class AMRBrain:
                     or peer.state != ST_IDLE or peer.goal is not None
                     or peer.battery_frac < self.cfg.traffic.energy_charge_trigger_frac):
                 continue
+            required = self._energy_required(task, peer.cell)
+            if (required is None
+                    or peer.battery_frac - required
+                    < self.cfg.traffic.energy_reserve_frac):
+                continue
             candidates.append((manhattan(peer.cell, task.pick), peer.rid))
         candidates.sort()
-        # Expand deterministically while a task remains unclaimed. Early rounds are
-        # sparse; prolonged non-award converges to the original open auction.
-        expansion = int(max(0.0, t - task.announced_t) // 20.0)
-        count = max(1, self.cfg.traffic.energy_candidate_bids + expansion)
+        # Busy, charging, failed and stale peers naturally leave this live set, so the
+        # next feasible robot enters top-k without turning an old task into an open
+        # auction that every robot fights over forever.
+        count = max(1, self.cfg.traffic.energy_candidate_bids)
         return self.rid in {rid for _distance, rid in candidates[:count]}
 
     def _task_corridor_directions(self, task: Task) -> dict[int, Cell]:

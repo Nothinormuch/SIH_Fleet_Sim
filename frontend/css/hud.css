@@ -16,13 +16,13 @@
 /* Automatically position HUD widgets so nothing overlaps with
    camera-toolbar (top-right), overlay-legend (top-left), or
    transport bar (bottom). */
-.hud-jobs         { top: 24px; left: 16px;  width: 180px; }
-.hud-ticker       { top: 20px; left: 50%; transform: translateX(-50%); }
-.hud-minimap-block{ top: 68px; right: 16px; width: 180px; }
-.hud-health       { bottom: 80px; right: 16px; width: 200px; }
-.hud-fleet        { top: 68px; left: 205px; width: 200px; max-height: 200px; }
-.hud-allocation   { top: 50%; right: 14px; width: 180px; transform: translateY(-50%); }
-.hud-auction      { top: 50%; left: 14px; width: 200px; max-height: 180px; transform: translateY(-50%); }
+.hud-jobs         { top: 64px; left: 14px; width: 180px; }
+.hud-ticker       { top: 64px; left: 50%; transform: translateX(-50%); }
+.hud-minimap-block{ top: 64px; right: 14px; width: 160px; }
+.hud-health       { bottom: 104px; left: 50%; width: 190px; transform: translateX(-50%); }
+.hud-fleet        { top: 64px; left: 208px; width: 200px; max-height: 190px; }
+.hud-allocation   { bottom: 104px; right: 14px; width: 180px; }
+.hud-auction      { bottom: 104px; left: 14px; width: 200px; max-height: 180px; }
 
 .overlay-legend { position: relative; z-index: 6; }
 .transport { position: relative; z-index: 6; }
@@ -49,6 +49,17 @@
   padding: 10px 12px;
 }
 
+/* Core mode is deliberately sparse: the right panel already carries the detailed
+   fleet and auction data. Extra tactical panels are disclosed by an explicit button. */
+.hud-root:not(.hud-details) .hud-minimap-block,
+.hud-root:not(.hud-details) .hud-fleet,
+.hud-root:not(.hud-details) .hud-allocation,
+.hud-root:not(.hud-details) .hud-auction {
+  display: none;
+}
+
+.stage.pip-open .hud-health { display: none; }
+
 .hud-block::after {
   content: "";
   position: absolute;
@@ -74,10 +85,20 @@
 .hud-jobs {
   --glow: #00f0ff;
   --glow-rgb: 0,240,255;
-  top: 24px;
-  left: 16px;
+  top: 64px;
+  left: 14px;
   width: 180px;
 }
+
+.hud-jobs {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  column-gap: 9px;
+  align-items: center;
+}
+
+.hud-jobs .hud-eb { grid-column: 2; margin-bottom: 3px; }
 
 .hud-orb {
   position: relative;
@@ -85,6 +106,19 @@
   height: 96px;
   margin: 0 auto;
 }
+
+.hud-jobs .hud-orb {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 56px;
+  height: 56px;
+}
+
+.hud-jobs .hud-progress { width: 56px; height: 56px; }
+.hud-jobs .hud-count { font-size: 19px; }
+.hud-jobs .hud-count-sub { font-size: 6px; }
+.hud-jobs .hud-sub { grid-column: 2; margin: 0; text-align: left; }
+.hud-jobs .hud-banner { grid-column: 1 / -1; margin-top: 7px; }
 
 .hud-progress {
   width: 96px;
@@ -174,7 +208,7 @@
 .hud-ticker {
   --glow: #39ff8a;
   --glow-rgb: 57,255,138;
-  top: 20px;
+  top: 64px;
   left: 50%;
   transform: translateX(-50%);
   padding: 7px 16px;
@@ -195,9 +229,9 @@
 .hud-minimap-block {
   --glow: #00f0ff;
   --glow-rgb: 0,240,255;
-  top: 24px;
-  right: 16px;
-  width: 180px;
+  top: 64px;
+  right: 14px;
+  width: 160px;
 }
 
 .hud-mm-frame {
@@ -223,11 +257,23 @@
 .hud-health {
   --glow: #39ff8a;
   --glow-rgb: 57,255,138;
-  bottom: 80px;
-  right: 16px;
-  width: 200px;
+  bottom: 104px;
+  right: auto;
+  left: 50%;
+  width: 190px;
+  transform: translateX(-50%);
   text-align: center;
 }
+
+.hud-health {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+  text-align: left;
+}
+
+.hud-health .hud-eb { grid-column: 1 / -1; }
 
 .hud-holo {
   position: absolute;
@@ -257,6 +303,11 @@
   margin: 0 auto;
   position: relative;
 }
+
+.hud-health .hud-ring { width: 62px; height: 62px; margin: 0; }
+.hud-health .hud-holo { width: 76px; height: 76px; }
+.hud-health .hud-health-num { font-size: 18px; }
+.hud-health .hud-micro-stats { margin: 0; padding: 0; }
 
 .hud-ring svg {
   position: absolute;
@@ -335,7 +386,7 @@
 @media (max-width: 1200px) {
   .hud-jobs { left: 12px; width: 160px; }
   .hud-minimap-block { right: 12px; width: 160px; }
-  .hud-health { right: 12px; width: 180px; }
+  .hud-health { right: auto; width: 180px; }
   .hud-orb { width: 80px; height: 80px; }
   .hud-progress { width: 80px; height: 80px; }
   .hud-count { font-size: 26px; }
@@ -343,10 +394,8 @@
 }
 
 @media (max-height: 700px) {
-  .hud-jobs { top: 16px; }
-  .hud-ticker { top: 12px; }
-  .hud-minimap-block { top: 16px; }
-  .hud-health { bottom: 70px; }
+  .hud-jobs, .hud-ticker, .hud-minimap-block { top: 58px; }
+  .hud-health { bottom: 100px; }
 }
 
 /* ----------------------------------------------------------------- result panel styling */
@@ -396,10 +445,10 @@
 .hud-fleet {
   --glow: #00f0ff;
   --glow-rgb: 0,240,255;
-  top: 24px;
-  left: 205px;
+  top: 64px;
+  left: 208px;
   width: 200px;
-  max-height: 200px;
+  max-height: 190px;
   overflow-y: auto;
 }
 
@@ -448,10 +497,11 @@
 .hud-allocation {
   --glow: #39ff8a;
   --glow-rgb: 57,255,138;
-  top: 50%;
+  top: auto;
+  bottom: 104px;
   right: 14px;
   width: 180px;
-  transform: translateY(-50%);
+  transform: none;
 }
 
 .hud-alloc-detail {
@@ -503,11 +553,12 @@
 .hud-auction {
   --glow: #ff2ff6;
   --glow-rgb: 255,47,246;
-  top: 50%;
+  top: auto;
+  bottom: 104px;
   left: 14px;
   width: 200px;
   max-height: 180px;
-  transform: translateY(-50%);
+  transform: none;
 }
 
 .hud-auction-stats {
@@ -605,4 +656,46 @@
 
 .hud-auction-live::-webkit-scrollbar-thumb:hover {
   background: rgba(255,47,246,.6);
+}
+
+/* Final responsive placement lives after every component definition so component
+   defaults cannot accidentally override the collision-safe layout. */
+.hud-root.hud-details .hud-ticker { display: none; }
+
+@media (max-width: 1080px) {
+  .hud-root.hud-details .hud-jobs,
+  .hud-root.hud-details .hud-ticker,
+  .hud-root.hud-details .hud-minimap-block,
+  .hud-root.hud-details .hud-health,
+  .hud-root.hud-details .hud-fleet { display: none; }
+  .hud-root.hud-details .hud-auction {
+    top: auto; bottom: 104px; left: 10px; width: 190px;
+    max-height: 154px; transform: none;
+  }
+  .hud-root.hud-details .hud-allocation {
+    top: auto; bottom: 104px; right: 10px; width: 176px; transform: none;
+  }
+  .hud-root.hud-details .hud-alloc-detail { gap: 4px; margin-top: 4px; }
+  .hud-root.hud-details .hud-alloc-metric { padding: 3px 5px; }
+}
+
+@container fleet-stage (width < 760px) {
+  .hud-jobs { top: 58px; left: 8px; width: 156px; }
+  .hud-ticker {
+    top: 58px; right: 8px; left: auto; max-width: calc(100% - 176px);
+    transform: none; overflow: hidden; text-overflow: ellipsis;
+  }
+  .hud-health {
+    right: auto; bottom: 112px; left: 8px; width: 174px; transform: none;
+  }
+  .hud-root.hud-details .hud-auction { bottom: 112px; left: 8px; width: 180px; }
+  .hud-root.hud-details .hud-allocation { bottom: 112px; right: 8px; width: 172px; }
+}
+
+@container fleet-stage (width < 430px) {
+  .hud-ticker { display: none; }
+  .hud-jobs { width: 150px; }
+  .hud-health { right: 8px; left: auto; width: 174px; }
+  .hud-root.hud-details .hud-auction,
+  .hud-root.hud-details .hud-allocation { width: 174px; }
 }

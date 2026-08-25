@@ -144,20 +144,56 @@ def test_v5_rejects_energy_infeasible_task_and_accepts_charged_robot():
     assert brain._energy_feasible(task, high)[0]
 
 
-def test_v5_candidate_filter_prefers_nearest_healthy_robots_then_expands():
+def test_v5_candidate_filter_prefers_nearest_healthy_robots_without_age_expansion():
     env = open_floor(12, 4)
     brain = AMRBrain("AMR04", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
                      allocation_policy=ALLOCATION_AUCTION)
     task = Task("T", (1, 1), (10, 1), announced_t=0.0)
     brain.peers = {
-        "AMR01": Peer("AMR01", cell=(1, 1), last_seen=1.0),
-        "AMR02": Peer("AMR02", cell=(2, 1), last_seen=1.0),
-        "AMR03": Peer("AMR03", cell=(3, 1), last_seen=1.0),
+        "AMR01": Peer("AMR01", cell=(1, 1), last_seen=21.0),
+        "AMR02": Peer("AMR02", cell=(2, 1), last_seen=21.0),
+        "AMR03": Peer("AMR03", cell=(3, 1), last_seen=21.0),
     }
-    sensors = type("S", (), {"cell": (9, 1)})()
+    sensors = type("S", (), {"cell": (9, 1), "battery_frac": 0.8})()
 
     assert not brain._energy_candidate(task, 1.0, sensors)
-    assert brain._energy_candidate(task, 21.0, sensors)
+    assert not brain._energy_candidate(task, 21.0, sensors)
+
+
+def test_v5_candidate_filter_replaces_stale_and_energy_infeasible_peers():
+    env = open_floor(12, 4)
+    brain = AMRBrain("AMR04", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    task = Task("T", (1, 1), (10, 1), announced_t=0.0)
+    brain.peers = {
+        "AMR01": Peer("AMR01", cell=(1, 1), last_seen=-10.0),
+        # Above the generic 15% charge trigger but below this task's predicted
+        # reserve, so it must not consume a candidate slot.
+        "AMR02": Peer("AMR02", cell=(2, 1), last_seen=1.0,
+                      battery_frac=0.151),
+        "AMR03": Peer("AMR03", cell=(3, 1), last_seen=1.0),
+    }
+    sensors = type("S", (), {"cell": (9, 1), "battery_frac": 0.8})()
+
+    assert brain._energy_candidate(task, 1.0, sensors)
+
+
+def test_v5_caps_each_round_to_the_declared_bid_bundle():
+    env = open_floor(12, 4)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR01", (1, 1))
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    brain.open_tasks = {
+        f"T{i:02d}": Task(f"T{i:02d}", (2 + i % 8, 1), (10, 2))
+        for i in range(20)
+    }
+    outbox = []
+
+    brain._run_v3_batch_auction(0.0, world.sense("AMR01"), outbox)
+
+    assert len(outbox) == DEFAULT.traffic.energy_bid_bundle
+    assert brain.stats["auction_bids_sent"] == len(outbox)
 
 
 def test_v3_peer_catalog_gossips_a_missed_task_without_a_manager():
