@@ -13,6 +13,17 @@
   overflow: hidden;
 }
 
+/* Automatically position HUD widgets so nothing overlaps with
+   camera-toolbar (top-right), overlay-legend (top-left), or
+   transport bar (bottom). */
+.hud-jobs         { top: 24px; left: 16px;  width: 180px; }
+.hud-ticker       { top: 20px; left: 50%; transform: translateX(-50%); }
+.hud-minimap-block{ top: 68px; right: 16px; width: 180px; }
+.hud-health       { bottom: 80px; right: 16px; width: 200px; }
+.hud-fleet        { top: 68px; left: 205px; width: 200px; max-height: 200px; }
+.hud-allocation   { top: 50%; right: 14px; width: 180px; transform: translateY(-50%); }
+.hud-auction      { top: 50%; left: 14px; width: 200px; max-height: 180px; transform: translateY(-50%); }
+
 .overlay-legend { position: relative; z-index: 6; }
 .transport { position: relative; z-index: 6; }
 

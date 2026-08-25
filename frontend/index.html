@@ -25,11 +25,61 @@
 
     <div id="hud" class="hud-root" aria-hidden="true"></div>
 
+    <div class="camera-toolbar">
+      <div class="cam-group">
+        <span class="cam-label">CAM VIEW</span>
+        <button id="camModeOverview" class="cam-btn active" title="Global Floor Overview (Key: V)">Overview</button>
+        <button id="camModeFollow" class="cam-btn" title="Close Follow Cam (Key: V)">Follow</button>
+        <button id="camModePov" class="cam-btn" title="Robot POV Heading Angle (Key: V)">POV Angle</button>
+      </div>
+      <div class="cam-group">
+        <span class="cam-label">TARGET</span>
+        <select id="camTargetSelect" class="cam-select">
+          <option value="">Overview (None)</option>
+        </select>
+      </div>
+      <div class="cam-group">
+        <span class="cam-label">ZOOM</span>
+        <button id="camZoomOut" class="cam-btn-icon" title="Zoom Out (Key: Z)">&minus;</button>
+        <span id="camZoomVal" class="cam-val">2.8&times;</span>
+        <button id="camZoomIn" class="cam-btn-icon" title="Zoom In (Key: X)">&plus;</button>
+      </div>
+      <div class="cam-group">
+        <button id="camPipToggle" class="cam-btn active" title="Toggle Picture-in-Picture Viewfinder">📷 Live PiP</button>
+      </div>
+    </div>
+
     <div class="overlay-legend">
       <span><i class="sw sw-intent"></i> broadcast intent</span>
       <span><i class="sw sw-link"></i> peer link</span>
+      <span><i class="sw sw-cargo"></i> cargo tote</span>
       <span><i class="sw sw-block"></i> single-file block</span>
       <span><i class="sw sw-human"></i> non-broadcasting worker</span>
+    </div>
+
+    <div id="pipContainer" class="pip-container">
+      <div class="pip-header">
+        <div class="pip-title">
+          <span class="pip-rec-dot"></span>
+          <span id="pipRobotLabel">AMR01 · LIVE FEED</span>
+        </div>
+        <div class="pip-actions">
+          <button id="pipFocusMainBtn" class="pip-tool-btn" title="Focus Main Screen on this Robot">🔍 Focus</button>
+          <button id="pipPovToggle" class="pip-tool-btn" title="Toggle POV / Top-Down in PiP">POV</button>
+          <button id="pipCloseBtn" class="pip-tool-btn" title="Close PiP">&times;</button>
+        </div>
+      </div>
+      <div class="pip-view-wrap">
+        <canvas id="pipCanvas" width="300" height="190"></canvas>
+        <div class="pip-hud-reticle"></div>
+        <div class="pip-scanlines"></div>
+      </div>
+      <div class="pip-telemetry" id="pipTelemetry">
+        <div class="pip-stat"><span>SPD</span><strong id="pipSpeed">0.00 m/s</strong></div>
+        <div class="pip-stat"><span>HDG</span><strong id="pipHeading">0° N</strong></div>
+        <div class="pip-stat"><span>BAT</span><strong id="pipBatt">100%</strong></div>
+        <div class="pip-stat"><span>STATE</span><strong id="pipState">IDLE</strong></div>
+      </div>
     </div>
 
     <div class="transport">

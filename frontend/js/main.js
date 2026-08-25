@@ -11,6 +11,7 @@ const el = id => document.getElementById(id);
 
 const App = {
   view: null,
+  pipView: null,
   imgs: null,
   data: null,        // { map, meta, frames, summary }
   staticLayer: null,
@@ -19,12 +20,19 @@ const App = {
   lastRaf: 0,
   speed: 1,
   auctionEvents: [],
+  // Camera angle & inspection mode
+  cameraMode: 'overview', // 'overview' | 'follow' | 'pov'
+  selectedRobotId: null,
+  zoomLevel: 2.8,
+  pipEnabled: true,
+  pipPov: false,
 };
 
 /* ------------------------------------------------------------------ boot */
 
 async function boot() {
   App.view = new View(el('floor'));
+  App.pipView = new View(el('pipCanvas'));
   App.imgs = await loadAssets();
 
   try {
@@ -37,6 +45,7 @@ async function boot() {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
   }
 
+  // Simulation controls
   el('runBtn').addEventListener('click', run);
   el('playBtn').addEventListener('click', togglePlay);
   el('speed').addEventListener('change', e => { App.speed = parseFloat(e.target.value); });
@@ -47,23 +56,54 @@ async function boot() {
     App.simTime = frameTime(parseInt(e.target.value, 10));
     draw();
   });
+
+  // Camera Toolbar Controls
+  el('camModeOverview').addEventListener('click', () => setCameraMode('overview'));
+  el('camModeFollow').addEventListener('click', () => setCameraMode('follow'));
+  el('camModePov').addEventListener('click', () => setCameraMode('pov'));
+  el('camTargetSelect').addEventListener('change', e => selectRobot(e.target.value));
+  el('camZoomIn').addEventListener('click', () => adjustZoom(0.4));
+  el('camZoomOut').addEventListener('click', () => adjustZoom(-0.4));
+
+  // PiP Viewfinder Controls
+  el('camPipToggle').addEventListener('click', togglePip);
+  el('pipCloseBtn').addEventListener('click', togglePip);
+  el('pipPovToggle').addEventListener('click', togglePipPov);
+  el('pipFocusMainBtn').addEventListener('click', () => {
+    if (App.selectedRobotId) setCameraMode('follow');
+  });
+
+  // Canvas Click to Focus Robot
+  el('floor').addEventListener('click', onCanvasClick);
+
+  // Keyboard Navigation
   window.addEventListener('keydown', e => {
-    if (e.code === 'Space' && e.target.tagName !== 'INPUT'
-        && e.target.tagName !== 'SELECT') {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.code === 'Space') {
       e.preventDefault();
       togglePlay();
+    } else if (e.code === 'KeyV') {
+      cycleCameraMode();
+    } else if (e.code === 'KeyC') {
+      cycleTargetRobot();
+    } else if (e.code === 'KeyZ') {
+      adjustZoom(-0.4);
+    } else if (e.code === 'KeyX') {
+      adjustZoom(0.4);
     }
   });
+
   window.addEventListener('resize', () => {
     if (!App.data) return;
     App.view.resize(App.data.map, App.data.meta.cell_m);
+    App.pipView.resize(App.data.map, App.data.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, App.data.map, App.imgs);
     Hud.resize(App.data.map);
     draw();
   });
 
   requestAnimationFrame(tick);
-  run();                                     // something on screen without a click
+  run();
 }
 
 function fill(select, values, preferred) {
@@ -74,6 +114,121 @@ function fill(select, values, preferred) {
     o.textContent = v.replace(/_/g, ' ');
     if (v === preferred) o.selected = true;
     select.appendChild(o);
+  }
+}
+
+/* ------------------------------------------------------------------ camera modes */
+
+function setCameraMode(mode) {
+  App.cameraMode = mode;
+  el('camModeOverview').classList.toggle('active', mode === 'overview');
+  el('camModeFollow').classList.toggle('active', mode === 'follow');
+  el('camModePov').classList.toggle('active', mode === 'pov');
+
+  if (mode !== 'overview' && !App.selectedRobotId && App.data && App.data.frames.length) {
+    const firstRobot = App.data.frames[0].robots[0];
+    if (firstRobot) selectRobot(firstRobot.id);
+  }
+  draw();
+}
+
+function cycleCameraMode() {
+  const modes = ['overview', 'follow', 'pov'];
+  const nextIdx = (modes.indexOf(App.cameraMode) + 1) % modes.length;
+  setCameraMode(modes[nextIdx]);
+}
+
+function selectRobot(id) {
+  App.selectedRobotId = id || null;
+  const sel = el('camTargetSelect');
+  if (sel) sel.value = id || '';
+
+  if (id && el('pipContainer').classList.contains('hidden') && App.pipEnabled) {
+    el('pipContainer').classList.remove('hidden');
+    el('camPipToggle').classList.add('active');
+  }
+  draw();
+}
+
+function cycleTargetRobot() {
+  if (!App.data || !App.data.frames.length) return;
+  const robots = App.data.frames[0].robots;
+  if (!robots.length) return;
+
+  if (!App.selectedRobotId) {
+    selectRobot(robots[0].id);
+    if (App.cameraMode === 'overview') setCameraMode('follow');
+    return;
+  }
+  const curIdx = robots.findIndex(r => r.id === App.selectedRobotId);
+  const nextIdx = (curIdx + 1) % robots.length;
+  selectRobot(robots[nextIdx].id);
+}
+
+function adjustZoom(delta) {
+  App.zoomLevel = Math.max(1.4, Math.min(6.0, parseFloat((App.zoomLevel + delta).toFixed(1))));
+  el('camZoomVal').textContent = `${App.zoomLevel.toFixed(1)}×`;
+  draw();
+}
+
+function togglePip() {
+  App.pipEnabled = !App.pipEnabled;
+  const container = el('pipContainer');
+  const toggleBtn = el('camPipToggle');
+  if (App.pipEnabled) {
+    container.classList.remove('hidden');
+    toggleBtn.classList.add('active');
+    draw();
+  } else {
+    container.classList.add('hidden');
+    toggleBtn.classList.remove('active');
+  }
+}
+
+function togglePipPov() {
+  App.pipPov = !App.pipPov;
+  el('pipPovToggle').classList.toggle('active', App.pipPov);
+  draw();
+}
+
+function updateCamTargetOptions(robots) {
+  const sel = el('camTargetSelect');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Overview (None)</option>';
+  for (const r of robots) {
+    const opt = document.createElement('option');
+    opt.value = r.id;
+    opt.textContent = `🎯 ${r.id}`;
+    sel.appendChild(opt);
+  }
+  if (App.selectedRobotId && robots.some(r => r.id === App.selectedRobotId)) {
+    sel.value = App.selectedRobotId;
+  }
+}
+
+function onCanvasClick(e) {
+  if (!App.data || !App.data.frames.length) return;
+  const rect = el('floor').getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  const [wx, wy] = App.view.screenToWorld(sx, sy);
+
+  const [f0, f1, u] = bracket(App.simTime);
+  const frame = interpolate(f0, f1, u);
+  const clickDistM = Math.max(0.9, (App.data.meta.robot_diameter_m || 0.8) * 1.5);
+
+  let closest = null, minD = Infinity;
+  for (const r of frame.robots) {
+    const d = Math.hypot(r.x - wx, r.y - wy);
+    if (d < clickDistM && d < minD) {
+      minD = d;
+      closest = r.id;
+    }
+  }
+
+  if (closest) {
+    selectRobot(closest);
+    if (App.cameraMode === 'overview') setCameraMode('follow');
   }
 }
 
@@ -105,7 +260,16 @@ async function run() {
     App.data = payload;
     App.auctionEvents = payload.frames.flatMap(f => f.auction_events || []);
     App.simTime = 0;
+
+    if (payload.frames.length && payload.frames[0].robots.length) {
+      if (!App.selectedRobotId || !payload.frames[0].robots.some(r => r.id === App.selectedRobotId)) {
+        App.selectedRobotId = payload.frames[0].robots[0].id;
+      }
+      updateCamTargetOptions(payload.frames[0].robots);
+    }
+
     App.view.resize(payload.map, payload.meta.cell_m);
+    App.pipView.resize(payload.map, payload.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, payload.map, App.imgs);
 
     const n = payload.frames.length;
@@ -170,8 +334,7 @@ function tick(now) {
   draw();
 }
 
-/* Which two frames bracket the current sim time, and how far between them are we?
- * Frames are evenly spaced, so this is arithmetic rather than a search. */
+/* Which two frames bracket the current sim time, and how far between them are we? */
 function bracket(t) {
   const f = App.data.frames;
   if (f.length < 2) return [f[0], f[0], 0, 0];
@@ -183,8 +346,6 @@ function bracket(t) {
 
 const lerp = (a, b, u) => a + (b - a) * u;
 
-/* Shortest-arc interpolation. Without it a robot whose heading crosses +/-pi appears to
- * spin a full turn in one frame. */
 function lerpAngle(a, b, u) {
   let d = b - a;
   while (d > Math.PI) d -= Math.PI * 2;
@@ -203,26 +364,21 @@ function interpolate(f0, f1, u) {
       y: lerp(a.y, b.y, u),
       th: lerpAngle(a.th, b.th, u),
       batt: lerp(a.batt, b.batt, u),
-      carry: a.carry,
+      carry: u >= 0.5 ? b.carry : a.carry,
     };
   });
   const hById = {};
   for (const h of (f1.humans || [])) hById[h.id] = h;
   const humans = (f0.humans || []).map(a => {
     const b = hById[a.id] || a;
-    // Humans broadcast nothing, so the telemetry carries no heading for them - it is
-    // derived from where they moved between frames, which is exactly the information a
-    // robot's own tracker would have. Below a threshold, keep the last heading rather
-    // than letting sub-pixel jitter spin the sprite.
     const dx = b.x - a.x, dy = b.y - a.y;
     let th = a._th;
     if (Math.hypot(dx, dy) > 1e-3) th = Math.atan2(dy, dx);
     a._th = th;
     return { id: a.id, x: lerp(a.x, b.x, u), y: lerp(a.y, b.y, u), th: th };
   });
-  // Discrete state is taken from the earlier frame, never blended: a robot is either
-  // blocked or it is not, and averaging a state string is meaningless.
-  return { t: lerp(f0.t, f1.t, u), robots, humans, fleet: f0.fleet,
+  return { t: lerp(f0.t, f1.t, u), robots, humans,
+           fleet: u >= 0.5 ? (f1.fleet || f0.fleet) : f0.fleet,
            manager_alive: f0.manager_alive, contacts: f0.contacts,
            auction_events: f0.auction_events || [] };
 }
@@ -234,17 +390,41 @@ function draw() {
   const [f0, f1, u, idx] = bracket(App.simTime);
   const frame = interpolate(f0, f1, u);
 
+  // Determine active camera target robot position
+  const selectedRobot = frame.robots.find(r => r.id === App.selectedRobotId) || frame.robots[0];
+
+  // Update Main Canvas Camera Transform
+  App.view.setCamera(App.cameraMode, App.selectedRobotId, App.zoomLevel);
+  App.view.updateCameraTransform(selectedRobot);
+
   const { ctx } = App.view;
   App.view.clear();
-  if (App.staticLayer) {
-    ctx.drawImage(App.staticLayer, 0, 0, App.view.cssW, App.view.cssH);
+
+  ctx.save();
+  if (App.view.camRotation !== 0) {
+    ctx.translate(App.view.cssW / 2, App.view.cssH / 2);
+    ctx.rotate(App.view.camRotation);
+    ctx.translate(-App.view.cssW / 2, -App.view.cssH / 2);
   }
+
+  if (App.cameraMode === 'overview' && App.staticLayer) {
+    ctx.drawImage(App.staticLayer, 0, 0, App.view.cssW, App.view.cssH);
+  } else {
+    renderStaticFloor(ctx, App.view, App.data.map, App.imgs);
+  }
+
   drawNetwork(ctx, App.view, frame, App.imgs, frame.t);
   const diameterCells = App.data.meta.robot_diameter_m / App.data.meta.cell_m;
   drawFleet(ctx, App.view, frame, App.imgs, {
-    labels: App.view.cell >= 22,
+    labels: App.view.cell >= 20,
     robotSizeCells: Math.max(0.55, diameterCells),
+    selectedRobotId: App.selectedRobotId,
   });
+
+  ctx.restore();
+
+  // Render PiP Close-Up Viewfinder
+  renderPiP(frame, selectedRobot);
 
   el('scrub').value = idx;
   el('clockNow').textContent = frame.t.toFixed(1);
@@ -253,6 +433,57 @@ function draw() {
   renderAuctionPanel(frame);
   updateSummaryProgress(frame);
   Hud.render(frame, App.data.summary, App.data.meta, frame.t);
+}
+
+function renderPiP(frame, activeRobot) {
+  const container = el('pipContainer');
+  if (!container || container.classList.contains('hidden') || !App.pipEnabled) return;
+
+  const target = activeRobot || frame.robots[0];
+  if (!target) return;
+
+  const fInfo = (frame.fleet || []).find(f => f.id === target.id) || {};
+  el('pipRobotLabel').textContent = `${target.id} · LIVE CAM`;
+
+  // Size PiP canvas properly
+  App.pipView.resize(App.data.map, App.data.meta.cell_m);
+  App.pipView.setCamera(App.pipPov ? 'pov' : 'follow', target.id, 3.2);
+  App.pipView.updateCameraTransform(target);
+
+  const ctx = App.pipView.ctx;
+  App.pipView.clear();
+
+  ctx.save();
+  if (App.pipView.camRotation !== 0) {
+    ctx.translate(App.pipView.cssW / 2, App.pipView.cssH / 2);
+    ctx.rotate(App.pipView.camRotation);
+    ctx.translate(-App.pipView.cssW / 2, -App.pipView.cssH / 2);
+  }
+
+  renderStaticFloor(ctx, App.pipView, App.data.map, App.imgs);
+  drawNetwork(ctx, App.pipView, frame, App.imgs, frame.t);
+  const diameterCells = App.data.meta.robot_diameter_m / App.data.meta.cell_m;
+  drawFleet(ctx, App.pipView, frame, App.imgs, {
+    labels: true,
+    robotSizeCells: Math.max(0.65, diameterCells),
+    selectedRobotId: target.id,
+  });
+
+  ctx.restore();
+
+  // Update live HUD metrics
+  const deg = ((target.th * 180 / Math.PI) % 360 + 360) % 360;
+  const dirs = ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'];
+  const dirIdx = Math.round(deg / 45) % 8;
+  const dir = dirs[dirIdx];
+
+  const spd = fInfo.state === 'idle' || fInfo.state === 'charging' || fInfo.state === 'blocked' ? '0.00' : '0.85';
+  const batt = Math.round((target.batt || 0) * 100);
+
+  el('pipSpeed').textContent = `${spd} m/s`;
+  el('pipHeading').textContent = `${deg.toFixed(0)}° ${dir}`;
+  el('pipBatt').textContent = `${batt}%`;
+  el('pipState').textContent = (fInfo.state || 'IDLE').toUpperCase();
 }
 
 function updateManagerDot(frame) {
@@ -311,15 +542,19 @@ function renderFleetPanel(frame) {
     const priority = pk
       ? ` · P[e${pk[0]} x${pk[1]} w${pk[2]} a${pk[3]} l${pk[4]}]`
       : '';
+    const isFocused = r.id === App.selectedRobotId;
     const state = String(f.state || 'idle');
     const stateClass = /^[a-z0-9_-]+$/i.test(state) ? state : 'idle';
 
     return `
-      <div class="robot" style="border-left-color:${colour}">
+      <div class="robot ${isFocused ? 'active-focus' : ''}" style="border-left-color:${colour}" data-rid="${r.id}">
         <span class="swatch" style="background:${colour}"></span>
         <div>
-          <div class="rid">${escapeHtml(r.id)}</div>
-          <div class="meta">${escapeHtml(waiting + priority)}</div>
+          <div class="rid">
+            <span>${r.id}</span>
+            ${isFocused ? '<span class="cam-indicator">CAM</span>' : ''}
+          </div>
+          <div class="meta">${waiting}${priority}</div>
           <div class="batt"><i class="${battCls}" style="width:${batt}%"></i></div>
         </div>
         <div class="right">
@@ -329,6 +564,18 @@ function renderFleetPanel(frame) {
       </div>`;
   });
   el('fleet').innerHTML = rows.join('');
+
+  // Attach click listener to fleet cards for instant camera focus
+  const cardEls = el('fleet').querySelectorAll('.robot');
+  cardEls.forEach(card => {
+    card.addEventListener('click', () => {
+      const rid = card.getAttribute('data-rid');
+      if (rid) {
+        selectRobot(rid);
+        if (App.cameraMode === 'overview') setCameraMode('follow');
+      }
+    });
+  });
 }
 
 function escapeHtml(value) {
@@ -341,8 +588,6 @@ function uniqueAuctionEvents(events) {
   const awardKeys = new Set();
   return events.filter(event => {
     if (event.type !== 'AW') return true;
-    // The winner rebroadcasts AWARD to renew its lease. It is real wire traffic,
-    // but it is not a new allocation, so keep one visible row per task/epoch/winner.
     const key = [event.task, event.e ?? 0,
       event.winner || event.dst || event.src].join('|');
     if (awardKeys.has(key)) return false;
