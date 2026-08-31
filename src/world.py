@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from .environment import RACK, Warehouse
 from .geometry import (Vec, Cell, angle_diff, clamp, dist, segments_min_distance,
                        to_cell, wrap_angle)
+from .planner import astar
 from .settings import Config
 
 
@@ -104,21 +105,28 @@ class RobotState:
 
 @dataclass
 class HumanState:
-    """A warehouse worker. Walks a fixed loop and does not avoid robots, because the
-    case the problem statement forgot is precisely the agent that neither broadcasts
-    intent nor cooperates. If the fleet is only safe against things that talk to it,
-    it is not safe."""
+    """A non-broadcasting warehouse worker following a mapped pedestrian route.
+
+    The worker does not participate in fleet negotiation, but remains a physical
+    person: they walk only through passable space and do not deliberately step through
+    a stopped robot.  Treating a human as an unstoppable ghost made the old showcase
+    both visually impossible (walking through racks) and physically meaningless.
+    """
 
     hid: str
     waypoints: list[Vec]
-    speed: float = 1.35              # m/s, average adult walking pace
+    speed: float = 1.15              # m/s, controlled walking pace in an active aisle
     radius: float = 0.30
     x: float = 0.0
     y: float = 0.0
     idx: int = 0
+    direction: int = 1
+    paused: bool = False
+    yield_ticks: int = 0
+    theta: float = 0.0
 
     def velocity(self) -> Vec:
-        if len(self.waypoints) < 2:
+        if len(self.waypoints) < 2 or self.paused:
             return (0.0, 0.0)
         tx, ty = self.waypoints[self.idx]
         dx, dy = tx - self.x, ty - self.y
@@ -130,17 +138,26 @@ class HumanState:
     def step(self, dt: float) -> None:
         if len(self.waypoints) < 2:
             return
-        tx, ty = self.waypoints[self.idx]
-        dx, dy = tx - self.x, ty - self.y
-        d = math.hypot(dx, dy)
-        if d < 1e-6:
-            self.idx = (self.idx + 1) % len(self.waypoints)
-            return
-        step = min(self.speed * dt, d)
-        self.x += dx / d * step
-        self.y += dy / d * step
-        if d - step < 1e-6:
-            self.idx = (self.idx + 1) % len(self.waypoints)
+        remaining = self.speed * dt
+        # Consume the complete timestep even when it begins exactly on a waypoint.
+        # Returning early at a cell centre created a zero-motion candidate that the
+        # personal-space guard rejected forever after a worker reversed direction.
+        for _ in range(len(self.waypoints) + 1):
+            tx, ty = self.waypoints[self.idx]
+            dx, dy = tx - self.x, ty - self.y
+            d = math.hypot(dx, dy)
+            if d < 1e-9:
+                self.idx = (self.idx + self.direction) % len(self.waypoints)
+                continue
+            travel = min(remaining, d)
+            self.theta = math.atan2(dy, dx)
+            self.x += dx / d * travel
+            self.y += dy / d * travel
+            remaining -= travel
+            if d - travel < 1e-9:
+                self.idx = (self.idx + self.direction) % len(self.waypoints)
+            if remaining <= 1e-9:
+                return
 
 
 @dataclass
@@ -187,9 +204,51 @@ class World:
         self.robots[rid] = st
         return st
 
-    def add_human(self, hid: str, waypoints: list[Cell], speed: float = 1.35) -> HumanState:
+    def add_human(self, hid: str, waypoints: list[Cell], speed: float = 1.15) -> HumanState:
+        """Add a worker and expand sparse waypoints into a closed, rack-safe route.
+
+        Scenario authors may provide only the meaningful endpoints. Every segment,
+        including the return segment, is resolved by the same A* map used by the AMRs.
+        Invalid endpoints fail loudly instead of silently creating a person who walks
+        through shelving.
+        """
+        if len(waypoints) < 2:
+            raise ValueError(f"human {hid!r} requires at least two route cells")
+        for cell in waypoints:
+            if not self.env.passable(cell):
+                raise ValueError(
+                    f"human {hid!r} route cell {cell!r} is not passable")
+
+        expanded: list[Cell] = []
+        pairs = zip(waypoints, waypoints[1:] + waypoints[:1])
+        for start, goal in pairs:
+            segment = astar(self.env, start, goal)
+            if not segment:
+                raise ValueError(
+                    f"human {hid!r} has no valid route from {start!r} to {goal!r}")
+            expanded.extend(segment[:-1])
+        if len(expanded) < 2:
+            raise ValueError(f"human {hid!r} route does not contain a walkable loop")
+
         cm = self.cfg.cell_m
-        pts = [((c[0] + 0.5) * cm, (c[1] + 0.5) * cm) for c in waypoints]
+        # Perimeter routes represent marked pedestrian lanes beside the AMR travel
+        # centreline. Offset them toward the warehouse boundary so a worker is visibly
+        # present without occupying the same geometric lane as a robot.
+        offset_x = offset_y = 0.0
+        lane_offset = min(0.95, cm * 0.68)
+        if all(cell[1] == 1 for cell in expanded):
+            offset_y = -lane_offset
+        elif all(cell[1] == self.env.height - 2 for cell in expanded):
+            offset_y = lane_offset
+        elif all(cell[0] == 1 for cell in expanded):
+            offset_x = -lane_offset
+        elif all(cell[0] == self.env.width - 2 for cell in expanded):
+            offset_x = lane_offset
+        pts = [
+            ((cell[0] + 0.5) * cm + offset_x,
+             (cell[1] + 0.5) * cm + offset_y)
+            for cell in expanded
+        ]
         h = HumanState(hid, pts, speed=speed, x=pts[0][0], y=pts[0][1], idx=1 % len(pts))
         self.humans[hid] = h
         return h
@@ -248,8 +307,52 @@ class World:
             else:
                 st.battery_wh = max(0.0, st.battery_wh - draw * dt / 3600.0)
 
-        for h in self.humans.values():
+        # Workers use their own local perception and refuse to walk through fixtures,
+        # pallets, AMRs, or one another. They still publish no intent and receive no
+        # fleet messages: robots must detect them with the independent safety layer.
+        accepted_human_segments: list[tuple[Vec, Vec, float]] = []
+        for hid in sorted(self.humans):
+            h = self.humans[hid]
+            old_x, old_y, old_idx, old_direction = h.x, h.y, h.idx, h.direction
+            h.paused = False
             h.step(dt)
+            candidate = (h.x, h.y)
+            blocked = self._human_hits_static(candidate, h.radius)
+            if not blocked:
+                for rid, robot in self.robots.items():
+                    # Preserve a personal-space margin without turning the pedestrian
+                    # model into an invisible wall wider than the robot's own local
+                    # braking field. Layer 0 remains responsible for the final stop.
+                    threshold = h.radius + spec.radius_m + 0.27
+                    start_distance = dist(prev_h[hid], (robot.x, robot.y))
+                    end_distance = dist(candidate, (robot.x, robot.y))
+                    clearance = segments_min_distance(
+                        prev_h[hid], candidate, prev[rid], (robot.x, robot.y))
+                    escaping = (start_distance < threshold
+                                and end_distance > start_distance + 1e-6)
+                    if clearance < threshold and not escaping:
+                        blocked = True
+                        break
+            if not blocked:
+                for other_start, other_end, other_radius in accepted_human_segments:
+                    threshold = h.radius + other_radius + 0.08
+                    start_distance = dist(prev_h[hid], other_end)
+                    end_distance = dist(candidate, other_end)
+                    clearance = segments_min_distance(
+                        prev_h[hid], candidate, other_start, other_end)
+                    escaping = (start_distance < threshold
+                                and end_distance > start_distance + 1e-6)
+                    if clearance < threshold and not escaping:
+                        blocked = True
+                        break
+            if blocked:
+                h.x, h.y = old_x, old_y
+                h.direction = -old_direction
+                h.idx = (old_idx - old_direction) % len(h.waypoints)
+                h.paused = True
+                h.yield_ticks += 1
+            accepted_human_segments.append(
+                (prev_h[hid], (h.x, h.y), h.radius))
 
         self.t += dt
         return self._check_contacts(prev, prev_h)
@@ -279,6 +382,29 @@ class World:
                for obstacle in self.obstacles.values()):
             return True
         return False
+
+    def _human_hits_static(self, p: Vec, radius: float) -> bool:
+        """Circle-vs-map collision check for pedestrians and dynamic obstacles."""
+        cm = self.cfg.cell_m
+        cx, cy = to_cell(p, cm)
+        for gy in range(cy - 1, cy + 2):
+            for gx in range(cx - 1, cx + 2):
+                if not self.env.in_bounds((gx, gy)):
+                    continue
+                if self.env.grid[gy][gx] != RACK:
+                    continue
+                nx = clamp(p[0], gx * cm, (gx + 1) * cm)
+                ny = clamp(p[1], gy * cm, (gy + 1) * cm)
+                if (p[0] - nx) ** 2 + (p[1] - ny) ** 2 < radius * radius:
+                    return True
+        if not (radius <= p[0] <= self.env.width * cm - radius):
+            return True
+        if not (radius <= p[1] <= self.env.height * cm - radius):
+            return True
+        return any(
+            dist(p, (obstacle.x, obstacle.y)) < radius + obstacle.radius
+            for obstacle in self.obstacles.values()
+        )
 
     def _on_dock(self, st: RobotState) -> bool:
         return to_cell((st.x, st.y), self.cfg.cell_m) in set(self.env.docks)
@@ -477,8 +603,17 @@ class World:
                  "carry": r.carrying}
                 for r in self.robots.values()
             ],
-            "humans": [{"id": h.hid, "x": round(h.x, 3), "y": round(h.y, 3)}
-                       for h in self.humans.values()],
+            "humans": [
+                {
+                    "id": h.hid,
+                    "x": round(h.x, 3),
+                    "y": round(h.y, 3),
+                    "th": round(h.theta, 3),
+                    "paused": h.paused,
+                    "yield_ticks": h.yield_ticks,
+                }
+                for h in self.humans.values()
+            ],
             "obstacles": [
                 {"id": obstacle.oid, "x": round(obstacle.x, 3),
                  "y": round(obstacle.y, 3), "r": obstacle.radius}

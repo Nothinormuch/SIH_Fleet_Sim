@@ -38,6 +38,7 @@ from .amr import Task
 from .environment import (DOCK, FREE, RACK, STATION, Warehouse,
                           chokepoint_warehouse, classic_warehouse, open_floor)
 from .geometry import Cell, manhattan
+from .planner import astar
 from .settings import Config, NetSpec
 from .task_allocation import ACTIVE_ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED
 
@@ -192,6 +193,108 @@ def _round_robin(tasks: list[Task], n: int) -> list[list[Task]]:
     return out
 
 
+def _closed_human_walk(env: Warehouse, start: Cell, goal: Cell) -> list[Cell]:
+    """A contiguous out-and-back pedestrian route that never crosses shelving."""
+    path = astar(env, start, goal)
+    if len(path) < 2:
+        raise ValueError(f"invalid human walkway from {start!r} to {goal!r}")
+    return path + path[-2:0:-1]
+
+
+def _pedestrian_walks(env: Warehouse, robot_starts: list[Cell], count: int,
+                      mixed: bool = False) -> list[list[Cell]]:
+    """Build rack-safe walks and place their starts away from parked AMRs.
+
+    The focused human showcase uses the principal cross aisles. The combined stress
+    scene uses two interior routes plus perimeter walkways, so adding more people does
+    not unrealistically turn every AMR lane into a permanently occupied footpath.
+    """
+    cross_rows = [
+        y for y in range(2, env.height - 2)
+        if all(env.passable((x, y)) for x in range(1, env.width - 1))
+    ]
+    through_cols = [
+        x for x in range(2, env.width - 2)
+        if all(env.passable((x, y)) for y in range(1, env.height - 1))
+    ]
+    central: list[tuple[Cell, Cell]] = [
+        ((1, y), (env.width - 2, y)) for y in cross_rows
+    ]
+    if through_cols:
+        indexes = sorted({len(through_cols) // 3, (2 * len(through_cols)) // 3})
+        central.extend(
+            ((through_cols[index], 1), (through_cols[index], env.height - 2))
+            for index in indexes
+        )
+    if mixed:
+        centre_row = central[len(cross_rows) // 2:len(cross_rows) // 2 + 1]
+        centre_col = central[len(cross_rows):len(cross_rows) + 1]
+        perimeter = [
+            ((1, 1), (env.width - 2, 1)),
+            ((1, env.height - 2), (env.width - 2, env.height - 2)),
+            ((env.width - 2, 1), (env.width - 2, env.height - 2)),
+        ]
+        candidates = centre_row + centre_col + perimeter
+    else:
+        candidates = central
+    if len(candidates) < count:
+        raise ValueError(f"warehouse exposes only {len(candidates)} safe pedestrian routes")
+
+    return _place_pedestrian_walks(env, robot_starts, candidates[:count])
+
+
+def _place_pedestrian_walks(env: Warehouse, robot_starts: list[Cell],
+                            specs: list[tuple[Cell, Cell]]) -> list[list[Cell]]:
+    """Turn walkway endpoints into loops with non-overlapping initial positions."""
+    walks: list[list[Cell]] = []
+    occupied_starts = list(robot_starts)
+    for start, goal in specs:
+        route = _closed_human_walk(env, start, goal)
+        offset = max(
+            range(len(route)),
+            key=lambda index: (
+                min((manhattan(route[index], cell) for cell in occupied_starts),
+                    default=env.width + env.height),
+                -index,
+            ),
+        )
+        route = route[offset:] + route[:offset]
+        walks.append(route)
+        occupied_starts.append(route[0])
+    return walks
+
+
+def _showcase_pedestrian_walks(env: Warehouse, robot_starts: list[Cell],
+                               grand: bool = False) -> list[list[Cell]]:
+    """Short, visible patrols that create crossings without occupying whole aisles."""
+    cross_rows = [
+        y for y in range(2, env.height - 2)
+        if all(env.passable((x, y)) for x in range(1, env.width - 1))
+    ]
+    if len(cross_rows) < 3:
+        raise ValueError("showcase warehouse requires three pedestrian cross aisles")
+    if grand:
+        specs = [
+            ((2, 1), (7, 1)),
+            ((11, 1), (16, 1)),
+            ((env.width - 11, 1), (env.width - 6, 1)),
+            ((5, env.height - 2), (10, env.height - 2)),
+            ((env.width - 14, env.height - 2),
+             (env.width - 9, env.height - 2)),
+        ]
+    else:
+        specs = [
+            # Marked pedestrian patrols run beside the perimeter AMR centreline.
+            # Robots still encounter workers near entry/exit aprons, while people do
+            # not unrealistically pace back and forth across every logistics aisle.
+            ((2, 1), (7, 1)),
+            ((14, 1), (19, 1)),
+            ((env.width - 11, env.height - 2),
+             (env.width - 6, env.height - 2)),
+        ]
+    return _place_pedestrian_walks(env, robot_starts, specs)
+
+
 # ---------------------------------------------------------------- scenarios
 
 
@@ -261,10 +364,9 @@ def human_in_aisle(n_robots: int = 6, tasks_per_robot: int = 3,
     """
     base = dense_aisles(n_robots, tasks_per_robot, seed)
     env = base.env
-    aisle_y = 9                                    # a free cross-aisle in the classic map
-    walk = [(2, aisle_y), (env.width - 3, aisle_y)]
     return Scenario("human_in_aisle", env, base.starts, base.assignments,
-                    humans=[walk], duration_s=600.0, seed=seed)
+                    humans=_pedestrian_walks(env, base.starts, 1),
+                    duration_s=600.0, seed=seed)
 
 
 def manager_dies(n_robots: int = 8, tasks_per_robot: int = 4,
@@ -479,6 +581,13 @@ def _showcase_profile(sc: Scenario, name: str) -> Scenario:
         for i in range(sc.n_robots)
     ]
     tasks = sc.unassigned or [task for queue in sc.assignments for task in queue]
+    deadline_base = {
+        "showcase_open_floor": 240.0,
+        "showcase_chokepoint": 420.0,
+        "showcase_human": 720.0,
+        "showcase_dead_zone": 720.0,
+        "showcase_grand_challenge": 720.0,
+    }.get(name, 720.0)
     profiled: list[Task] = []
     for index, task in enumerate(tasks):
         cargo_type, cargo_weight, priority = _SHOWCASE_CARGO[index % len(_SHOWCASE_CARGO)]
@@ -492,7 +601,7 @@ def _showcase_profile(sc: Scenario, name: str) -> Scenario:
             cargo_type=cargo_type,
             cargo_weight=cargo_weight,
             priority=priority,
-            deadline=(240.0 + 15.0 * index) if index % 3 == 1 else None,
+            deadline=(deadline_base + 15.0 * index) if index % 3 == 1 else None,
         ))
     sc.unassigned = profiled
     sc.assignments = [[] for _ in range(sc.n_robots)]
@@ -525,8 +634,10 @@ def showcase_chokepoint(n_robots: int = 4, tasks_per_robot: int = 2,
 
 def showcase_human(n_robots: int = 5, tasks_per_robot: int = 2,
                    seed: int = 7) -> Scenario:
-    return _showcase_profile(
-        human_in_aisle(n_robots, tasks_per_robot, seed), "showcase_human")
+    scenario = human_in_aisle(n_robots, tasks_per_robot, seed)
+    scenario.humans = _showcase_pedestrian_walks(
+        scenario.env, scenario.starts)
+    return _showcase_profile(scenario, "showcase_human")
 
 
 def showcase_dead_zone(n_robots: int = 6, tasks_per_robot: int = 1,
@@ -541,11 +652,8 @@ def showcase_grand_challenge(n_robots: int = 8, tasks_per_robot: int = 2,
     """A deterministic jury story: traffic, humans, radio degradation and blockage."""
     base = dense_aisles(n_robots, tasks_per_robot, seed)
     env = base.env
-    cross_aisle = min(9, env.height - 3)
-    humans = [
-        [(2, cross_aisle), (env.width - 3, cross_aisle)],
-        [(env.width - 4, 1), (env.width - 4, env.height - 2)],
-    ]
+    cross_aisle = min(11, env.height - 3)
+    humans = _showcase_pedestrian_walks(env, base.starts, grand=True)
     net = NetSpec(
         loss=0.05,
         dead_zones=((env.width * 0.62, env.height * 0.48, 4.0),),
@@ -573,31 +681,31 @@ SHOWCASE_SCENARIOS = {
         "builder": showcase_open_floor, "title": "Open Floor",
         "eyebrow": "Energy-aware allocation",
         "description": "Watch identical AMRs reject unsafe jobs and self-select the best battery-feasible task.",
-        "robots": 4, "seed": 4, "duration": 180, "accent": "cyan",
+        "robots": 4, "humans": 0, "seed": 4, "duration": 180, "accent": "cyan",
     },
     "showcase_chokepoint": {
         "builder": showcase_chokepoint, "title": "Chokepoint",
         "eyebrow": "Priority negotiation",
         "description": "Opposing robots coordinate a single-file aisle with priority, yielding and expiring leases.",
-        "robots": 4, "seed": 7, "duration": 320, "accent": "amber",
+        "robots": 4, "humans": 0, "seed": 7, "duration": 320, "accent": "amber",
     },
     "showcase_human": {
         "builder": showcase_human, "title": "Human Interaction",
         "eyebrow": "Local perception",
-        "description": "A non-broadcasting worker crosses active routes while robots stop and replan locally.",
-        "robots": 5, "seed": 7, "duration": 320, "accent": "violet",
+        "description": "Three non-broadcasting workers patrol mapped lanes while robots stop and replan locally.",
+        "robots": 5, "humans": 3, "seed": 7, "duration": 520, "accent": "violet",
     },
     "showcase_dead_zone": {
         "builder": showcase_dead_zone, "title": "Dead-Zone Mesh",
         "eyebrow": "Network resilience",
         "description": "Visualise degraded links, stale-lease expiry and recovery on a genuine peer radio path.",
-        "robots": 6, "seed": 4, "duration": 400, "accent": "rose",
+        "robots": 6, "humans": 0, "seed": 4, "duration": 650, "accent": "rose",
     },
     "showcase_grand_challenge": {
         "builder": showcase_grand_challenge, "title": "Grand Challenge",
         "eyebrow": "The full BIOS story",
         "description": "Open traffic, humans, chokepoints, a blocked aisle, mixed cargo, a dead zone and robot recovery.",
-        "robots": 8, "seed": 1, "duration": 520, "accent": "lime",
+        "robots": 8, "humans": 5, "seed": 1, "duration": 800, "accent": "lime",
     },
 }
 

@@ -1942,10 +1942,11 @@ class AMRBrain:
             # before the auction branch: otherwise an auction-enabled idle robot that
             # reaches its one-cell vacate target keeps that goal forever, never calls
             # `_vacate_if_in_the_way` again, and becomes a permanent wall in a bay.
-            if (not (self.policy in V3_AUCTION_POLICIES
-                     and self.circulation.enabled)
-                    and self.goal is not None
-                    and self._arrived(sensors, self.goal)):
+            if self.goal is not None and self._arrived(sensors, self.goal):
+                # Directed circulation does not make a parking target permanent.
+                # Keeping the goal after arrival prevented `_vacate_if_in_the_way`
+                # from ever running, so an idle AMR could occupy a shared drop/charge
+                # bay forever while the final loaded robot waited behind it.
                 self.goal = None
                 self.path = []
                 self.path_times = []

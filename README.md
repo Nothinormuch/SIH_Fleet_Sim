@@ -224,7 +224,7 @@ See [`docs/SIH_ACCEPTANCE_BENCHMARK.md`](docs/SIH_ACCEPTANCE_BENCHMARK.md) for t
 method, limitations and commands. Raw evidence is checked in as
 [`artifacts/benchmarks/sih-acceptance.json`](artifacts/benchmarks/sih-acceptance.json)
 and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv).
-All 130 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
+All 133 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
 checks also pass.
 
 ## The dashboard
@@ -233,7 +233,9 @@ checks also pass.
 an interactive 3D warehouse digital twin with orbit, tactical, selected-AMR follow and
 robot-POV cameras. Click an AMR to inspect battery reserve, cargo, task, deadline and P2P
 neighbours; use **Jury Mode** for a clean, automatically narrated full-screen playback.
-A 2D diagnostic view remains available for protocol inspection.
+A dedicated operations dock below the scene holds camera, playback and selected-AMR
+telemetry, so no robot card or transport control covers the warehouse. A 2D diagnostic
+view remains available for protocol inspection.
 
 The public demo library is deliberately limited to five explainable stories: Open Floor,
 Chokepoint, Human Interaction, Dead-Zone Mesh and Grand Challenge. The benchmark and
@@ -242,6 +244,14 @@ UI. Every showcase defaults to the decentralized `auction` allocator, heterogene
 battery state and cargo-aware energy admission. A WMS injects tasks; it never selects a
 winner. Each AMR admits a bid only when the task, cargo factor and post-task charger return
 remain above the protected reserve.
+
+The release-checked default showcase profiles all finish their distinct workloads:
+Open Floor 8/8 at 128.84 s, Chokepoint 8/8 at 254.00 s, Human Interaction 10/10 at
+458.52 s, Dead-Zone Mesh 6/6 at 535.88 s, and Grand Challenge 16/16 at 754.08 s.
+Across those five deterministic runs there were zero observed robot/robot,
+robot/human, and robot/rack contacts. Their closest observed separations were 1.158 m,
+1.352 m, 0.921 m, 1.023 m, and 0.895 m respectively. These are simulation observations,
+not physical safety certification.
 
 Pick a showcase, route policy, task-allocation policy, fleet size and seed; the server
 runs the simulation and returns the map, every telemetry frame and the result summary,
@@ -259,8 +269,9 @@ looks the same whether it is coordinating or getting lucky:
 - **single-file blocks** — the runs of aisle the traffic layer applies block control to
 - **task allocation** — `TASK_NEW`, `BID`, `AWARD` and `TASK_DONE` messages for the
   peer auction, or directed manager awards for Hungarian allocation
-- **the human worker** — dashed ring, because they publish nothing and cannot be
-  negotiated with. Only the onboard safety layer sees them at all
+- **mapped human workers** — three in Human Interaction and five in Grand Challenge,
+  with rack-safe pedestrian routes, high-visibility 3D PPE models and yield state.
+  They publish nothing; only the onboard safety layer sees them
 
 The run endpoint is POST-only, size- and workload-bounded, and protected by strict
 request validation and browser security headers. Playback rather than a live socket:

@@ -91,6 +91,7 @@ export class DigitalTwin {
     this.scene.add(this.world, this.routes, this.dynamic);
     this.robots = new Map();
     this.humans = new Map();
+    this.obstacles = new Map();
     this.deadZones = [];
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -131,6 +132,7 @@ export class DigitalTwin {
     this.scene.add(this.world, this.routes, this.dynamic);
     this.robots.clear();
     this.humans.clear();
+    this.obstacles.clear();
     this.deadZones = [];
     this.map = data.map;
     this.meta = data.meta;
@@ -216,24 +218,41 @@ export class DigitalTwin {
         if (this.map.grid[y][x] === 1) rackCells.push([x, y]);
       }
     }
-    const rackGeometry = new THREE.BoxGeometry(cell * .9, cell * 1.38, cell * .9);
-    const rackMaterial = new THREE.MeshStandardMaterial({color: PALETTE.rack, roughness: .38, metalness: .62});
-    const racks = new THREE.InstancedMesh(rackGeometry, rackMaterial, rackCells.length);
-    racks.castShadow = true;
-    racks.receiveShadow = true;
-    const matrix = new THREE.Matrix4();
-    rackCells.forEach(([x, y], index) => {
-      matrix.setPosition(this._cellToWorld(x, y, cell * .69));
-      racks.setMatrixAt(index, matrix);
-    });
-    this.world.add(racks);
-
-    const beamMaterial = new THREE.MeshStandardMaterial({color: PALETTE.steel, roughness: .3, metalness: .75});
-    for (const [x, y] of rackCells.filter((_, i) => i % 3 === 0)) {
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(cell * .98, .08, cell * .98), beamMaterial);
-      beam.position.copy(this._cellToWorld(x, y, cell * 1.25));
-      this.world.add(beam);
+    // Build recognisable industrial shelving instead of opaque rack-shaped blocks.
+    // Instancing keeps the richer geometry inexpensive even on a large warehouse.
+    const uprightGeometry = new THREE.BoxGeometry(cell * .055, cell * 1.18, cell * .055);
+    const shelfGeometry = new THREE.BoxGeometry(cell * .9, cell * .045, cell * .9);
+    const cartonGeometry = new THREE.BoxGeometry(cell * .62, cell * .24, cell * .64);
+    const rackMaterial = new THREE.MeshStandardMaterial({color: PALETTE.steel, roughness: .32, metalness: .76});
+    const shelfMaterial = new THREE.MeshStandardMaterial({color: PALETTE.rack, roughness: .38, metalness: .64});
+    const cartonMaterial = new THREE.MeshStandardMaterial({color: 0xb47a43, roughness: .84, metalness: .02});
+    const uprights = new THREE.InstancedMesh(uprightGeometry, rackMaterial, rackCells.length * 4);
+    const shelves = new THREE.InstancedMesh(shelfGeometry, shelfMaterial, rackCells.length * 3);
+    const cartons = new THREE.InstancedMesh(cartonGeometry, cartonMaterial, rackCells.length * 2);
+    for (const mesh of [uprights, shelves, cartons]) {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
     }
+    const matrix = new THREE.Matrix4();
+    let uprightIndex = 0, shelfIndex = 0, cartonIndex = 0;
+    rackCells.forEach(([x, y], index) => {
+      const centre = this._cellToWorld(x, y, 0);
+      const edge = cell * .41;
+      for (const [dx, dz] of [[-edge, -edge], [edge, -edge], [-edge, edge], [edge, edge]]) {
+        matrix.setPosition(centre.x + dx, cell * .59, centre.z + dz);
+        uprights.setMatrixAt(uprightIndex++, matrix);
+      }
+      for (const level of [cell * .1, cell * .56, cell * 1.02]) {
+        matrix.setPosition(centre.x, level, centre.z);
+        shelves.setMatrixAt(shelfIndex++, matrix);
+      }
+      for (const level of [cell * .3, cell * .76]) {
+        const stagger = (index % 2 ? 1 : -1) * cell * .08;
+        matrix.setPosition(centre.x + stagger, level, centre.z);
+        cartons.setMatrixAt(cartonIndex++, matrix);
+      }
+    });
+    this.world.add(uprights, shelves, cartons);
 
     for (const [x, y] of this.map.stations || []) {
       this.world.add(this._makePad(x, y, 0x3b82f6, 'PICK / DROP'));
@@ -351,6 +370,24 @@ export class DigitalTwin {
     top.castShadow = true;
     top.userData.robotId = id;
     group.add(top);
+    const wheelMaterial = new THREE.MeshStandardMaterial({color: 0x05090d, roughness: .76, metalness: .28});
+    const wheels = [];
+    for (const [x, z] of [[-.43, -.25], [.43, -.25], [-.43, .25], [.43, .25]]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.105, .105, .09, 18), wheelMaterial);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, .16, z);
+      wheel.castShadow = true;
+      wheel.userData.robotId = id;
+      wheels.push(wheel);
+      group.add(wheel);
+    }
+    const bumper = new THREE.Mesh(
+      new THREE.BoxGeometry(.66, .13, .08),
+      new THREE.MeshStandardMaterial({color: 0x182d3b, roughness: .5, metalness: .54}),
+    );
+    bumper.position.set(0, .24, -.49);
+    bumper.userData.robotId = id;
+    group.add(bumper);
     const sensor = new THREE.Mesh(
       new THREE.BoxGeometry(.48, .08, .09),
       new THREE.MeshStandardMaterial({color: 0x081019, emissive: colour, emissiveIntensity: .95}),
@@ -358,6 +395,30 @@ export class DigitalTwin {
     sensor.position.set(0, .47, -.36);
     sensor.userData.robotId = id;
     group.add(sensor);
+    const mast = new THREE.Mesh(
+      new THREE.CylinderGeometry(.035, .045, .19, 16),
+      new THREE.MeshStandardMaterial({color: 0x7d91a1, roughness: .3, metalness: .78}),
+    );
+    mast.position.set(0, .62, .08);
+    const lidar = new THREE.Mesh(
+      new THREE.CylinderGeometry(.13, .13, .085, 24),
+      new THREE.MeshStandardMaterial({color: 0x071019, emissive: colour, emissiveIntensity: .38,
+        roughness: .18, metalness: .64}),
+    );
+    lidar.position.set(0, .75, .08);
+    lidar.userData.robotId = id;
+    const beacon = new THREE.Mesh(
+      new THREE.SphereGeometry(.055, 16, 10),
+      new THREE.MeshBasicMaterial({color: PALETTE.green}),
+    );
+    beacon.position.set(.24, .6, .15);
+    group.add(mast, lidar, beacon);
+    const deckRailMaterial = new THREE.MeshStandardMaterial({color: 0x8da2b5, roughness: .34, metalness: .78});
+    for (const x of [-.32, .32]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(.035, .07, .56), deckRailMaterial);
+      rail.position.set(x, .57, .02);
+      group.add(rail);
+    }
     const arrow = new THREE.Mesh(
       new THREE.ConeGeometry(.13, .35, 3),
       new THREE.MeshBasicMaterial({color: 0xffffff}),
@@ -382,9 +443,10 @@ export class DigitalTwin {
     selection.position.y = .045;
     group.add(selection);
     const label = makeLabel(id, hexCss(colour), true);
-    label.position.y = 1.18;
+    label.position.y = 1.34;
+    label.scale.multiplyScalar(.84);
     group.add(label);
-    group.userData = {robotId: id, colour, halo, selection, label};
+    group.userData = {robotId: id, colour, halo, selection, label, beacon, wheels};
     this.dynamic.add(group);
     this.robots.set(id, group);
     return group;
@@ -393,34 +455,97 @@ export class DigitalTwin {
   _ensureHuman(id) {
     if (this.humans.has(id)) return this.humans.get(id);
     const group = new THREE.Group();
-    const legs = new THREE.Mesh(
-      new THREE.CylinderGeometry(.16, .18, .62, 16),
-      new THREE.MeshStandardMaterial({color: 0x263747, roughness: .8}),
-    );
-    legs.position.y = .34;
-    const body = new THREE.Mesh(
-      new THREE.CylinderGeometry(.26, .2, .72, 18),
-      new THREE.MeshStandardMaterial({color: 0xf5b843, roughness: .72}),
-    );
-    body.position.y = .98;
+    const uniform = new THREE.MeshStandardMaterial({color: 0x24384a, roughness: .78});
+    const vestMaterial = new THREE.MeshStandardMaterial({color: 0xf5b843, roughness: .64});
+    const skin = new THREE.MeshStandardMaterial({color: 0xd9a276, roughness: .82});
+    const limbs = [];
+    for (const x of [-.1, .1]) {
+      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.075, .47, 5, 10), uniform);
+      leg.position.set(x, .34, 0);
+      leg.castShadow = true;
+      limbs.push(leg);
+      group.add(leg);
+    }
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(.2, .47, 6, 14), vestMaterial);
+    body.position.y = .97;
+    body.castShadow = true;
+    for (const x of [-.27, .27]) {
+      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(.055, .39, 5, 9), uniform);
+      arm.position.set(x, .96, 0);
+      arm.rotation.z = x < 0 ? -.12 : .12;
+      arm.castShadow = true;
+      limbs.push(arm);
+      group.add(arm);
+    }
     const head = new THREE.Mesh(
       new THREE.SphereGeometry(.2, 20, 14),
-      new THREE.MeshStandardMaterial({color: 0xe9b98b, roughness: .8}),
+      skin,
     );
     head.position.y = 1.48;
-    const vest = new THREE.Mesh(
-      new THREE.TorusGeometry(.24, .035, 8, 24),
-      new THREE.MeshBasicMaterial({color: 0xffee58}),
+    head.castShadow = true;
+    const helmet = new THREE.Mesh(
+      new THREE.SphereGeometry(.215, 20, 10, 0, Math.PI * 2, 0, Math.PI * .58),
+      new THREE.MeshStandardMaterial({color: 0xf2cf45, roughness: .48}),
     );
-    vest.rotation.x = Math.PI / 2;
-    vest.position.y = 1.02;
-    group.add(legs, body, head, vest);
+    helmet.position.y = 1.56;
+    const stripe = new THREE.Mesh(
+      new THREE.TorusGeometry(.215, .026, 8, 28),
+      new THREE.MeshBasicMaterial({color: 0xf8ffb5}),
+    );
+    stripe.rotation.x = Math.PI / 2;
+    stripe.position.y = 1.02;
+    const pauseRing = new THREE.Mesh(
+      new THREE.RingGeometry(.42, .5, 36),
+      new THREE.MeshBasicMaterial({color: PALETTE.amber, transparent: true, opacity: .72,
+        side: THREE.DoubleSide, depthWrite: false}),
+    );
+    pauseRing.rotation.x = -Math.PI / 2;
+    pauseRing.position.y = .025;
+    pauseRing.visible = false;
+    group.add(body, head, helmet, stripe, pauseRing);
     const label = makeLabel(`${id} · WORKER`, '#f5b843', true);
     label.position.y = 2.08;
     label.scale.multiplyScalar(.72);
     group.add(label);
+    group.userData = {limbs, pauseRing};
     this.dynamic.add(group);
     this.humans.set(id, group);
+    return group;
+  }
+
+  _ensureObstacle(id) {
+    if (this.obstacles.has(id)) return this.obstacles.get(id);
+    const group = new THREE.Group();
+    const pallet = new THREE.Mesh(
+      new THREE.BoxGeometry(.92, .11, .72),
+      new THREE.MeshStandardMaterial({color: 0x7b4d27, roughness: .9}),
+    );
+    pallet.position.y = .08;
+    pallet.castShadow = true;
+    group.add(pallet);
+    for (const z of [-.25, 0, .25]) {
+      const slat = new THREE.Mesh(
+        new THREE.BoxGeometry(.86, .07, .12),
+        new THREE.MeshStandardMaterial({color: 0xa86f38, roughness: .86}),
+      );
+      slat.position.set(0, .17, z);
+      group.add(slat);
+    }
+    const warning = new THREE.Mesh(
+      new THREE.RingGeometry(.56, .65, 36),
+      new THREE.MeshBasicMaterial({color: PALETTE.rose, transparent: true, opacity: .8,
+        side: THREE.DoubleSide, depthWrite: false}),
+    );
+    warning.rotation.x = -Math.PI / 2;
+    warning.position.y = .025;
+    group.add(warning);
+    const label = makeLabel('BLOCKED AISLE', '#ff6577', true);
+    label.position.y = 1.25;
+    label.scale.multiplyScalar(.72);
+    group.add(label);
+    group.userData.warning = warning;
+    this.dynamic.add(group);
+    this.obstacles.set(id, group);
     return group;
   }
 
@@ -443,12 +568,32 @@ export class DigitalTwin {
       group.userData.halo.material.opacity = .48 + .24 * (1 + Math.sin(simTime * 4)) / 2;
       group.userData.selection.material.opacity = robot.id === this.selectedId ? .95 : 0;
       group.userData.selection.rotation.z = simTime * 1.4;
+      group.userData.beacon.material.color.setHex(stateColour);
+      group.userData.beacon.scale.setScalar(.82 + .25 * (1 + Math.sin(simTime * 5)) / 2);
+      for (const wheel of group.userData.wheels) wheel.rotation.x = -simTime * 4;
       group.visible = true;
     }
     for (const human of frame.humans || []) {
       const group = this._ensureHuman(human.id);
       group.position.copy(this._toWorld(human.x, human.y, 0));
       group.rotation.y = -human.th - Math.PI / 2;
+      const stride = human.paused ? 0 : Math.sin(simTime * 7 + Number(human.id.replace(/\D/g, '') || 0)) * .32;
+      group.userData.limbs.forEach((limb, index) => {
+        limb.rotation.x = index % 2 ? -stride : stride;
+      });
+      group.userData.pauseRing.visible = Boolean(human.paused);
+      group.userData.pauseRing.rotation.z = simTime * 1.5;
+    }
+    const activeObstacles = new Set();
+    for (const obstacle of frame.obstacles || []) {
+      const group = this._ensureObstacle(obstacle.id);
+      group.position.copy(this._toWorld(obstacle.x, obstacle.y, 0));
+      group.userData.warning.rotation.z = simTime * 1.1;
+      group.visible = true;
+      activeObstacles.add(obstacle.id);
+    }
+    for (const [id, group] of this.obstacles) {
+      if (!activeObstacles.has(id)) group.visible = false;
     }
     for (const zone of this.deadZones) {
       zone.material.opacity = .08 + .045 * (1 + Math.sin(simTime * 1.8)) / 2;

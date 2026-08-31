@@ -65,7 +65,7 @@ async function boot() {
   el('scrub').addEventListener('input', e => {
     if (!App.data) return;
     App.playing = false;
-    el('playBtn').textContent = 'Play';
+    setPlaybackState(false);
     App.simTime = frameTime(parseInt(e.target.value, 10));
     draw();
   });
@@ -141,7 +141,7 @@ function renderScenarioGallery(showcase) {
       style="--card-accent:${accents[item.accent] || accents.cyan}">
       <span class="scenario-index">0${index + 1}</span>
       <span class="scenario-copy"><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.eyebrow)}</small></span>
-      <span class="scenario-meta">${item.robots} AMRs</span>
+      <span class="scenario-meta">${item.robots} AMRs${item.humans ? ' · ' + item.humans + ' people' : ''}</span>
     </button>`).join('');
   gallery.querySelectorAll('.scenario-card').forEach(card => {
     card.addEventListener('click', () => selectScenarioProfile(card.dataset.scenario));
@@ -291,7 +291,7 @@ function setHudDetails(enabled) {
 }
 
 function syncOverlayState() {
-  const stage = document.querySelector('.stage');
+  const stage = document.querySelector('.twin-stage');
   const hud = el('hud');
   const pip = el('pipContainer');
   const pipButton = el('camPipToggle');
@@ -373,7 +373,7 @@ async function run() {
   };
   el('runBtn').disabled = true;
   App.playing = false;
-  el('playBtn').textContent = 'Play';
+  setPlaybackState(false);
   setStatus(`Simulating ${el('duration').value}s of ${el('scenario').value}…`, 'busy');
 
   try {
@@ -388,6 +388,9 @@ async function run() {
     App.data = payload;
     App.auctionEvents = payload.frames.flatMap(f => f.auction_events || []);
     App.simTime = 0;
+    const humanProof = el('humanProof');
+    humanProof.hidden = !payload.meta.humans;
+    el('humanProofText').textContent = `${payload.meta.humans} mapped worker${payload.meta.humans === 1 ? '' : 's'}`;
 
     if (payload.frames.length && payload.frames[0].robots.length) {
       if (!App.selectedRobotId || !payload.frames[0].robots.some(r => r.id === App.selectedRobotId)) {
@@ -431,10 +434,23 @@ function setStatus(text, cls) {
 
 /* ------------------------------------------------------------------ playback */
 
+function setPlaybackState(playing) {
+  const button = el('playBtn');
+  const icon = button?.querySelector('.play-icon');
+  if (icon) icon.textContent = playing ? 'Ⅱ' : '▶';
+  if (button) {
+    const action = playing ? 'Pause' : 'Play';
+    button.title = action;
+    button.setAttribute('aria-label', `${action} simulation`);
+  }
+  const label = el('playStateLabel');
+  if (label) label.textContent = playing ? 'Pause' : 'Play';
+}
+
 function togglePlay() {
   if (!App.data || !App.data.frames.length) return;
   App.playing = !App.playing;
-  el('playBtn').textContent = App.playing ? 'Pause' : 'Play';
+  setPlaybackState(App.playing);
   if (App.playing && App.simTime >= endTime()) App.simTime = 0;
   App.lastRaf = performance.now();
 }
@@ -459,7 +475,7 @@ function tick(now) {
   if (App.simTime >= endTime()) {
     App.simTime = endTime();
     App.playing = false;
-    el('playBtn').textContent = 'Play';
+    setPlaybackState(false);
   }
   draw();
 }
@@ -468,10 +484,22 @@ function tick(now) {
 function bracket(t) {
   const f = App.data.frames;
   if (f.length < 2) return [f[0], f[0], 0, 0];
-  const step = f[1].t - f[0].t;
-  const raw = t / step;
-  const i = Math.max(0, Math.min(f.length - 2, Math.floor(raw)));
-  return [f[i], f[i + 1], Math.max(0, Math.min(1, raw - i)), i];
+  if (t <= f[0].t) return [f[0], f[1], 0, 0];
+  if (t >= f[f.length - 1].t) {
+    return [f[f.length - 2], f[f.length - 1], 1, f.length - 2];
+  }
+  // Normal telemetry is 10 Hz, but a run may append a completion frame between two
+  // scheduled samples. Binary search the recorded timestamps instead of assuming a
+  // perfectly uniform index-to-time mapping.
+  let lo = 0, hi = f.length - 1;
+  while (lo + 1 < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (f[mid].t <= t) lo = mid;
+    else hi = mid;
+  }
+  const span = Math.max(1e-9, f[hi].t - f[lo].t);
+  const u = Math.max(0, Math.min(1, (t - f[lo].t) / span));
+  return [f[lo], f[hi], u, lo];
 }
 
 const lerp = (a, b, u) => a + (b - a) * u;
@@ -501,14 +529,22 @@ function interpolate(f0, f1, u) {
   for (const h of (f1.humans || [])) hById[h.id] = h;
   const humans = (f0.humans || []).map(a => {
     const b = hById[a.id] || a;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    let th = a._th;
-    if (Math.hypot(dx, dy) > 1e-3) th = Math.atan2(dy, dx);
-    a._th = th;
-    return { id: a.id, x: lerp(a.x, b.x, u), y: lerp(a.y, b.y, u), th: th };
+    const aHeading = Number.isFinite(a.th) ? a.th : 0;
+    const bHeading = Number.isFinite(b.th) ? b.th : aHeading;
+    return {
+      id: a.id,
+      x: lerp(a.x, b.x, u),
+      y: lerp(a.y, b.y, u),
+      th: lerpAngle(aHeading, bHeading, u),
+      paused: u >= .5 ? Boolean(b.paused) : Boolean(a.paused),
+      yield_ticks: u >= .5 ? Number(b.yield_ticks || 0) : Number(a.yield_ticks || 0),
+    };
   });
   return { t: lerp(f0.t, f1.t, u), robots, humans,
+           obstacles: u >= 0.5 ? (f1.obstacles || []) : (f0.obstacles || []),
            fleet: u >= 0.5 ? (f1.fleet || f0.fleet) : f0.fleet,
+           tasks_completed: u >= 0.5
+             ? Number(f1.tasks_completed || 0) : Number(f0.tasks_completed || 0),
            manager_alive: f0.manager_alive, contacts: f0.contacts,
            auction_events: f0.auction_events || [] };
 }
@@ -556,7 +592,7 @@ function draw() {
   // Render PiP Close-Up Viewfinder
   renderPiP(frame, selectedRobot);
 
-  el('scrub').value = idx;
+  el('scrub').value = Math.min(Number(el('scrub').max), idx + (u >= .5 ? 1 : 0));
   el('clockNow').textContent = frame.t.toFixed(1);
   updateManagerDot(frame);
   renderFleetPanel(frame);
@@ -865,6 +901,11 @@ function renderSummary(s, meta) {
   const contacts = s.contacts_robot_robot + s.contacts_robot_human
                  + s.contacts_robot_rack;
   const finished = s.completed_all;
+  const remaining = Math.max(0, Number(s.tasks_announced || 0) - Number(s.tasks_completed || 0));
+  const runTitle = finished ? 'Workload completed' : 'Time-boxed stress result';
+  const runDetail = finished
+    ? `All tasks closed in ${s.makespan_s.toFixed(1)} seconds.`
+    : `${remaining} task${remaining === 1 ? '' : 's'} remained active when the ${s.sim_seconds.toFixed(1)} s evidence window ended.`;
 
   el('summary').innerHTML = `
     <div class="summary-live">
@@ -873,44 +914,47 @@ function renderSummary(s, meta) {
       <small id="progressTime">t = 0.0 s</small>
     </div>
 
-    <p class="summary-final-label">
-      Final result after complete simulation
-    </p>
+    <div class="outcome-banner ${finished ? 'complete' : 'window'}">
+      <span>${finished ? 'COMPLETE' : 'WINDOW ENDED'}</span>
+      <div><strong>${runTitle}</strong><small>${runDetail}</small></div>
+    </div>
 
     <dl>
       <dt>Tasks completed</dt>
       <dd>${s.tasks_completed} / ${s.tasks_announced}</dd>
 
-      <dt>${finished ? 'Makespan' : 'Ran for'}</dt>
-      <dd>${s.makespan_s.toFixed(1)} s${finished ? '' : ' (timeout)'}</dd>
+      <dt>${finished ? 'Measured makespan' : 'Evidence window'}</dt>
+      <dd>${(finished ? s.makespan_s : s.sim_seconds).toFixed(1)} s</dd>
       <dt>Robot&ndash;robot contacts</dt>
       <dd class="${s.contacts_robot_robot ? 'bad' : 'good'}">${s.contacts_robot_robot}</dd>
       <dt>Robot&ndash;human contacts</dt>
       <dd class="${s.contacts_robot_human ? 'bad' : 'good'}">${s.contacts_robot_human}</dd>
       <dt>Robot&ndash;rack contacts</dt>
       <dd class="${s.contacts_robot_rack ? 'bad' : 'good'}">${s.contacts_robot_rack}</dd>
-      <dt>Worst separation</dt>
+      <dt>Closest observed separation</dt>
       <dd>${s.min_separation_m.toFixed(2)} m</dd>
-
-      <dt>Deadlocks broken</dt>
-      <dd>${s.deadlocks_detected}</dd>
-
+      <dt>Safety-stop control ticks</dt>
+      <dd>${Number(s.safety_stop_ticks || 0)}</dd>
       <dt>Energy-risk bids blocked</dt>
       <dd class="good">${Number(s.energy_bids_suppressed || 0)}</dd>
-
-      <dt>Auction bids</dt>
-      <dd>${Number(s.auction_bids_sent || 0)}</dd>
-
-      <dt>Peer messages</dt>
-      <dd>${Number(s.msgs_sent || 0)}</dd>
     </dl>
+    <details class="run-diagnostics">
+      <summary>Coordination diagnostics <i>⌄</i></summary>
+      <dl>
+        <dt>Deadlocks detected</dt><dd>${Number(s.deadlocks_detected || 0)}</dd>
+        <dt>Pedestrian yield ticks</dt><dd>${Number(s.human_yield_ticks || 0)}</dd>
+        <dt>Auction bids submitted</dt><dd>${Number(s.auction_bids_sent || 0)}</dd>
+        <dt>Peer messages exchanged</dt><dd>${Number(s.msgs_sent || 0)}</dd>
+      </dl>
+    </details>
     <p class="evidence-scope">Simulation evidence · ${contacts} observed contacts in this run · not a physical safety certification.</p>
   `;
 }
 
 function updateSummaryProgress(frame) {
-  const done = (frame.fleet || [])
-    .reduce((sum, robot) => sum + (robot.done || 0), 0);
+  const done = Number.isFinite(frame.tasks_completed)
+    ? frame.tasks_completed
+    : (frame.fleet || []).reduce((sum, robot) => sum + (robot.done || 0), 0);
 
   const total = App.data.meta.tasks;
 

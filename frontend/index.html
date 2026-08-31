@@ -31,7 +31,8 @@
   </header>
 
   <main class="digital-workspace">
-    <section class="twin-stage" aria-label="Warehouse digital twin">
+    <div class="twin-column">
+      <section class="twin-stage" aria-label="Warehouse digital twin">
       <canvas id="twinCanvas" aria-label="Interactive three-dimensional warehouse"></canvas>
       <canvas id="floor" class="is-hidden" aria-label="Two-dimensional warehouse diagnostic view"></canvas>
       <div id="hud" class="hud-root" aria-hidden="true"></div>
@@ -44,8 +45,13 @@
       <div class="proof-strip">
         <span><i class="proof-dot energy"></i>15% reserve protected</span>
         <span><i class="proof-dot peer"></i>WMS announces only</span>
+        <span id="humanProof" hidden><i class="proof-dot human"></i><b id="humanProofText">0 workers</b></span>
         <span><i class="proof-dot evidence"></i>simulation evidence</span>
       </div>
+      </section>
+
+      <section class="operations-dock" aria-label="Simulation controls and selected robot telemetry">
+        <div class="dock-label"><span>OPERATIONS DOCK</span><small>Controls and telemetry stay outside the warehouse view</small></div>
       <div class="camera-console">
         <span class="console-label">CAMERA</span>
         <button id="camModeOverview" class="cam-btn active">Orbit</button>
@@ -57,27 +63,29 @@
         <button id="camZoomOut" class="cam-btn-icon" aria-label="Zoom out">−</button>
         <span id="camZoomVal" class="cam-val">2.8×</span>
         <button id="camZoomIn" class="cam-btn-icon" aria-label="Zoom in">+</button>
-        <button id="camPipToggle" class="cam-btn ghost-control">PiP</button>
-        <button id="hudDetailsToggle" class="cam-btn ghost-control" aria-controls="hud" aria-expanded="false">HUD</button>
+        <button id="camPipToggle" class="cam-btn ghost-control" hidden>PiP</button>
+        <button id="hudDetailsToggle" class="cam-btn ghost-control" aria-controls="hud" aria-expanded="false" hidden>HUD</button>
       </div>
       <div class="robot-inspector" id="robotInspector" aria-live="polite">
         <div class="inspector-empty"><span class="target-glyph">⌖</span><strong>Select an AMR</strong><small>Click a robot to inspect its battery, task and decentralized state.</small></div>
       </div>
-      <div id="pipContainer" class="pip-container hidden" aria-hidden="true">
-        <div class="pip-header"><div class="pip-title"><span class="pip-rec-dot"></span><span id="pipRobotLabel">AMR01 · LIVE FEED</span></div><div class="pip-actions"><button id="pipFocusMainBtn" class="pip-tool-btn">Focus</button><button id="pipPovToggle" class="pip-tool-btn">POV</button><button id="pipCloseBtn" class="pip-tool-btn" aria-label="Close">×</button></div></div>
-        <div class="pip-view-wrap"><canvas id="pipCanvas" width="300" height="190"></canvas></div>
-        <div class="pip-telemetry"><div class="pip-stat"><span>SPD</span><strong id="pipSpeed">0.00 m/s</strong></div><div class="pip-stat"><span>HDG</span><strong id="pipHeading">0° N</strong></div><div class="pip-stat"><span>BAT</span><strong id="pipBatt">100%</strong></div><div class="pip-stat"><span>STATE</span><strong id="pipState">IDLE</strong></div></div>
-      </div>
       <div class="event-ribbon">
         <div class="transport">
-          <button id="playBtn" class="play-control" title="Play or pause"><span class="play-icon">▶</span></button>
+          <button id="playBtn" class="play-control" title="Play" aria-label="Play simulation"><span class="play-icon">▶</span></button>
+          <span id="playStateLabel" class="play-state-label">Play</span>
           <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="Simulation timeline">
           <span class="clock"><b id="clockNow">0.0</b>s <i>/</i> <span id="clockEnd">0.0</span>s</span>
           <select id="speed" aria-label="Playback speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
         </div>
         <div id="eventSpotlight" class="event-spotlight"><span>READY</span><strong>Launch a scenario to enter the BIOS control loop.</strong></div>
       </div>
-    </section>
+        <div id="pipContainer" class="pip-container hidden" aria-hidden="true">
+          <div class="pip-header"><div class="pip-title"><span class="pip-rec-dot"></span><span id="pipRobotLabel">AMR01 · LIVE FEED</span></div><div class="pip-actions"><button id="pipFocusMainBtn" class="pip-tool-btn">Focus</button><button id="pipPovToggle" class="pip-tool-btn">POV</button><button id="pipCloseBtn" class="pip-tool-btn" aria-label="Close">×</button></div></div>
+          <div class="pip-view-wrap"><canvas id="pipCanvas" width="300" height="190"></canvas></div>
+          <div class="pip-telemetry"><div class="pip-stat"><span>SPD</span><strong id="pipSpeed">0.00 m/s</strong></div><div class="pip-stat"><span>HDG</span><strong id="pipHeading">0° N</strong></div><div class="pip-stat"><span>BAT</span><strong id="pipBatt">100%</strong></div><div class="pip-stat"><span>STATE</span><strong id="pipState">IDLE</strong></div></div>
+        </div>
+      </section>
+    </div>
 
     <aside class="mission-rail">
       <section class="rail-section scenario-section">
@@ -97,7 +105,7 @@
         <button id="runBtn" class="launch-button"><span class="launch-beam"></span><b>Launch digital twin</b><small>BIOS 5.0 · auction · energy gate</small></button>
         <p class="status" id="status">Preparing the warehouse…</p>
       </section>
-      <details class="rail-section intelligence-section" open>
+      <details class="rail-section intelligence-section">
         <summary><span><small>LIVE INTELLIGENCE</small><b>Fleet and auction</b></span><i>⌄</i></summary>
         <div id="auctionSummary" class="auction-summary"></div>
         <div id="fleet" class="fleet"></div>
