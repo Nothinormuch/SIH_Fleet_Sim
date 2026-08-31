@@ -1,190 +1,123 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SIH26123 · AMR Fleet Coordination</title>
-<link rel="stylesheet" href="/css/style.css">
-<link rel="stylesheet" href="/css/hud.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071019">
+  <meta name="description" content="BIOS 5.0 decentralized warehouse AMR digital twin">
+  <title>BIOS 5.0 · AMR Digital Twin</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/hud.css">
+  <link rel="stylesheet" href="/css/digital-twin.css">
 </head>
-<body>
+<body class="bios-app">
+  <header class="command-bar">
+    <div class="product-mark" aria-label="BIOS 5.0 Digital Twin">
+      <div class="mark-orbit"><span></span></div>
+      <div><strong>BIOS <em>5.0</em></strong><small>DECENTRALIZED AMR DIGITAL TWIN</small></div>
+    </div>
+    <div class="mission-state">
+      <span class="live-pulse"></span>
+      <div><small>COORDINATION STATUS</small><span id="linkState"><i class="dot" id="mgrDot"></i><b id="mgrText">initialising edge peers</b></span></div>
+    </div>
+    <nav class="command-actions" aria-label="Digital twin controls">
+      <div class="view-switch" role="group" aria-label="View mode">
+        <button id="view3dBtn" class="active" aria-pressed="true">3D Twin</button>
+        <button id="view2dBtn" aria-pressed="false">2D Diagnostic</button>
+      </div>
+      <button id="presentationBtn" class="jury-button"><span>◆</span> Jury Mode</button>
+      <button id="fullscreenBtn" class="icon-button" title="Fullscreen" aria-label="Enter fullscreen">⛶</button>
+    </nav>
+  </header>
 
-<header class="bar">
-  <div class="brand">
-    <span class="ps">SIH26123</span>
-    <span class="title">Edge-AI Distributed Fleet Coordination · AMR Warehouse</span>
+  <main class="digital-workspace">
+    <section class="twin-stage" aria-label="Warehouse digital twin">
+      <canvas id="twinCanvas" aria-label="Interactive three-dimensional warehouse"></canvas>
+      <canvas id="floor" class="is-hidden" aria-label="Two-dimensional warehouse diagnostic view"></canvas>
+      <div id="hud" class="hud-root" aria-hidden="true"></div>
+      <div class="stage-vignette" aria-hidden="true"></div>
+      <div class="stage-title">
+        <span id="activeScenarioEyebrow">ENERGY-AWARE ALLOCATION</span>
+        <h1 id="activeScenarioTitle">Open Floor</h1>
+        <p id="activeScenarioDescription">Identical robots independently evaluate battery, cargo, path and charger return.</p>
+      </div>
+      <div class="proof-strip">
+        <span><i class="proof-dot energy"></i>15% reserve protected</span>
+        <span><i class="proof-dot peer"></i>WMS announces only</span>
+        <span><i class="proof-dot evidence"></i>simulation evidence</span>
+      </div>
+      <div class="camera-console">
+        <span class="console-label">CAMERA</span>
+        <button id="camModeOverview" class="cam-btn active">Orbit</button>
+        <button id="camModeTactical" class="cam-btn">Tactical</button>
+        <button id="camModeFollow" class="cam-btn">Follow</button>
+        <button id="camModePov" class="cam-btn">Robot POV</button>
+        <span class="console-divider"></span>
+        <select id="camTargetSelect" class="cam-select" aria-label="Focus robot"><option value="">Select AMR</option></select>
+        <button id="camZoomOut" class="cam-btn-icon" aria-label="Zoom out">−</button>
+        <span id="camZoomVal" class="cam-val">2.8×</span>
+        <button id="camZoomIn" class="cam-btn-icon" aria-label="Zoom in">+</button>
+        <button id="camPipToggle" class="cam-btn ghost-control">PiP</button>
+        <button id="hudDetailsToggle" class="cam-btn ghost-control" aria-controls="hud" aria-expanded="false">HUD</button>
+      </div>
+      <div class="robot-inspector" id="robotInspector" aria-live="polite">
+        <div class="inspector-empty"><span class="target-glyph">⌖</span><strong>Select an AMR</strong><small>Click a robot to inspect its battery, task and decentralized state.</small></div>
+      </div>
+      <div id="pipContainer" class="pip-container hidden" aria-hidden="true">
+        <div class="pip-header"><div class="pip-title"><span class="pip-rec-dot"></span><span id="pipRobotLabel">AMR01 · LIVE FEED</span></div><div class="pip-actions"><button id="pipFocusMainBtn" class="pip-tool-btn">Focus</button><button id="pipPovToggle" class="pip-tool-btn">POV</button><button id="pipCloseBtn" class="pip-tool-btn" aria-label="Close">×</button></div></div>
+        <div class="pip-view-wrap"><canvas id="pipCanvas" width="300" height="190"></canvas></div>
+        <div class="pip-telemetry"><div class="pip-stat"><span>SPD</span><strong id="pipSpeed">0.00 m/s</strong></div><div class="pip-stat"><span>HDG</span><strong id="pipHeading">0° N</strong></div><div class="pip-stat"><span>BAT</span><strong id="pipBatt">100%</strong></div><div class="pip-stat"><span>STATE</span><strong id="pipState">IDLE</strong></div></div>
+      </div>
+      <div class="event-ribbon">
+        <div class="transport">
+          <button id="playBtn" class="play-control" title="Play or pause"><span class="play-icon">▶</span></button>
+          <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="Simulation timeline">
+          <span class="clock"><b id="clockNow">0.0</b>s <i>/</i> <span id="clockEnd">0.0</span>s</span>
+          <select id="speed" aria-label="Playback speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
+        </div>
+        <div id="eventSpotlight" class="event-spotlight"><span>READY</span><strong>Launch a scenario to enter the BIOS control loop.</strong></div>
+      </div>
+    </section>
+
+    <aside class="mission-rail">
+      <section class="rail-section scenario-section">
+        <div class="section-heading"><div><small>DEMO LIBRARY</small><h2>Five jury scenarios</h2></div><span class="energy-default">ENERGY ON</span></div>
+        <div id="scenarioGallery" class="scenario-gallery"></div>
+        <select id="scenario" hidden aria-hidden="true"></select>
+      </section>
+      <section class="rail-section run-section">
+        <div class="section-heading compact"><div><small>RUN PROFILE</small><h2>Mission controls</h2></div></div>
+        <div class="control-grid">
+          <label><span>Route intelligence</span><select id="policy"></select></label>
+          <label><span>Task allocation</span><select id="allocationPolicy"></select></label>
+          <label><span>AMRs</span><input type="number" id="robots" value="4" min="2" max="100"></label>
+          <label><span>Seed</span><input type="number" id="seed" value="4" min="0"></label>
+          <label><span>Duration</span><input type="number" id="duration" value="180" min="10" max="900" step="10"></label>
+        </div>
+        <button id="runBtn" class="launch-button"><span class="launch-beam"></span><b>Launch digital twin</b><small>BIOS 5.0 · auction · energy gate</small></button>
+        <p class="status" id="status">Preparing the warehouse…</p>
+      </section>
+      <details class="rail-section intelligence-section" open>
+        <summary><span><small>LIVE INTELLIGENCE</small><b>Fleet and auction</b></span><i>⌄</i></summary>
+        <div id="auctionSummary" class="auction-summary"></div>
+        <div id="fleet" class="fleet"></div>
+        <div id="auctionLog" class="auction-log"><p class="muted">Allocation events will appear here.</p></div>
+      </details>
+      <details class="rail-section results-section">
+        <summary><span><small>RUN EVIDENCE</small><b>Measured outcome</b></span><i>⌄</i></summary>
+        <div id="summary" class="summary"><p class="muted">No run yet.</p></div>
+      </details>
+    </aside>
+  </main>
+
+  <div id="juryOverlay" class="jury-overlay" aria-hidden="true">
+    <div class="jury-copy"><small>BIOS JURY MODE</small><strong id="juryHeadline">The warehouse is thinking locally.</strong><p id="juryNarration">Every robot sees the same task, but only an eligible robot is allowed to bid.</p></div>
+    <button id="exitJuryBtn">Exit presentation</button>
   </div>
-  <div class="link-state" id="linkState">
-    <span class="dot" id="mgrDot"></span><span id="mgrText">fleet manager</span>
-  </div>
-</header>
-
-<main>
-  <section class="stage">
-    <canvas id="floor"></canvas>
-
-    <div id="hud" class="hud-root" aria-hidden="true"></div>
-
-    <div class="camera-toolbar">
-      <div class="cam-group">
-        <span class="cam-label">CAM VIEW</span>
-        <button id="camModeOverview" class="cam-btn active" title="Global Floor Overview (Key: V)">Overview</button>
-        <button id="camModeFollow" class="cam-btn" title="Close Follow Cam (Key: V)">Follow</button>
-        <button id="camModePov" class="cam-btn" title="Robot POV Heading Angle (Key: V)">POV Angle</button>
-      </div>
-      <div class="cam-group cam-target-group">
-        <span class="cam-label">TARGET</span>
-        <select id="camTargetSelect" class="cam-select">
-          <option value="">Overview (None)</option>
-        </select>
-      </div>
-      <div class="cam-group cam-zoom-group">
-        <span class="cam-label">ZOOM</span>
-        <button id="camZoomOut" class="cam-btn-icon" title="Zoom Out (Key: Z)">&minus;</button>
-        <span id="camZoomVal" class="cam-val">2.8&times;</span>
-        <button id="camZoomIn" class="cam-btn-icon" title="Zoom In (Key: X)">&plus;</button>
-      </div>
-      <div class="cam-group cam-pip-group">
-        <button id="camPipToggle" class="cam-btn active" title="Toggle Picture-in-Picture Viewfinder">📷 Live PiP</button>
-      </div>
-      <div class="cam-group cam-hud-group">
-        <button id="hudDetailsToggle" class="cam-btn" aria-controls="hud"
-                aria-expanded="false" title="Show tactical HUD panels">HUD details</button>
-      </div>
-    </div>
-
-    <div class="overlay-legend">
-      <span><i class="sw sw-intent"></i> broadcast intent</span>
-      <span><i class="sw sw-link"></i> peer link</span>
-      <span><i class="sw sw-cargo"></i> cargo tote</span>
-      <span><i class="sw sw-block"></i> single-file block</span>
-      <span><i class="sw sw-human"></i> non-broadcasting worker</span>
-    </div>
-
-    <div id="pipContainer" class="pip-container">
-      <div class="pip-header">
-        <div class="pip-title">
-          <span class="pip-rec-dot"></span>
-          <span id="pipRobotLabel">AMR01 · LIVE FEED</span>
-        </div>
-        <div class="pip-actions">
-          <button id="pipFocusMainBtn" class="pip-tool-btn" title="Focus Main Screen on this Robot">🔍 Focus</button>
-          <button id="pipPovToggle" class="pip-tool-btn" title="Toggle POV / Top-Down in PiP">POV</button>
-          <button id="pipCloseBtn" class="pip-tool-btn" title="Close PiP">&times;</button>
-        </div>
-      </div>
-      <div class="pip-view-wrap">
-        <canvas id="pipCanvas" width="300" height="190"></canvas>
-        <div class="pip-hud-reticle"></div>
-        <div class="pip-scanlines"></div>
-      </div>
-      <div class="pip-telemetry" id="pipTelemetry">
-        <div class="pip-stat"><span>SPD</span><strong id="pipSpeed">0.00 m/s</strong></div>
-        <div class="pip-stat"><span>HDG</span><strong id="pipHeading">0° N</strong></div>
-        <div class="pip-stat"><span>BAT</span><strong id="pipBatt">100%</strong></div>
-        <div class="pip-stat"><span>STATE</span><strong id="pipState">IDLE</strong></div>
-      </div>
-    </div>
-
-    <div class="transport">
-      <button id="playBtn" class="primary" title="Play / pause (space)">Play</button>
-      <input type="range" id="scrub" min="0" max="0" value="0" step="1">
-      <span class="clock"><span id="clockNow">0.0</span>s <span class="muted">/</span>
-        <span id="clockEnd">0.0</span>s</span>
-      <label class="speed">speed
-        <select id="speed">
-          <option value="0.5">0.5&times;</option>
-          <option value="1" selected>1&times;</option>
-          <option value="2">2&times;</option>
-          <option value="4">4&times;</option>
-          <option value="8">8&times;</option>
-        </select>
-      </label>
-    </div>
-  </section>
-
-  <aside class="panel">
-
-    <div class="card">
-      <h2>Run</h2>
-      <div class="grid2">
-        <label>Scenario<select id="scenario"></select></label>
-        <label>Route policy<select id="policy"></select></label>
-        <label>Task allocation<select id="allocationPolicy"></select></label>
-        <label>Robots<input type="number" id="robots" value="4" min="2" max="100"></label>
-        <label>Seed<input type="number" id="seed" value="0" min="0" max="2147483647"></label>
-        <label>Duration (s)<input type="number" id="duration" value="120" min="10"
-                                 max="900" step="10"></label>
-        <label class="run-cell"><span>&nbsp;</span>
-          <button id="runBtn" class="primary">Run simulation</button></label>
-      </div>
-      <p class="status" id="status">Pick a scenario and press Run.</p>
-
-      <!-- Only meaningful for BIOS_4, so it is hidden until BIOS_4 is selected. A
-           model picker permanently on screen next to four policies that cannot use
-           one is an invitation to wonder which of them it applies to. -->
-      <div id="bios4" class="bios4" hidden>
-        <div class="bios4-row">
-          <button id="trainBtn">Train model</button>
-          <button id="uploadBtn">Upload model</button>
-          <input type="file" id="modelFile" accept="application/json,.json" hidden>
-        </div>
-        <div class="bios4-row bios4-params">
-          <label>pop<input type="number" id="population" value="24" min="4" max="64"></label>
-          <label>gens<input type="number" id="generations" value="30" min="1" max="200"></label>
-        </div>
-        <div id="trainProgress" hidden>
-          <div class="bios4-bar"><div id="trainBar"></div></div>
-          <!-- Best fitness per generation. A number that only goes up tells you
-               nothing about whether the search is working; the shape does. -->
-          <canvas id="trainChart" width="280" height="56"></canvas>
-          <p class="status" id="trainStatus"></p>
-          <button id="cancelBtn" class="ghost" hidden>Cancel</button>
-        </div>
-        <p class="status" id="modelStatus">No model loaded.</p>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Fleet</h2>
-      <div id="fleet" class="fleet"></div>
-    </div>
-
-    <div class="card">
-      <h2>Task Allocation</h2>
-      <div id="auctionSummary" class="auction-summary"></div>
-      <div id="auctionLog" class="auction-log">
-        <p class="muted">Run a simulation to see task-allocation messages.</p>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Run Summary</h2>
-      <div id="summary" class="summary">
-        <p class="muted">No run yet.</p>
-      </div>
-    </div>
-
-    <div class="card note">
-      <h2>Reading this screen</h2>
-      <p><b>The dashboard is a passive listener.</b> It reads the same messages the
-      robots broadcast to each other and cannot command anything. The problem statement
-      asks for "no central server" and then for a dashboard aggregating the whole fleet
-      &mdash; that is a central aggregator with the same single point of failure, so this
-      one is built to not be one.</p>
-      <p><b>Safety is the bottom layer, not the protocol.</b> The onboard protective stop
-      runs at 50&nbsp;Hz, is sized by its own speed <i>and</i> the closing speed of
-      whatever it sees, and never waits on a packet. The walking worker broadcasts
-      nothing and is the case that proves it.</p>
-    </div>
-
-  </aside>
-</main>
-
-<script src="/js/environment.js"></script>
-<script src="/js/amr.js"></script>
-<script src="/js/hud.js"></script>
-<script src="/js/network.js"></script>
-<script src="/js/main.js"></script>
+  <script src="/js/environment.js"></script>
+  <script src="/js/amr.js"></script>
+  <script src="/js/hud.js"></script>
+  <script src="/js/network.js"></script>
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>

@@ -455,6 +455,153 @@ def energy_acceptance(n_robots: int = 8, tasks_per_robot: int = 2,
     return sc
 
 
+# ---------------------------------------------------------------- jury showcase profiles
+
+_SHOWCASE_BATTERIES = (0.48, 0.62, 0.74, 0.86, 0.95, 0.56, 0.79, 0.91)
+_SHOWCASE_CARGO = (
+    ("normal", 8.0, 1),
+    ("fragile", 18.0, 2),
+    ("heavy", 72.0, 2),
+    ("hazardous", 36.0, 3),
+)
+
+
+def _showcase_profile(sc: Scenario, name: str) -> Scenario:
+    """Apply the same energy-aware task mix to every public jury scenario.
+
+    Pinned scientific scenarios remain unchanged. These wrappers are for the public
+    digital-twin experience, where every run should demonstrate the BIOS 5 energy gate.
+    """
+    sc.name = name
+    sc.use_auction = True
+    sc.initial_battery_fracs = [
+        _SHOWCASE_BATTERIES[i % len(_SHOWCASE_BATTERIES)]
+        for i in range(sc.n_robots)
+    ]
+    tasks = sc.unassigned or [task for queue in sc.assignments for task in queue]
+    profiled: list[Task] = []
+    for index, task in enumerate(tasks):
+        cargo_type, cargo_weight, priority = _SHOWCASE_CARGO[index % len(_SHOWCASE_CARGO)]
+        profiled.append(Task(
+            tid=task.tid,
+            pick=task.pick,
+            drop=task.drop,
+            announced_t=task.announced_t,
+            auction_epoch=task.auction_epoch,
+            bid_deadline=task.bid_deadline,
+            cargo_type=cargo_type,
+            cargo_weight=cargo_weight,
+            priority=priority,
+            deadline=(240.0 + 15.0 * index) if index % 3 == 1 else None,
+        ))
+    sc.unassigned = profiled
+    sc.assignments = [[] for _ in range(sc.n_robots)]
+    return sc
+
+
+def showcase_open_floor(n_robots: int = 4, tasks_per_robot: int = 2,
+                        seed: int = 4) -> Scenario:
+    env = open_floor(22, 15, name="showcase_open_floor")
+    rng = random.Random(seed)
+    starts = _spread_starts(env, n_robots, rng)
+    left = [(2, y) for y in range(2, env.height - 2, 3)]
+    right = [(env.width - 3, y) for y in range(2, env.height - 2, 3)]
+    tasks = []
+    for index in range(n_robots * tasks_per_robot):
+        source, destination = (left, right) if index % 2 == 0 else (right, left)
+        tasks.append(Task(f"TOO_{index:02d}", rng.choice(source),
+                          rng.choice(destination), 0.0))
+    return _showcase_profile(
+        Scenario("showcase_open_floor", env, starts,
+                 _round_robin(tasks, n_robots), duration_s=240.0, seed=seed),
+        "showcase_open_floor")
+
+
+def showcase_chokepoint(n_robots: int = 4, tasks_per_robot: int = 2,
+                        seed: int = 7) -> Scenario:
+    return _showcase_profile(
+        crossing_chokepoint(n_robots, tasks_per_robot, seed), "showcase_chokepoint")
+
+
+def showcase_human(n_robots: int = 5, tasks_per_robot: int = 2,
+                   seed: int = 7) -> Scenario:
+    return _showcase_profile(
+        human_in_aisle(n_robots, tasks_per_robot, seed), "showcase_human")
+
+
+def showcase_dead_zone(n_robots: int = 6, tasks_per_robot: int = 1,
+                       seed: int = 4) -> Scenario:
+    return _showcase_profile(
+        dead_zone(n_robots, tasks_per_robot, seed, mesh_radio=True),
+        "showcase_dead_zone")
+
+
+def showcase_grand_challenge(n_robots: int = 8, tasks_per_robot: int = 2,
+                             seed: int = 1) -> Scenario:
+    """A deterministic jury story: traffic, humans, radio degradation and blockage."""
+    base = dense_aisles(n_robots, tasks_per_robot, seed)
+    env = base.env
+    cross_aisle = min(9, env.height - 3)
+    humans = [
+        [(2, cross_aisle), (env.width - 3, cross_aisle)],
+        [(env.width - 4, 1), (env.width - 4, env.height - 2)],
+    ]
+    net = NetSpec(
+        loss=0.05,
+        dead_zones=((env.width * 0.62, env.height * 0.48, 4.0),),
+        peer_traffic_via_ap=False,
+    )
+    obstacle_cell = min(
+        (cell for cell in env.free_cells() if env.degree(cell) >= 2),
+        key=lambda cell: manhattan(cell, (env.width // 2, cross_aisle)),
+    )
+    combined = Scenario(
+        "showcase_grand_challenge", env, base.starts, base.assignments,
+        humans=humans, duration_s=480.0, net=net,
+        obstacles=[ObstacleEvent(
+            "fallen-pallet", obstacle_cell,
+            appear_at=24.0, clear_at=78.0)],
+        robot_fail_at={"AMR03": 52.0},
+        robot_restart_at={"AMR03": 96.0},
+        seed=seed,
+    )
+    return _showcase_profile(combined, "showcase_grand_challenge")
+
+
+SHOWCASE_SCENARIOS = {
+    "showcase_open_floor": {
+        "builder": showcase_open_floor, "title": "Open Floor",
+        "eyebrow": "Energy-aware allocation",
+        "description": "Watch identical AMRs reject unsafe jobs and self-select the best battery-feasible task.",
+        "robots": 4, "seed": 4, "duration": 180, "accent": "cyan",
+    },
+    "showcase_chokepoint": {
+        "builder": showcase_chokepoint, "title": "Chokepoint",
+        "eyebrow": "Priority negotiation",
+        "description": "Opposing robots coordinate a single-file aisle with priority, yielding and expiring leases.",
+        "robots": 4, "seed": 7, "duration": 320, "accent": "amber",
+    },
+    "showcase_human": {
+        "builder": showcase_human, "title": "Human Interaction",
+        "eyebrow": "Local perception",
+        "description": "A non-broadcasting worker crosses active routes while robots stop and replan locally.",
+        "robots": 5, "seed": 7, "duration": 320, "accent": "violet",
+    },
+    "showcase_dead_zone": {
+        "builder": showcase_dead_zone, "title": "Dead-Zone Mesh",
+        "eyebrow": "Network resilience",
+        "description": "Visualise degraded links, stale-lease expiry and recovery on a genuine peer radio path.",
+        "robots": 6, "seed": 4, "duration": 400, "accent": "rose",
+    },
+    "showcase_grand_challenge": {
+        "builder": showcase_grand_challenge, "title": "Grand Challenge",
+        "eyebrow": "The full BIOS story",
+        "description": "Open traffic, humans, chokepoints, a blocked aisle, mixed cargo, a dead zone and robot recovery.",
+        "robots": 8, "seed": 1, "duration": 520, "accent": "lime",
+    },
+}
+
+
 SCENARIOS = {
     "crossing_chokepoint": crossing_chokepoint,
     "dense_aisles": dense_aisles,
@@ -468,4 +615,5 @@ SCENARIOS = {
     "partition_recovery": partition_recovery,
     "sih_acceptance_overlap": sih_acceptance_overlap,
     "energy_acceptance": energy_acceptance,
+    **{name: profile["builder"] for name, profile in SHOWCASE_SCENARIOS.items()},
 }

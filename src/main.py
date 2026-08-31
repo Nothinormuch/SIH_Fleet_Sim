@@ -261,6 +261,10 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                  "goal": list(b.goal) if b.goal else None,
                  "pick": list(b.task.pick) if b.task else None,
                  "drop": list(b.task.drop) if b.task else None,
+                 "cargo_type": b.task.cargo_type if b.task else None,
+                 "cargo_weight": b.task.cargo_weight if b.task else None,
+                 "task_priority": b.task.priority if b.task else None,
+                 "deadline": b.task.deadline if b.task else None,
                  "carry": b.task.tid if (b.task and b.goal == b.task.drop) else None,
                  # The intent horizon, i.e. exactly what this robot is broadcasting.
                  # The dashboard draws these as reservation cones so the coordination
@@ -390,6 +394,21 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
             "pose_units": "metres",
             "robot_diameter_m": 2.0 * DEFAULT.robot.radius_m,
             "has_manager": policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL),
+            "dead_zones": [list(zone) for zone in sc.net.dead_zones],
+            "energy_reserve_frac": DEFAULT.traffic.energy_reserve_frac,
+            "energy_uncertainty_frac": DEFAULT.traffic.energy_uncertainty_frac,
+            "tasks_catalog": [
+                {
+                    "id": task.tid,
+                    "pick": list(task.pick),
+                    "drop": list(task.drop),
+                    "cargo_type": task.cargo_type,
+                    "cargo_weight": task.cargo_weight,
+                    "priority": task.priority,
+                    "deadline": task.deadline,
+                }
+                for task in _announced_tasks(sc, allocation_policy)
+            ],
             # So the dashboard can say WHICH model produced a run. A BIOS_4 result with
             # no model behind it is an untrained control, not a policy, and the two must
             # never be confused on screen.

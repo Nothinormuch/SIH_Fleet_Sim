@@ -109,8 +109,10 @@ src/
 backend/
   server.py        stdlib HTTP server: serves the frontend, runs sims on request
 frontend/
-  index.html       dashboard shell
+  index.html       professional digital-twin control-room shell
+  css/digital-twin.css responsive desktop, jury and mobile presentation layer
   css/style.css    palette shared with the generated asset set
+  js/digital-twin.js Three.js warehouse, AMRs, humans, paths, leases and mesh links
   js/environment.js  asset loading, world->screen transform, static warehouse layer
   js/amr.js        robots, status halos, payload, the human worker
   js/network.js    the coordination layer: intent, peer links, wait-for arrows
@@ -222,15 +224,29 @@ See [`docs/SIH_ACCEPTANCE_BENCHMARK.md`](docs/SIH_ACCEPTANCE_BENCHMARK.md) for t
 method, limitations and commands. Raw evidence is checked in as
 [`artifacts/benchmarks/sih-acceptance.json`](artifacts/benchmarks/sih-acceptance.json)
 and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv).
-All 129 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
+All 130 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
 checks also pass.
 
 ## The dashboard
 
-`python backend/server.py` then open <http://127.0.0.1:8000>. Pick a scenario, route
-policy, task-allocation policy, fleet size and seed; the server runs the simulation and
-returns the map, every telemetry frame and the result summary, and the page plays it
-back with a scrubber.
+`python -m backend.server` then open <http://127.0.0.1:8000>. The default experience is
+an interactive 3D warehouse digital twin with orbit, tactical, selected-AMR follow and
+robot-POV cameras. Click an AMR to inspect battery reserve, cargo, task, deadline and P2P
+neighbours; use **Jury Mode** for a clean, automatically narrated full-screen playback.
+A 2D diagnostic view remains available for protocol inspection.
+
+The public demo library is deliberately limited to five explainable stories: Open Floor,
+Chokepoint, Human Interaction, Dead-Zone Mesh and Grand Challenge. The benchmark and
+regression scenarios still exist in the simulation core, but are not mixed into the jury
+UI. Every showcase defaults to the decentralized `auction` allocator, heterogeneous
+battery state and cargo-aware energy admission. A WMS injects tasks; it never selects a
+winner. Each AMR admits a bid only when the task, cargo factor and post-task charger return
+remain above the protected reserve.
+
+Pick a showcase, route policy, task-allocation policy, fleet size and seed; the server
+runs the simulation and returns the map, every telemetry frame and the result summary,
+and the page plays it back with a scrubber. Three.js and OrbitControls are vendored under
+`frontend/vendor/`, so the demo does not depend on venue Wi-Fi or a CDN.
 
 It draws the things that are otherwise invisible, because a warehouse of moving robots
 looks the same whether it is coordinating or getting lucky:

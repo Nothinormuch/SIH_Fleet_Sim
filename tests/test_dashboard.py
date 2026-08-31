@@ -16,6 +16,7 @@ import pytest
 from src.environment import RACK
 from src.main import run_for_dashboard
 from backend.server import Handler, RequestValidationError, parse_run_request
+from src.scenarios import SHOWCASE_SCENARIOS
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +42,27 @@ def test_run_request_validation_rejects_clamping_and_combined_overload():
     assert parsed["duration"] == 120.0
     assert parsed["seed"] == 9
     assert parsed["policy"] == "BIOS_PIBT.5"
+
+
+def test_jury_showcases_share_the_energy_aware_auction_profile():
+    assert list(SHOWCASE_SCENARIOS) == [
+        "showcase_open_floor",
+        "showcase_chokepoint",
+        "showcase_human",
+        "showcase_dead_zone",
+        "showcase_grand_challenge",
+    ]
+    for name, profile in SHOWCASE_SCENARIOS.items():
+        scenario = profile["builder"](
+            n_robots=profile["robots"], seed=profile["seed"])
+        assert scenario.name == name
+        assert scenario.use_auction
+        assert len(scenario.initial_battery_fracs) == scenario.n_robots
+        assert len(set(scenario.initial_battery_fracs)) > 1
+        assert scenario.unassigned
+        assert not any(scenario.assignments)
+        assert {task.cargo_type for task in scenario.unassigned}.issubset(
+            {"normal", "fragile", "heavy", "hazardous"})
 
 
 def test_dashboard_run_is_post_only_and_security_headers_are_present():
