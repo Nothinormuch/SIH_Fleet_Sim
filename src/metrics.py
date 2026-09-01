@@ -130,6 +130,7 @@ class PolicyResult:
     auction_bids_sent: int = 0
     energy_bids_suppressed: int = 0
     energy_no_eligible_rounds: int = 0
+    nonproductive_wait_ticks: int = 0
     safety_stop_ticks: int = 0
     human_yield_ticks: int = 0
     seconds_degraded: float = 0.0
@@ -138,6 +139,22 @@ class PolicyResult:
     bytes_sent: int = 0
     msgs_per_robot_s: float = 0.0
     bytes_per_robot_s: float = 0.0
+    heartbeat_messages_sent: int = 0
+    intent_messages_sent: int = 0
+    auction_messages_sent: int = 0
+    coordination_messages_sent: int = 0
+    heartbeat_messages_suppressed: int = 0
+    intent_messages_suppressed: int = 0
+    lease_renewals_suppressed: int = 0
+    bid_rebroadcasts_suppressed: int = 0
+    decision_events: int = 0
+    congestion_samples: int = 0
+    experience_messages_sent: int = 0
+    experience_updates_received: int = 0
+    experience_guided_replans: int = 0
+    predictive_hazards_seen: int = 0
+    predictive_reroutes: int = 0
+    charger_contentions_avoided: int = 0
 
     plan_cpu_total_s: float = 0.0
     plan_calls: int = 0

@@ -45,9 +45,10 @@ TASK_NEW = "TN"       # order source announcing work; NOT a motion coordinator
 MGR_BEACON = "MB"     # fleet manager announcing it is reachable, with a plan epoch
 PLAN_REQ = "PQ"       # robot asks the manager for a coordinated route
 PLAN_RSP = "PS"       # manager answers with a timed plan
+EXPERIENCE = "EX"     # bounded directed-edge congestion observations
 
 ALL_TYPES = (HEARTBEAT, INTENT, CLAIM, RELEASE, YIELD, BID, AWARD,
-             TASK_DONE, TASK_NEW, MGR_BEACON, PLAN_REQ, PLAN_RSP)
+             TASK_DONE, TASK_NEW, MGR_BEACON, PLAN_REQ, PLAN_RSP, EXPERIENCE)
 
 PROTOCOL_VERSION = 1
 MAX_DATAGRAM_BYTES = 2048
@@ -55,6 +56,7 @@ MAX_ID_LENGTH = 64
 MAX_TASK_ID_LENGTH = 128
 MAX_INTENT_CELLS = 64
 MAX_PLAN_CELLS = 1024
+MAX_EXPERIENCE_RECORDS = 8
 MAX_RELATIVE_TIME_S = 86_400.0
 CARGO_TYPES = ("normal", "fragile", "heavy", "hazardous")
 _ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
@@ -349,6 +351,17 @@ def _validate_dict(d: dict) -> str | None:
                 or len(windows) not in (0, len(cells))
                 or any(not _relative_time(value) for value in windows)):
             return "invalid_plan_response"
+    elif typ == EXPERIENCE:
+        records = body.get("edges")
+        if (not isinstance(records, list)
+                or len(records) > MAX_EXPERIENCE_RECORDS):
+            return "invalid_experience"
+        for record in records:
+            if (not isinstance(record, list) or len(record) != 6
+                    or not _cell(record[:2]) or not _cell(record[2:4])
+                    or not _number(record[4], 0.0, 60.0)
+                    or not _integer(record[5], 1, 1_000_000)):
+                return "invalid_experience"
     return None
 
 
@@ -505,6 +518,23 @@ def plan_rsp(src: str, seq: int, t: float, dst: str, cells: list[Cell],
              epoch: int) -> Message:
     return Message(PLAN_RSP, src, seq, t, {
         "dst": dst, "cells": [list(c) for c in cells], "e": epoch,
+    })
+
+
+def experience(src: str, seq: int, t: float,
+               records: list[tuple[Cell, Cell, float, int]]) -> Message:
+    """Share a bounded set of measured directed-edge delays.
+
+    These observations guide efficiency only.  They cannot reserve a cell, command a
+    peer, or weaken the local protective-stop layer.
+    """
+    return Message(EXPERIENCE, src, seq, t, {
+        "edges": [
+            [a[0], a[1], b[0], b[1],
+             round(min(60.0, max(0.0, delay)), 3),
+             min(1_000_000, max(1, int(samples)))]
+            for a, b, delay, samples in records[:MAX_EXPERIENCE_RECORDS]
+        ],
     })
 
 

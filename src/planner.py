@@ -72,6 +72,7 @@ class Reservations:
 
 def astar(env: Warehouse, start: Cell, goal: Cell,
           extra_cost: dict[Cell, float] | None = None,
+          edge_cost: dict[tuple[Cell, Cell], float] | None = None,
           blocked: Iterable[Cell] = (),
           edge_allowed: Callable[[Cell, Cell], bool] | None = None) -> Plan:
     """Shortest path ignoring time and other robots. The Layer 2 default.
@@ -86,6 +87,7 @@ def astar(env: Warehouse, start: Cell, goal: Cell,
     if goal in blocked_set or not env.passable(goal):
         return []
     extra = extra_cost or {}
+    edges = edge_cost or {}
 
     tie = count()
     open_heap: list[tuple[float, int, int, Cell]] = [
@@ -112,7 +114,8 @@ def astar(env: Warehouse, start: Cell, goal: Cell,
                 continue
             if nxt in blocked_set or nxt in closed:
                 continue
-            tentative = g_score[cur] + 1.0 + extra.get(nxt, 0.0)
+            tentative = (g_score[cur] + 1.0 + extra.get(nxt, 0.0)
+                         + edges.get((cur, nxt), 0.0))
             if tentative < g_score.get(nxt, float("inf")):
                 g_score[nxt] = tentative
                 came[nxt] = cur

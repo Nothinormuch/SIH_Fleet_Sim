@@ -10,18 +10,22 @@ Run with:  python -m pytest tests -q
 
 import json
 import math
+from dataclasses import replace
 
 import pytest
 
-from src.amr import (AMRBrain, POLICY_BIOS_PIBT_V3, POLICY_CENTRAL,
-                     POLICY_DECENTRALIZED, POLICY_STOP_WAIT, Task)
+from src.amr import (AMRBrain, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V6,
+                     POLICY_CENTRAL, POLICY_DECENTRALIZED, POLICY_STOP_WAIT,
+                     ST_CHARGING, Peer, Task)
 from src.assignment import hungarian
 from src.environment import (RACK, chokepoint_warehouse, classic_warehouse,
                              corridors, open_floor)
 from src.fleet_manager import FleetManager
-from src.geometry import segments_min_distance, to_cell, wrap_angle
+from src.geometry import (cell_center, manhattan, segments_min_distance, to_cell,
+                          wrap_angle)
 from src.messages import (MGR_BEACON, PLAN_RSP, award, bid, decode,
-                          decode_packet, encode, heartbeat, intent, task_new)
+                          decode_packet, encode, experience, heartbeat, intent,
+                          task_new)
 from src.metrics import poisson_rate_ci
 from src.planner import Reservations, astar, prioritized_plan
 from src.settings import DEFAULT
@@ -61,6 +65,59 @@ def test_hungarian_finds_global_minimum_assignment():
     pairs = hungarian(costs)
     assert pairs == [(0, 1), (1, 0), (2, 2)]
     assert sum(costs[row][column] for row, column in pairs) == 5
+
+
+def test_astar_can_avoid_an_experienced_directed_edge():
+    env = open_floor(3, 3)
+    direct = astar(env, (0, 1), (2, 1))
+    guided = astar(
+        env, (0, 1), (2, 1),
+        edge_cost={((0, 1), (1, 1)): 10.0})
+    assert direct == [(0, 1), (1, 1), (2, 1)]
+    assert ((0, 1), (1, 1)) not in set(zip(guided, guided[1:]))
+    assert len(guided) > len(direct)
+
+
+def test_v6_prediction_is_a_soft_cost_that_can_avoid_future_occupancy():
+    env = open_floor(8, 8)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    brain.goal = (5, 2)
+    brain._last_cell = (0, 2)
+    brain._predicted_cell_cost[(2, 2)] = (5.0, 10.0, "moving-obstacle")
+
+    brain._replan(0.0, (0, 2))
+
+    assert brain.path
+    assert (2, 2) not in brain.path
+    assert brain.stats["predictive_reroutes"] == 1
+    assert brain.decision_log[-1]["code"] == "PREDICTIVE_REROUTE"
+
+
+def test_v6_prediction_falls_back_to_v5_routes_in_a_dead_zone():
+    cfg = replace(
+        DEFAULT,
+        net=replace(DEFAULT.net, dead_zones=((0.0, 0.0, 2.0),)),
+    )
+    env = open_floor(8, 8)
+    brain = AMRBrain("A", env, cfg, policy=POLICY_BIOS_PIBT_V6)
+    brain.goal = (5, 2)
+    brain._predicted_cell_cost[(2, 2)] = (5.0, 10.0, "moving-obstacle")
+
+    assert brain._v6_prediction_costs(0.0, (0, 2)) == {}
+
+
+def test_v6_charger_selection_avoids_a_fresh_busy_dock():
+    env = open_floor(20, 15)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    nearest = min(env.docks, key=lambda cell: (manhattan((0, 2), cell), cell))
+    brain.peers["B"] = Peer(
+        "B", cell=nearest, state=ST_CHARGING, goal=nearest, last_seen=0.0)
+
+    selected = brain._v6_select_charger(0.0, (0, 2))
+
+    assert selected in env.docks
+    assert selected != nearest
+    assert brain.stats["charger_contentions_avoided"] == 1
 
 
 def test_central_allocator_uses_global_assignment():
@@ -402,6 +459,19 @@ def test_world_blocks_racks_instead_of_letting_robots_tunnel():
         "the robot must stop at the rack face, not pass through it"
 
 
+def test_timed_obstacle_waits_for_an_occupied_cell_to_clear():
+    env = open_floor(10, 10)
+    world = World(env, DEFAULT, seed=0)
+    robot = world.add_robot("A", (4, 4), 0.0)
+
+    assert world.add_obstacle("pallet", (4, 4)) is None
+    assert "pallet" not in world.obstacles
+
+    robot.x, robot.y = cell_center((1, 1), DEFAULT.cell_m)
+    assert world.add_obstacle("pallet", (4, 4)) is not None
+    assert "pallet" in world.obstacles
+
+
 def test_lidar_detections_carry_no_identity():
     """The reactive layer must work off anonymous blobs, or it is blind to anything
     that does not broadcast - humans included."""
@@ -424,6 +494,19 @@ def test_messages_round_trip_and_reject_garbage():
     assert decode(b'{"type":"NOPE","src":"x","seq":1,"t":0}') is None
 
 
+def test_experience_message_round_trip_and_validation():
+    packet = experience(
+        "AMR01", 2, 1.5,
+        [((1, 2), (2, 2), 3.25, 4), ((2, 2), (2, 3), 0.5, 1)])
+    decoded = decode(encode(packet))
+    assert decoded is not None
+    assert decoded.body["edges"][0] == [1, 2, 2, 2, 3.25, 4]
+
+    invalid = packet.to_dict()
+    invalid["body"]["edges"][0][4] = -1.0
+    assert decode(json.dumps(invalid).encode()) is None
+
+
 def test_network_model_is_deterministic_for_a_seed():
     outs = []
     for _ in range(2):
@@ -435,6 +518,30 @@ def test_network_model_is_deterministic_for_a_seed():
                                               (0, 0), 1.0, "p2p", "idle", None))
         outs.append(len(net.poll(10.0, "B")))
     assert outs[0] == outs[1]
+
+
+def test_unrelated_packet_does_not_shift_later_loss_draws():
+    from dataclasses import replace
+
+    cfg = replace(DEFAULT, net=replace(DEFAULT.net, loss=0.5))
+
+    def target_delivered(with_extra: bool) -> bool:
+        net = SimNetwork(cfg, seed=19)
+        for rid in ("A", "B", "C"):
+            net.register(rid)
+        if with_extra:
+            net.send(0.5, "C", heartbeat(
+                "C", 1, 0.5, (3, 3, 0), (3, 3), 1.0,
+                "p2p", "idle", None))
+        # Sequence deliberately differs: an event-triggered sender has consumed fewer
+        # sequence numbers, but the same semantic packet should face the same channel.
+        seq = 99 if with_extra else 2
+        net.send(1.0, "A", heartbeat(
+            "A", seq, 1.0, (1, 1, 0), (1, 1), 1.0,
+            "p2p", "idle", None))
+        return any(message.src == "A" for message in net.poll(10.0, "B"))
+
+    assert target_delivered(False) == target_delivered(True)
 
 
 def test_dead_zone_kills_peer_traffic_when_the_ap_relays_it():

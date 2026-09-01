@@ -1,10 +1,11 @@
 """Properties of the decentralised priority engine."""
 
 import random
+from dataclasses import replace
 
 from src.amr import (AMRBrain, CELL_ZONE_BASE, POLICIES, POLICY_BIOS_PIBT,
                      POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
-                     POLICY_BIOS_PIBT_V5, Peer,
+                     POLICY_BIOS_PIBT_V5, POLICY_BIOS_PIBT_V6, Peer,
                      ST_IDLE, Task)
 from src.environment import (FREE, Warehouse, chokepoint_warehouse,
                              classic_warehouse, open_floor)
@@ -126,6 +127,8 @@ def test_policy_is_exposed_under_bios_pibt_name():
     assert POLICY_BIOS_PIBT_V3 in POLICIES
     assert POLICY_BIOS_PIBT_V5 == "BIOS_PIBT.5"
     assert POLICY_BIOS_PIBT_V5 in POLICIES
+    assert POLICY_BIOS_PIBT_V6 == "BIOS_PIBT.6"
+    assert POLICY_BIOS_PIBT_V6 in POLICIES
 
 
 def test_v5_rejects_energy_infeasible_task_and_accepts_charged_robot():
@@ -314,6 +317,40 @@ def test_v3_peer_catalog_repeats_completion_records():
     assert len(outbox) == 1
     assert outbox[0].type == TASK_DONE
     assert outbox[0].body["task"] == "T1"
+
+
+def test_v6_completion_gossip_stays_quiet_on_healthy_circulation_but_heals_dead_zones():
+    env = classic_warehouse()
+    healthy = AMRBrain(
+        "AMR01", env, DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    healthy.completed_tasks.add("T1")
+    healthy_outbox = []
+
+    healthy._broadcast_completion_catalog(1.0, healthy_outbox)
+
+    assert healthy.circulation.enabled
+    assert healthy_outbox == []
+
+    degraded_cfg = replace(
+        DEFAULT,
+        net=replace(DEFAULT.net, dead_zones=((3.0, 3.0, 1.0),)),
+    )
+    degraded = AMRBrain(
+        "AMR01", env, degraded_cfg,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    degraded.completed_tasks.add("T1")
+    degraded_outbox = []
+
+    degraded._broadcast_completion_catalog(1.0, degraded_outbox)
+
+    assert len(degraded_outbox) == 1
+    assert degraded_outbox[0].type == TASK_DONE
+    assert degraded_outbox[0].body["task"] == "T1"
 
 
 def test_peer_completion_cancels_a_duplicate_local_task():

@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#071019">
-  <meta name="description" content="BIOS 5.0 decentralized warehouse AMR digital twin">
-  <title>BIOS 5.0 · AMR Digital Twin</title>
+  <meta name="description" content="BIOS 6.0 predictive decentralized warehouse AMR digital twin">
+  <title>BIOS 6.0 · Predictive AMR Digital Twin</title>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/hud.css">
   <link rel="stylesheet" href="/css/digital-twin.css">
 </head>
 <body class="bios-app">
   <header class="command-bar">
-    <div class="product-mark" aria-label="BIOS 5.0 Digital Twin">
+    <div class="product-mark" aria-label="BIOS 6.0 Digital Twin">
       <div class="mark-orbit"><span></span></div>
-      <div><strong>BIOS <em>5.0</em></strong><small>DECENTRALIZED AMR DIGITAL TWIN</small></div>
+      <div><strong>BIOS <em>6.0</em></strong><small>PREDICTIVE COLLECTIVE INTELLIGENCE</small></div>
     </div>
     <div class="mission-state">
       <span class="live-pulse"></span>
@@ -45,6 +45,7 @@
       <div class="proof-strip">
         <span><i class="proof-dot energy"></i>15% reserve protected</span>
         <span><i class="proof-dot peer"></i>WMS announces only</span>
+        <span id="predictiveProof"><i class="proof-dot predictive"></i>short-horizon prediction</span>
         <span id="humanProof" hidden><i class="proof-dot human"></i><b id="humanProofText">0 workers</b></span>
         <span><i class="proof-dot evidence"></i>simulation evidence</span>
       </div>
@@ -102,9 +103,16 @@
           <label><span>Seed</span><input type="number" id="seed" value="4" min="0"></label>
           <label><span>Duration</span><input type="number" id="duration" value="180" min="10" max="900" step="10"></label>
         </div>
-        <button id="runBtn" class="launch-button"><span class="launch-beam"></span><b>Launch digital twin</b><small>BIOS 5.0 · auction · energy gate</small></button>
+        <button id="runBtn" class="launch-button"><span class="launch-beam"></span><b>Launch digital twin</b><small id="launchProfile">BIOS 6.0 · auction · predictive edge</small></button>
         <p class="status" id="status">Preparing the warehouse…</p>
       </section>
+      <details id="bios6Intelligence" class="rail-section bios6-section" open>
+        <summary><span><small>BIOS 6.0</small><b>Collective intelligence</b></span><i>⌄</i></summary>
+        <div class="bios6-mode"><span class="collective-pulse"></span><div><b id="collectiveMode">PREDICTIVE EDGE</b><small>Soft forecasts · proven safety fallback</small></div></div>
+        <div id="collectiveMetrics" class="collective-metrics"><p class="muted">Run BIOS_PIBT.6 to inspect measured intelligence.</p></div>
+        <div class="thought-heading"><span>DECISION TRACE</span><small>machine-derived · not generated narration</small></div>
+        <div id="thoughtStream" class="thought-stream"><p class="muted">Robot decisions will appear during playback.</p></div>
+      </details>
       <details class="rail-section intelligence-section">
         <summary><span><small>LIVE INTELLIGENCE</small><b>Fleet and auction</b></span><i>⌄</i></summary>
         <div id="auctionSummary" class="auction-summary"></div>

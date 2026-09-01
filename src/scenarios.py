@@ -660,7 +660,11 @@ def showcase_grand_challenge(n_robots: int = 8, tasks_per_robot: int = 2,
         peer_traffic_via_ap=False,
     )
     obstacle_cell = min(
-        (cell for cell in env.free_cells() if env.degree(cell) >= 2),
+        # Block a redundant junction, not a degree-two articulation of the nominal
+        # circulation lane. The combined scenario is meant to test dynamic rerouting;
+        # physically partitioning the one-way graph measures a different problem and
+        # can leave every policy gridlocked after the pallet has already cleared.
+        (cell for cell in env.free_cells() if env.degree(cell) >= 3),
         key=lambda cell: manhattan(cell, (env.width // 2, cross_aisle)),
     )
     combined = Scenario(

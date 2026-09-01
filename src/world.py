@@ -253,12 +253,31 @@ class World:
         self.humans[hid] = h
         return h
 
-    def add_obstacle(self, oid: str, cell: Cell, radius: float = 0.40) -> ObstacleState:
+    def add_obstacle(self, oid: str, cell: Cell,
+                     radius: float = 0.40) -> ObstacleState | None:
+        """Add a physical obstacle once its footprint is genuinely unoccupied.
+
+        A timed scenario event represents a pallet falling into a cell, not matter
+        materialising inside an AMR or worker.  When the target footprint is occupied,
+        return ``None`` so the scenario runner retries on a later physics tick.
+        """
         if not self.env.passable(cell):
             raise ValueError(f"dynamic obstacle {oid!r} is not in a passable cell")
         cm = self.cfg.cell_m
         obstacle = ObstacleState(
             oid, (cell[0] + 0.5) * cm, (cell[1] + 0.5) * cm, radius)
+        centre = (obstacle.x, obstacle.y)
+        if any(
+            dist(centre, (robot.x, robot.y))
+            < radius + self.cfg.robot.radius_m + 0.05
+            for robot in self.robots.values()
+        ):
+            return None
+        if any(
+            dist(centre, (human.x, human.y)) < radius + human.radius + 0.05
+            for human in self.humans.values()
+        ):
+            return None
         self.obstacles[oid] = obstacle
         return obstacle
 

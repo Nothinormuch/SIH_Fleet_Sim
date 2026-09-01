@@ -27,7 +27,9 @@ mentions one. Both configurations are in the benchmark sweep.
 
 from __future__ import annotations
 
+import hashlib
 import heapq
+import json
 import math
 import random
 import secrets
@@ -74,12 +76,14 @@ class SimNetwork:
 
     Determinism is not a nicety. A benchmark whose loss pattern changes between runs
     cannot support "policy A beat policy B", because the difference could be the dice.
-    One seeded RNG, one fixed iteration order, and a run is byte-reproducible.
+    Each semantic packet/link/time tuple gets a stable seeded draw, and the delivery
+    counter breaks equal-time ties.  Suppressing an unrelated packet in one policy
+    therefore cannot shift every later loss/latency draw in the paired policy.
     """
 
     def __init__(self, cfg: Config, seed: int = 0) -> None:
         self.cfg = cfg
-        self.rng = random.Random(seed ^ 0x5EED)
+        self.seed = int(seed)
         # One delivery heap PER DESTINATION. A single shared queue looks tidier and is
         # quadratic: every poll would drain everything due and re-push what belonged to
         # someone else, so cost grows with fleet size squared. With N=32 that alone
@@ -154,11 +158,22 @@ class SimNetwork:
             if not ok:
                 self.stats[why] += 1
                 continue
-            if self.rng.random() < self.cfg.net.loss:
+            # Counterfactual fairness: a policy that suppresses one redundant packet
+            # must not shift a global RNG and thereby change the loss/latency of every
+            # later packet.  Common semantic packets get a stable per-link draw based
+            # on their content and send time; sequence is deliberately excluded because
+            # event-triggered policies allocate fewer preceding sequence numbers.
+            identity = json.dumps(
+                [self.seed, src, dst, message.type, round(float(t), 6), message.body],
+                sort_keys=True, separators=(",", ":"), allow_nan=False,
+            ).encode("utf-8")
+            digest = hashlib.blake2b(identity, digest_size=16).digest()
+            packet_rng = random.Random(int.from_bytes(digest, "big"))
+            if packet_rng.random() < self.cfg.net.loss:
                 self.stats["dropped_loss"] += 1
                 continue
-            lat = max(0.0005, self.rng.gauss(self.cfg.net.latency_mean_s,
-                                             self.cfg.net.latency_jitter_s))
+            lat = max(0.0005, packet_rng.gauss(
+                self.cfg.net.latency_mean_s, self.cfg.net.latency_jitter_s))
             heapq.heappush(self._inbox.setdefault(dst, []),
                            (t + lat, next(self._tie), message))
 

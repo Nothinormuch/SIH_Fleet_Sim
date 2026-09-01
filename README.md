@@ -31,6 +31,13 @@ two-phase peer lease on every destination cell. This prevents head-on entry and 
 one-robot-per-cell ownership before a queue forms. Merge contenders use the same frozen
 total order; no process assigns moves and the dashboard is a passive observer.
 
+`BIOS_PIBT.6` is available on the experimental `codex/real-game` branch. It adds
+event-triggered communication, short-horizon occupancy prediction, distributed
+congestion experience, charger-aware dock choice, idle-lane clearing and machine-derived
+decision explanations. V5 remains the command-line and release default until V6 passes
+the multi-seed safety, liveness, performance and multi-process gates documented in
+[`docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md`](docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md).
+
 Maps that cannot be oriented without losing reachability use bounded directional task
 waves, block leases, early mouth staging and PIBT. Local 50 Hz protective stopping
 remains authoritative for every policy.
@@ -159,6 +166,7 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
 | `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Retained decentralized comparison policy. |
 | `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, payload/cargo factors, priority/deadline ordering, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Default fully decentralized route + allocation policy. |
+| `BIOS_PIBT.6` | V5 plus event-triggered traffic, decaying peer congestion experience, soft anonymous-moving-object forecasts, charger contention avoidance, idle-lane clearing and decision traces. | Experimental candidate. It is selectable in the BIOS 6 branch dashboard but is not the release default. |
 
 Task ownership is selected independently of the route policy. `auction` lets peers
 broadcast bids and converge on deterministic leased awards; this is the fully
@@ -224,8 +232,8 @@ See [`docs/SIH_ACCEPTANCE_BENCHMARK.md`](docs/SIH_ACCEPTANCE_BENCHMARK.md) for t
 method, limitations and commands. Raw evidence is checked in as
 [`artifacts/benchmarks/sih-acceptance.json`](artifacts/benchmarks/sih-acceptance.json)
 and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv).
-All 133 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
-checks also pass.
+The complete Python regression suite, lint, Python compilation and frontend JavaScript
+syntax checks are release gates; run them again before quoting a new commit as evidence.
 
 ## The dashboard
 
@@ -237,6 +245,11 @@ A dedicated operations dock below the scene holds camera, playback and selected-
 telemetry, so no robot card or transport control covers the warehouse. A 2D diagnostic
 view remains available for protocol inspection.
 
+When `BIOS_PIBT.6` is selected, the side rail adds a **Collective Intelligence** panel.
+It reports measured packet suppressions, forecasts and reroutes, then replays bounded
+decision records produced by the controller itself. The text is not generated after the
+run and does not claim that the AMRs use an LLM.
+
 The public demo library is deliberately limited to five explainable stories: Open Floor,
 Chokepoint, Human Interaction, Dead-Zone Mesh and Grand Challenge. The benchmark and
 regression scenarios still exist in the simulation core, but are not mixed into the jury
@@ -245,13 +258,15 @@ battery state and cargo-aware energy admission. A WMS injects tasks; it never se
 winner. Each AMR admits a bid only when the task, cargo factor and post-task charger return
 remain above the protected reserve.
 
-The release-checked default showcase profiles all finish their distinct workloads:
-Open Floor 8/8 at 128.84 s, Chokepoint 8/8 at 254.00 s, Human Interaction 10/10 at
-458.52 s, Dead-Zone Mesh 6/6 at 535.88 s, and Grand Challenge 16/16 at 754.08 s.
-Across those five deterministic runs there were zero observed robot/robot,
-robot/human, and robot/rack contacts. Their closest observed separations were 1.158 m,
-1.352 m, 0.921 m, 1.023 m, and 0.895 m respectively. These are simulation observations,
-not physical safety certification.
+The previous checked-in showcase numbers remain BIOS 5 release evidence. This branch
+corrects the semantic packet-loss model and the Grand Challenge obstacle topology, so
+those older numbers must not be relabelled as BIOS 6 results. The current paired
+three-seed development matrix records zero observed robot/robot, robot/human and
+robot/rack contacts, large message reductions, and a 59.3% aggregate Grand Challenge
+task-completion increase; it also exposes one Grand Challenge seed where V6 completes
+12 tasks versus V5's 14. The exact evidence and promotion decision are documented in
+[`docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md`](docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md).
+These are simulation observations, not physical safety certification.
 
 Pick a showcase, route policy, task-allocation policy, fleet size and seed; the server
 runs the simulation and returns the map, every telemetry frame and the result summary,

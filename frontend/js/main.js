@@ -23,6 +23,7 @@ const App = {
   lastRaf: 0,
   speed: 1,
   auctionEvents: [],
+  decisionEvents: [],
   // Camera angle & inspection mode
   cameraMode: 'overview', // 'overview' | 'follow' | 'pov'
   selectedRobotId: null,
@@ -51,15 +52,18 @@ async function boot() {
     const { scenarios, showcase, policies, allocation_policies } = await r.json();
     App.showcase = showcase || [];
     fill(el('scenario'), scenarios, 'showcase_open_floor');
-    fill(el('policy'), policies, 'BIOS_PIBT.5');
+    fill(el('policy'), policies, 'BIOS_PIBT.6');
     fill(el('allocationPolicy'), allocation_policies, 'auction');
     renderScenarioGallery(App.showcase);
+    updatePolicyProfile();
   } catch (e) {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
   }
 
   // Simulation controls
   el('runBtn').addEventListener('click', run);
+  el('policy').addEventListener('change', updatePolicyProfile);
+  el('allocationPolicy').addEventListener('change', updatePolicyProfile);
   el('playBtn').addEventListener('click', togglePlay);
   el('speed').addEventListener('change', e => { App.speed = parseFloat(e.target.value); });
   el('scrub').addEventListener('input', e => {
@@ -133,6 +137,23 @@ async function boot() {
   run();
 }
 
+function updatePolicyProfile() {
+  const policy = el('policy').value;
+  const allocation = el('allocationPolicy').value;
+  const isV6 = policy === 'BIOS_PIBT.6';
+  el('bios6Intelligence')?.classList.toggle('is-v6', isV6);
+  const proof = el('predictiveProof');
+  if (proof) proof.hidden = !isV6;
+  const profile = el('launchProfile');
+  if (profile) {
+    profile.textContent = isV6
+      ? `BIOS 6.0 · ${allocation} · predictive edge`
+      : `${policy.replaceAll('_', ' ')} · ${allocation} · energy gate`;
+  }
+  const mode = el('collectiveMode');
+  if (mode) mode.textContent = isV6 ? 'PREDICTIVE EDGE' : 'V6 NOT SELECTED';
+}
+
 function renderScenarioGallery(showcase) {
   const gallery = el('scenarioGallery');
   const accents = {cyan: '#35c6f4', amber: '#f5b843', violet: '#b78cff', rose: '#ff6577', lime: '#a3e635'};
@@ -166,11 +187,20 @@ function selectScenarioProfile(id, announce = true) {
 }
 
 function fill(select, values, preferred) {
+  const labels = {
+    'BIOS_PIBT.6': 'BIOS 6.0 · Predictive',
+    'BIOS_PIBT.5': 'BIOS 5.0 · Energy-aware',
+    'BIOS_PIBT.3': 'BIOS 3.0 · Priority traffic',
+    'stop_and_wait': 'Stop-and-wait baseline',
+    'central': 'Central route baseline',
+    'hierarchical': 'Hierarchical baseline',
+    'decentralized': 'Peer intent baseline',
+  };
   select.innerHTML = '';
   for (const v of values) {
     const o = document.createElement('option');
     o.value = v;
-    o.textContent = v.replace(/_/g, ' ');
+    o.textContent = labels[v] || v.replace(/_/g, ' ');
     if (v === preferred) o.selected = true;
     select.appendChild(o);
   }
@@ -387,6 +417,15 @@ async function run() {
 
     App.data = payload;
     App.auctionEvents = payload.frames.flatMap(f => f.auction_events || []);
+    const seenDecisions = new Set();
+    App.decisionEvents = payload.frames.flatMap(frame =>
+      (frame.fleet || []).map(robot => robot.decision).filter(Boolean)
+    ).filter(decision => {
+      const key = `${decision.robot}|${decision.t}|${decision.code}`;
+      if (seenDecisions.has(key)) return false;
+      seenDecisions.add(key);
+      return true;
+    });
     App.simTime = 0;
     const humanProof = el('humanProof');
     humanProof.hidden = !payload.meta.humans;
@@ -411,6 +450,7 @@ async function run() {
     el('clockEnd').textContent = (n ? payload.frames[n - 1].t : 0).toFixed(1);
 
     renderSummary(payload.summary, payload.meta);
+    renderCollectiveIntelligence(payload.frames[0]);
     setStatus(`${n} frames · ${payload.meta.robots} AMRs · seed ${payload.meta.seed} · energy gate active`);
 
     // HUD is re-inited on every run; init() disposes any previous instance so
@@ -599,6 +639,7 @@ function draw() {
   renderAuctionPanel(frame);
   updateSummaryProgress(frame);
   renderRobotInspector(frame);
+  renderCollectiveIntelligence(frame);
   updateEventSpotlight(frame);
   if (App.presentationMode) updatePresentation(frame);
   Hud.render(frame, App.data.summary, App.data.meta, frame.t);
@@ -685,6 +726,71 @@ function renderRobotInspector(frame) {
     <div class="reserve-note"><b>Energy acceptance active.</b> The robot may bid only when task + charger-return reserve remains feasible.</div>`;
 }
 
+function decisionDetail(decision) {
+  const details = decision?.details || {};
+  if (decision.code === 'TASK_ACCEPTED') {
+    const reserve = Number(details.projected_reserve_pct);
+    return Number.isFinite(reserve) ? `Projected reserve ${reserve.toFixed(1)}%` : 'Battery and deadline accepted';
+  }
+  if (decision.code === 'PREDICTIVE_REROUTE') {
+    return `${Number(details.direct_cells || 0)} → ${Number(details.selected_cells || 0)} cells · risk avoided ${Number(details.avoided_risk || 0).toFixed(1)}`;
+  }
+  if (decision.code === 'CONGESTION_REROUTE') {
+    return `Learned delay avoided ${Number(details.avoided_delay_cells || 0).toFixed(1)} equivalent cells`;
+  }
+  if (decision.code === 'CHARGER_SELECTION') {
+    return `Selected dock ${(details.selected_dock || []).join(', ')}`;
+  }
+  if (decision.code === 'TASK_COMPLETED') {
+    return `${Number(details.elapsed_s || 0).toFixed(1)} s · battery ${Number(details.battery_pct || 0).toFixed(1)}%`;
+  }
+  if (decision.code === 'IDLE_VACATE') {
+    return `Clearing for ${(details.requesting_robots || []).join(', ') || 'active traffic'}`;
+  }
+  return '';
+}
+
+function renderCollectiveIntelligence(frame) {
+  const metrics = el('collectiveMetrics');
+  const stream = el('thoughtStream');
+  if (!metrics || !stream || !App.data) return;
+  const isV6 = App.data.meta.policy === 'BIOS_PIBT.6';
+  el('bios6Intelligence')?.classList.toggle('is-v6', isV6);
+  el('collectiveMode').textContent = isV6 ? 'PREDICTIVE EDGE' : 'V6 NOT SELECTED';
+  if (!isV6) {
+    metrics.innerHTML = '<p class="muted">Select BIOS_PIBT.6 to activate predictive telemetry.</p>';
+    stream.innerHTML = '<p class="muted">This policy does not publish BIOS 6 decision reasons.</p>';
+    return;
+  }
+
+  const s = App.data.summary;
+  const suppressed = Number(s.heartbeat_messages_suppressed || 0)
+    + Number(s.intent_messages_suppressed || 0)
+    + Number(s.lease_renewals_suppressed || 0)
+    + Number(s.bid_rebroadcasts_suppressed || 0);
+  metrics.innerHTML = `
+    <div class="metric"><span>Forecasts observed</span><b>${Number(s.predictive_hazards_seen || 0)}</b></div>
+    <div class="metric"><span>Predictive reroutes</span><b>${Number(s.predictive_reroutes || 0)}</b></div>
+    <div class="metric"><span>Packets suppressed</span><b class="good">${suppressed.toLocaleString()}</b></div>
+    <div class="metric"><span>Decision events</span><b>${Number(s.decision_events || 0)}</b></div>`;
+
+  const visible = App.decisionEvents
+    .filter(decision => decision.t <= frame.t + 1e-6)
+    .filter(decision => !App.selectedRobotId || decision.robot === App.selectedRobotId);
+  const fallback = App.decisionEvents.filter(decision => decision.t <= frame.t + 1e-6);
+  const decisions = (visible.length ? visible : fallback).slice(-6).reverse();
+  if (!decisions.length) {
+    stream.innerHTML = '<p class="muted">Waiting for the first locally recorded decision.</p>';
+    return;
+  }
+  stream.innerHTML = decisions.map(decision => `
+    <article class="thought-row">
+      <header><b>${escapeHtml(decision.robot)} · ${escapeHtml(decision.code.replaceAll('_', ' '))}</b><time>${Number(decision.t).toFixed(1)}s</time></header>
+      <p>${escapeHtml(decision.summary)}</p>
+      ${decisionDetail(decision) ? `<small>${escapeHtml(decisionDetail(decision))}</small>` : ''}
+    </article>`).join('');
+}
+
 function eventDescription(event) {
   if (!event) return {tag: 'LIVE', text: 'Robots are coordinating from local state and peer intent.'};
   const task = event.task || 'task';
@@ -719,8 +825,12 @@ function updatePresentation(frame) {
     el('juryNarration').textContent = description.text;
   } else if (phase < 39) {
     setCameraMode('follow', false);
-    el('juryHeadline').textContent = 'Follow the decision into motion.';
-    el('juryNarration').textContent = 'The selected AMR publishes intent, reserves upcoming cells and retains charger-return reserve.';
+    const thought = active?.decision;
+    el('juryHeadline').textContent = thought
+      ? `${active.id} is explaining its own decision.`
+      : 'Follow the decision into motion.';
+    el('juryNarration').textContent = thought?.summary
+      || 'The selected AMR publishes intent, reserves upcoming cells and retains charger-return reserve.';
   } else if (phase < 47 && (App.data.meta.humans || 0) > 0) {
     setCameraMode('pov', false);
     el('juryHeadline').textContent = 'A human does not broadcast intent.';
@@ -760,6 +870,7 @@ function updateManagerDot(frame) {
   }
   if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'
       || routePolicy === 'BIOS_PIBT.3' || routePolicy === 'BIOS_PIBT.5'
+      || routePolicy === 'BIOS_PIBT.6'
       || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot up';
     text.textContent = 'edge-only peer coordination · no manager';
@@ -945,6 +1056,11 @@ function renderSummary(s, meta) {
         <dt>Pedestrian yield ticks</dt><dd>${Number(s.human_yield_ticks || 0)}</dd>
         <dt>Auction bids submitted</dt><dd>${Number(s.auction_bids_sent || 0)}</dd>
         <dt>Peer messages exchanged</dt><dd>${Number(s.msgs_sent || 0)}</dd>
+        <dt>Broadcasts suppressed</dt><dd>${Number(s.heartbeat_messages_suppressed || 0) + Number(s.intent_messages_suppressed || 0) + Number(s.lease_renewals_suppressed || 0) + Number(s.bid_rebroadcasts_suppressed || 0)}</dd>
+        <dt>Predictive hazards observed</dt><dd>${Number(s.predictive_hazards_seen || 0)}</dd>
+        <dt>Predictive reroutes</dt><dd>${Number(s.predictive_reroutes || 0)}</dd>
+        <dt>Experience-guided replans</dt><dd>${Number(s.experience_guided_replans || 0)}</dd>
+        <dt>Charger contentions avoided</dt><dd>${Number(s.charger_contentions_avoided || 0)}</dd>
       </dl>
     </details>
     <p class="evidence-scope">Simulation evidence · ${contacts} observed contacts in this run · not a physical safety certification.</p>
