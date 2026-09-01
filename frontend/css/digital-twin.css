@@ -233,7 +233,7 @@ details[open] summary { border-bottom: 1px solid var(--bios-line); }
 .pool-tile:hover { border-color: var(--bios-cyan); background: rgba(53,198,244,.08); }
 .builder-grid-wrap { position: relative; flex: 1; min-width: 0; overflow: auto; padding: 16px; }
 #builderGrid { display: block; background: rgba(5,14,22,.6); border: 1px solid var(--bios-line); border-radius: 10px; }
-.builder-preview { position: absolute; pointer-events: none; border: 2px dashed var(--bios-amber); border-radius: 6px; background: rgba(245,184,67,.15); opacity: .85; z-index: 10; }
+.builder-preview { position: fixed; pointer-events: none; border: 2px dashed var(--bios-amber); border-radius: 6px; background: rgba(245,184,67,.15); opacity: .85; z-index: 10; }
 
 @media (max-width: 1100px) {
   html, body.bios-app { overflow: auto; }

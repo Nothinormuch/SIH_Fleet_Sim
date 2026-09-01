@@ -1244,10 +1244,12 @@ function initBuilder() {
       return;
     }
     preview.style.display = 'block';
-    preview.style.left = rect.left + x * cellSize + 'px';
-    preview.style.top = rect.top + y * cellSize + 'px';
+    preview.style.left = e.clientX + 'px';
+    preview.style.top = e.clientY + 'px';
     preview.style.width = cellSize + 'px';
     preview.style.height = cellSize + 'px';
+    // Center preview exactly on mouse pointer
+    preview.style.transform = 'translate(-50%, -50%)';
   });
 
   gridCanvas.addEventListener('dragleave', () => {
