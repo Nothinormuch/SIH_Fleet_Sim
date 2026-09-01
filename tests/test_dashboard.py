@@ -16,6 +16,9 @@ import pytest
 from src.environment import RACK
 from src.main import run_for_dashboard
 from backend.server import Handler, RequestValidationError, parse_run_request
+from src.scenarios import SHOWCASE_SCENARIOS
+from src.settings import DEFAULT
+from src.world import World
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +44,62 @@ def test_run_request_validation_rejects_clamping_and_combined_overload():
     assert parsed["duration"] == 120.0
     assert parsed["seed"] == 9
     assert parsed["policy"] == "BIOS_PIBT.5"
+
+
+def test_jury_showcases_share_the_energy_aware_auction_profile():
+    assert list(SHOWCASE_SCENARIOS) == [
+        "showcase_open_floor",
+        "showcase_chokepoint",
+        "showcase_human",
+        "showcase_dead_zone",
+        "showcase_grand_challenge",
+    ]
+    for name, profile in SHOWCASE_SCENARIOS.items():
+        scenario = profile["builder"](
+            n_robots=profile["robots"], seed=profile["seed"])
+        assert scenario.name == name
+        assert scenario.use_auction
+        assert len(scenario.initial_battery_fracs) == scenario.n_robots
+        assert len(set(scenario.initial_battery_fracs)) > 1
+        assert scenario.unassigned
+        assert not any(scenario.assignments)
+        assert {task.cargo_type for task in scenario.unassigned}.issubset(
+            {"normal", "fragile", "heavy", "hazardous"})
+
+
+def test_showcase_pedestrians_are_numerous_and_remain_outside_racks():
+    expected_counts = {"showcase_human": 3, "showcase_grand_challenge": 5}
+    for name, expected in expected_counts.items():
+        profile = SHOWCASE_SCENARIOS[name]
+        scenario = profile["builder"](
+            n_robots=profile["robots"], seed=profile["seed"])
+        assert len(scenario.humans) == expected
+        world = World(scenario.env, DEFAULT, seed=scenario.seed)
+        for index, route in enumerate(scenario.humans):
+            human = world.add_human(f"H{index + 1}", route)
+            assert not world._human_hits_static((human.x, human.y), human.radius)
+
+        # Walk every route for a full minute without AMRs. This catches both invalid
+        # endpoints and interpolation that cuts across a rack between valid cells.
+        for _ in range(int(60 * DEFAULT.rates.world_hz)):
+            world.step(1.0 / DEFAULT.rates.world_hz, {})
+            for human in world.humans.values():
+                assert not world._human_hits_static((human.x, human.y), human.radius)
+
+
+def test_human_route_rejects_a_rack_endpoint_instead_of_clipping_through_it():
+    profile = SHOWCASE_SCENARIOS["showcase_human"]
+    scenario = profile["builder"](
+        n_robots=profile["robots"], seed=profile["seed"])
+    rack = next(
+        (x, y)
+        for y, row in enumerate(scenario.env.grid)
+        for x, value in enumerate(row)
+        if value == RACK
+    )
+    free = next(iter(scenario.env.free_cells()))
+    with pytest.raises(ValueError, match="is not passable"):
+        World(scenario.env, DEFAULT).add_human("H-bad", [rack, free])
 
 
 def test_dashboard_run_is_post_only_and_security_headers_are_present():
@@ -118,3 +177,15 @@ def test_dashboard_metric_frames_remain_inside_free_map_cells():
             assert warehouse["grid"][y][x] != RACK
 
     assert payload["summary"]["contacts_robot_rack"] == 0
+
+
+def test_dashboard_completion_uses_unique_tasks_and_includes_the_final_frame():
+    payload = run_for_dashboard(
+        "showcase_open_floor", "BIOS_PIBT.5",
+        robots=4, seed=4, duration=180, allocation_policy="auction",
+    )
+    summary = payload["summary"]
+    assert summary["completed_all"]
+    assert summary["tasks_completed"] == summary["tasks_announced"] == 8
+    assert payload["frames"][-1]["tasks_completed"] == 8
+    assert all(0 <= frame["tasks_completed"] <= 8 for frame in payload["frames"])

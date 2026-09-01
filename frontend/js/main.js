@@ -1,3 +1,5 @@
+import { DigitalTwin } from './digital-twin.js';
+
 /* App shell: fetch a run, play it back, keep the panel in sync.
  *
  * Playback interpolates between telemetry frames. Telemetry arrives at 10 Hz while the
@@ -11,6 +13,7 @@ const el = id => document.getElementById(id);
 
 const App = {
   view: null,
+  twin: null,
   pipView: null,
   imgs: null,
   data: null,        // { map, meta, frames, summary }
@@ -24,7 +27,7 @@ const App = {
   cameraMode: 'overview', // 'overview' | 'follow' | 'pov'
   selectedRobotId: null,
   zoomLevel: 2.8,
-  pipEnabled: true,
+  pipEnabled: false,
   pipPov: false,
   hudDetails: false,
   // The BIOS_4 model currently loaded, as {id, meta}. Null means BIOS_4 cannot
@@ -32,6 +35,9 @@ const App = {
   model: null,
   trainJob: null,
   trainTimer: 0,
+  viewMode: '3d',
+  presentationMode: false,
+  showcase: [],
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -39,14 +45,20 @@ const App = {
 async function boot() {
   App.view = new View(el('floor'));
   App.pipView = new View(el('pipCanvas'));
+  App.twin = new DigitalTwin(el('twinCanvas'), id => {
+    selectRobot(id);
+    setCameraMode('follow');
+  });
   App.imgs = await loadAssets();
 
   try {
     const r = await fetch('/api/scenarios');
-    const { scenarios, policies, allocation_policies } = await r.json();
-    fill(el('scenario'), scenarios, 'open_floor_control');
+    const { scenarios, showcase, policies, allocation_policies } = await r.json();
+    App.showcase = showcase || [];
+    fill(el('scenario'), scenarios, 'showcase_open_floor');
     fill(el('policy'), policies, 'BIOS_PIBT.5');
     fill(el('allocationPolicy'), allocation_policies, 'auction');
+    renderScenarioGallery(App.showcase);
   } catch (e) {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
   }
@@ -64,13 +76,14 @@ async function boot() {
   el('scrub').addEventListener('input', e => {
     if (!App.data) return;
     App.playing = false;
-    el('playBtn').textContent = 'Play';
+    setPlaybackState(false);
     App.simTime = frameTime(parseInt(e.target.value, 10));
     draw();
   });
 
   // Camera Toolbar Controls
   el('camModeOverview').addEventListener('click', () => setCameraMode('overview'));
+  el('camModeTactical').addEventListener('click', () => setCameraMode('tactical'));
   el('camModeFollow').addEventListener('click', () => setCameraMode('follow'));
   el('camModePov').addEventListener('click', () => setCameraMode('pov'));
   el('camTargetSelect').addEventListener('change', e => selectRobot(e.target.value));
@@ -85,6 +98,12 @@ async function boot() {
   el('pipFocusMainBtn').addEventListener('click', () => {
     if (App.selectedRobotId) setCameraMode('follow');
   });
+
+  el('view3dBtn').addEventListener('click', () => setViewMode('3d'));
+  el('view2dBtn').addEventListener('click', () => setViewMode('2d'));
+  el('presentationBtn').addEventListener('click', togglePresentationMode);
+  el('exitJuryBtn').addEventListener('click', togglePresentationMode);
+  el('fullscreenBtn').addEventListener('click', toggleFullscreen);
 
   // A live camera consumes most of a phone-sized stage. Start it closed below the
   // tablet breakpoint; the operator can still open it explicitly from the toolbar.
@@ -112,6 +131,7 @@ async function boot() {
   });
 
   window.addEventListener('resize', () => {
+    App.twin.resize();
     if (!App.data) return;
     App.view.resize(App.data.map, App.data.meta.cell_m);
     App.pipView.resize(App.data.map, App.data.meta.cell_m);
@@ -122,6 +142,38 @@ async function boot() {
 
   requestAnimationFrame(tick);
   run();
+}
+
+function renderScenarioGallery(showcase) {
+  const gallery = el('scenarioGallery');
+  const accents = {cyan: '#35c6f4', amber: '#f5b843', violet: '#b78cff', rose: '#ff6577', lime: '#a3e635'};
+  gallery.innerHTML = showcase.map((item, index) => `
+    <button class="scenario-card ${index === 0 ? 'active' : ''}" data-scenario="${escapeHtml(item.id)}"
+      style="--card-accent:${accents[item.accent] || accents.cyan}">
+      <span class="scenario-index">0${index + 1}</span>
+      <span class="scenario-copy"><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.eyebrow)}</small></span>
+      <span class="scenario-meta">${item.robots} AMRs${item.humans ? ' · ' + item.humans + ' people' : ''}</span>
+    </button>`).join('');
+  gallery.querySelectorAll('.scenario-card').forEach(card => {
+    card.addEventListener('click', () => selectScenarioProfile(card.dataset.scenario));
+  });
+  if (showcase.length) selectScenarioProfile(showcase[0].id, false);
+}
+
+function selectScenarioProfile(id, announce = true) {
+  const profile = App.showcase.find(item => item.id === id);
+  if (!profile) return;
+  el('scenario').value = profile.id;
+  el('robots').value = profile.robots;
+  el('seed').value = profile.seed;
+  el('duration').value = profile.duration;
+  el('activeScenarioTitle').textContent = profile.title;
+  el('activeScenarioEyebrow').textContent = profile.eyebrow.toUpperCase();
+  el('activeScenarioDescription').textContent = profile.description;
+  document.querySelectorAll('.scenario-card').forEach(card => {
+    card.classList.toggle('active', card.dataset.scenario === id);
+  });
+  if (announce) setStatus(`${profile.title} selected · energy-aware auction is active.`);
 }
 
 function fill(select, values, preferred) {
@@ -137,27 +189,30 @@ function fill(select, values, preferred) {
 
 /* ------------------------------------------------------------------ camera modes */
 
-function setCameraMode(mode) {
+function setCameraMode(mode, redraw = true) {
   App.cameraMode = mode;
   el('camModeOverview').classList.toggle('active', mode === 'overview');
+  el('camModeTactical').classList.toggle('active', mode === 'tactical');
   el('camModeFollow').classList.toggle('active', mode === 'follow');
   el('camModePov').classList.toggle('active', mode === 'pov');
+  App.twin.setCameraMode(mode);
 
   if (mode !== 'overview' && !App.selectedRobotId && App.data && App.data.frames.length) {
     const firstRobot = App.data.frames[0].robots[0];
     if (firstRobot) selectRobot(firstRobot.id);
   }
-  draw();
+  if (redraw) draw();
 }
 
 function cycleCameraMode() {
-  const modes = ['overview', 'follow', 'pov'];
+  const modes = ['overview', 'tactical', 'follow', 'pov'];
   const nextIdx = (modes.indexOf(App.cameraMode) + 1) % modes.length;
   setCameraMode(modes[nextIdx]);
 }
 
-function selectRobot(id) {
+function selectRobot(id, redraw = true) {
   App.selectedRobotId = id || null;
+  App.twin.setSelected(App.selectedRobotId);
   const sel = el('camTargetSelect');
   if (sel) sel.value = id || '';
 
@@ -166,7 +221,7 @@ function selectRobot(id) {
     el('camPipToggle').classList.add('active');
     syncOverlayState();
   }
-  draw();
+  if (redraw) draw();
 }
 
 function cycleTargetRobot() {
@@ -187,7 +242,44 @@ function cycleTargetRobot() {
 function adjustZoom(delta) {
   App.zoomLevel = Math.max(1.4, Math.min(6.0, parseFloat((App.zoomLevel + delta).toFixed(1))));
   el('camZoomVal').textContent = `${App.zoomLevel.toFixed(1)}×`;
+  if (App.viewMode === '3d') App.twin.zoom(delta);
   draw();
+}
+
+function setViewMode(mode) {
+  App.viewMode = mode;
+  const is3d = mode === '3d';
+  document.body.classList.toggle('view-2d', !is3d);
+  el('twinCanvas').classList.toggle('is-hidden', !is3d);
+  el('floor').classList.toggle('is-hidden', is3d);
+  el('view3dBtn').classList.toggle('active', is3d);
+  el('view2dBtn').classList.toggle('active', !is3d);
+  el('view3dBtn').setAttribute('aria-pressed', String(is3d));
+  el('view2dBtn').setAttribute('aria-pressed', String(!is3d));
+  if (is3d) App.twin.resize();
+  if (App.data) draw();
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+}
+
+function togglePresentationMode() {
+  App.presentationMode = !App.presentationMode;
+  document.body.classList.toggle('jury-mode', App.presentationMode);
+  el('juryOverlay').setAttribute('aria-hidden', String(!App.presentationMode));
+  el('presentationBtn').classList.toggle('active', App.presentationMode);
+  if (App.presentationMode) {
+    setViewMode('3d');
+    if (!App.playing && App.data) togglePlay();
+    if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  } else if (document.fullscreenElement && document.exitFullscreen) {
+    document.exitFullscreen().catch(() => {});
+  }
+  setTimeout(() => App.twin.resize(), 80);
 }
 
 function togglePip() {
@@ -210,7 +302,7 @@ function setHudDetails(enabled) {
 }
 
 function syncOverlayState() {
-  const stage = document.querySelector('.stage');
+  const stage = document.querySelector('.twin-stage');
   const hud = el('hud');
   const pip = el('pipContainer');
   const pipButton = el('camPipToggle');
@@ -295,7 +387,7 @@ async function run() {
   if (request.policy === 'BIOS_4' && App.model) request.model = App.model.id;
   el('runBtn').disabled = true;
   App.playing = false;
-  el('playBtn').textContent = 'Play';
+  setPlaybackState(false);
   setStatus(`Simulating ${el('duration').value}s of ${el('scenario').value}…`, 'busy');
 
   try {
@@ -310,6 +402,9 @@ async function run() {
     App.data = payload;
     App.auctionEvents = payload.frames.flatMap(f => f.auction_events || []);
     App.simTime = 0;
+    const humanProof = el('humanProof');
+    humanProof.hidden = !payload.meta.humans;
+    el('humanProofText').textContent = `${payload.meta.humans} mapped worker${payload.meta.humans === 1 ? '' : 's'}`;
 
     if (payload.frames.length && payload.frames[0].robots.length) {
       if (!App.selectedRobotId || !payload.frames[0].robots.some(r => r.id === App.selectedRobotId)) {
@@ -321,6 +416,8 @@ async function run() {
     App.view.resize(payload.map, payload.meta.cell_m);
     App.pipView.resize(payload.map, payload.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, payload.map, App.imgs);
+    App.twin.load(payload);
+    App.twin.setSelected(App.selectedRobotId);
 
     const n = payload.frames.length;
     el('scrub').max = Math.max(0, n - 1);
@@ -328,7 +425,7 @@ async function run() {
     el('clockEnd').textContent = (n ? payload.frames[n - 1].t : 0).toFixed(1);
 
     renderSummary(payload.summary, payload.meta);
-    setStatus(`${n} frames · ${payload.meta.robots} robots · seed ${payload.meta.seed}`);
+    setStatus(`${n} frames · ${payload.meta.robots} AMRs · seed ${payload.meta.seed} · energy gate active`);
 
     // HUD is re-inited on every run; init() disposes any previous instance so
     // replaying / re-running never stacks overlays.
@@ -556,10 +653,23 @@ async function uploadModel(ev) {
 
 /* ------------------------------------------------------------------ playback */
 
+function setPlaybackState(playing) {
+  const button = el('playBtn');
+  const icon = button?.querySelector('.play-icon');
+  if (icon) icon.textContent = playing ? 'Ⅱ' : '▶';
+  if (button) {
+    const action = playing ? 'Pause' : 'Play';
+    button.title = action;
+    button.setAttribute('aria-label', `${action} simulation`);
+  }
+  const label = el('playStateLabel');
+  if (label) label.textContent = playing ? 'Pause' : 'Play';
+}
+
 function togglePlay() {
   if (!App.data || !App.data.frames.length) return;
   App.playing = !App.playing;
-  el('playBtn').textContent = App.playing ? 'Pause' : 'Play';
+  setPlaybackState(App.playing);
   if (App.playing && App.simTime >= endTime()) App.simTime = 0;
   App.lastRaf = performance.now();
 }
@@ -584,7 +694,7 @@ function tick(now) {
   if (App.simTime >= endTime()) {
     App.simTime = endTime();
     App.playing = false;
-    el('playBtn').textContent = 'Play';
+    setPlaybackState(false);
   }
   draw();
 }
@@ -593,10 +703,22 @@ function tick(now) {
 function bracket(t) {
   const f = App.data.frames;
   if (f.length < 2) return [f[0], f[0], 0, 0];
-  const step = f[1].t - f[0].t;
-  const raw = t / step;
-  const i = Math.max(0, Math.min(f.length - 2, Math.floor(raw)));
-  return [f[i], f[i + 1], Math.max(0, Math.min(1, raw - i)), i];
+  if (t <= f[0].t) return [f[0], f[1], 0, 0];
+  if (t >= f[f.length - 1].t) {
+    return [f[f.length - 2], f[f.length - 1], 1, f.length - 2];
+  }
+  // Normal telemetry is 10 Hz, but a run may append a completion frame between two
+  // scheduled samples. Binary search the recorded timestamps instead of assuming a
+  // perfectly uniform index-to-time mapping.
+  let lo = 0, hi = f.length - 1;
+  while (lo + 1 < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (f[mid].t <= t) lo = mid;
+    else hi = mid;
+  }
+  const span = Math.max(1e-9, f[hi].t - f[lo].t);
+  const u = Math.max(0, Math.min(1, (t - f[lo].t) / span));
+  return [f[lo], f[hi], u, lo];
 }
 
 const lerp = (a, b, u) => a + (b - a) * u;
@@ -626,14 +748,22 @@ function interpolate(f0, f1, u) {
   for (const h of (f1.humans || [])) hById[h.id] = h;
   const humans = (f0.humans || []).map(a => {
     const b = hById[a.id] || a;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    let th = a._th;
-    if (Math.hypot(dx, dy) > 1e-3) th = Math.atan2(dy, dx);
-    a._th = th;
-    return { id: a.id, x: lerp(a.x, b.x, u), y: lerp(a.y, b.y, u), th: th };
+    const aHeading = Number.isFinite(a.th) ? a.th : 0;
+    const bHeading = Number.isFinite(b.th) ? b.th : aHeading;
+    return {
+      id: a.id,
+      x: lerp(a.x, b.x, u),
+      y: lerp(a.y, b.y, u),
+      th: lerpAngle(aHeading, bHeading, u),
+      paused: u >= .5 ? Boolean(b.paused) : Boolean(a.paused),
+      yield_ticks: u >= .5 ? Number(b.yield_ticks || 0) : Number(a.yield_ticks || 0),
+    };
   });
   return { t: lerp(f0.t, f1.t, u), robots, humans,
+           obstacles: u >= 0.5 ? (f1.obstacles || []) : (f0.obstacles || []),
            fleet: u >= 0.5 ? (f1.fleet || f0.fleet) : f0.fleet,
+           tasks_completed: u >= 0.5
+             ? Number(f1.tasks_completed || 0) : Number(f0.tasks_completed || 0),
            manager_alive: f0.manager_alive, contacts: f0.contacts,
            auction_events: f0.auction_events || [] };
 }
@@ -648,45 +778,48 @@ function draw() {
   // Determine active camera target robot position
   const selectedRobot = frame.robots.find(r => r.id === App.selectedRobotId) || frame.robots[0];
 
-  // Update Main Canvas Camera Transform
-  App.view.setCamera(App.cameraMode, App.selectedRobotId, App.zoomLevel);
-  App.view.updateCameraTransform(selectedRobot);
-
-  const { ctx } = App.view;
-  App.view.clear();
-
-  ctx.save();
-  if (App.view.camRotation !== 0) {
-    ctx.translate(App.view.cssW / 2, App.view.cssH / 2);
-    ctx.rotate(App.view.camRotation);
-    ctx.translate(-App.view.cssW / 2, -App.view.cssH / 2);
-  }
-
-  if (App.cameraMode === 'overview' && App.staticLayer) {
-    ctx.drawImage(App.staticLayer, 0, 0, App.view.cssW, App.view.cssH);
+  if (App.viewMode === '3d') {
+    App.twin.update(frame, App.selectedRobotId, App.cameraMode, frame.t);
   } else {
-    renderStaticFloor(ctx, App.view, App.data.map, App.imgs);
+    // The original evidence-focused 2D diagnostic view remains available as a fallback.
+    App.view.setCamera(App.cameraMode === 'tactical' ? 'overview' : App.cameraMode,
+      App.selectedRobotId, App.zoomLevel);
+    App.view.updateCameraTransform(selectedRobot);
+    const { ctx } = App.view;
+    App.view.clear();
+    ctx.save();
+    if (App.view.camRotation !== 0) {
+      ctx.translate(App.view.cssW / 2, App.view.cssH / 2);
+      ctx.rotate(App.view.camRotation);
+      ctx.translate(-App.view.cssW / 2, -App.view.cssH / 2);
+    }
+    if ((App.cameraMode === 'overview' || App.cameraMode === 'tactical') && App.staticLayer) {
+      ctx.drawImage(App.staticLayer, 0, 0, App.view.cssW, App.view.cssH);
+    } else {
+      renderStaticFloor(ctx, App.view, App.data.map, App.imgs);
+    }
+    drawNetwork(ctx, App.view, frame, App.imgs, frame.t);
+    const diameterCells = App.data.meta.robot_diameter_m / App.data.meta.cell_m;
+    drawFleet(ctx, App.view, frame, App.imgs, {
+      labels: App.view.cell >= 20,
+      robotSizeCells: Math.max(0.55, diameterCells),
+      selectedRobotId: App.selectedRobotId,
+    });
+    ctx.restore();
   }
-
-  drawNetwork(ctx, App.view, frame, App.imgs, frame.t);
-  const diameterCells = App.data.meta.robot_diameter_m / App.data.meta.cell_m;
-  drawFleet(ctx, App.view, frame, App.imgs, {
-    labels: App.view.cell >= 20,
-    robotSizeCells: Math.max(0.55, diameterCells),
-    selectedRobotId: App.selectedRobotId,
-  });
-
-  ctx.restore();
 
   // Render PiP Close-Up Viewfinder
   renderPiP(frame, selectedRobot);
 
-  el('scrub').value = idx;
+  el('scrub').value = Math.min(Number(el('scrub').max), idx + (u >= .5 ? 1 : 0));
   el('clockNow').textContent = frame.t.toFixed(1);
   updateManagerDot(frame);
   renderFleetPanel(frame);
   renderAuctionPanel(frame);
   updateSummaryProgress(frame);
+  renderRobotInspector(frame);
+  updateEventSpotlight(frame);
+  if (App.presentationMode) updatePresentation(frame);
   Hud.render(frame, App.data.summary, App.data.meta, frame.t);
 }
 
@@ -739,6 +872,83 @@ function renderPiP(frame, activeRobot) {
   el('pipHeading').textContent = `${deg.toFixed(0)}° ${dir}`;
   el('pipBatt').textContent = `${batt}%`;
   el('pipState').textContent = (fInfo.state || 'IDLE').toUpperCase();
+}
+
+function renderRobotInspector(frame) {
+  const panel = el('robotInspector');
+  const robot = frame.robots.find(item => item.id === App.selectedRobotId);
+  if (!robot) return;
+  const info = (frame.fleet || []).find(item => item.id === robot.id) || {};
+  const battery = Math.max(0, Math.min(100, Math.round((Number(robot.batt) || 0) * 100)));
+  const reserve = Math.round((App.data.meta.energy_reserve_frac || .15) * 100);
+  const cargo = info.cargo_type
+    ? `${String(info.cargo_type).toUpperCase()} · ${Number(info.cargo_weight || 0).toFixed(0)} kg`
+    : 'WAITING FOR TASK';
+  const task = info.task || 'UNASSIGNED';
+  const network = App.data.meta.has_manager && info.mode === 'DEGRADED_P2P'
+    ? 'DEGRADED P2P' : `P2P · ${(info.peers || []).length} PEERS`;
+  const deadline = info.deadline == null ? 'NO HARD LIMIT' : `${Number(info.deadline).toFixed(0)} s`;
+  panel.innerHTML = `
+    <div class="inspector-head">
+      <div><small>SELECTED EDGE AGENT</small><strong>${escapeHtml(robot.id)}</strong></div>
+      <span class="inspector-state">${escapeHtml(String(info.state || 'idle').replace(/_/g, ' '))}</span>
+    </div>
+    <div class="inspector-grid">
+      <div><span>Battery</span><b>${battery}%</b><div class="battery-track"><i style="width:${battery}%"></i></div></div>
+      <div><span>Reserve floor</span><b>≥ ${reserve}%</b></div>
+      <div><span>Task</span><b>${escapeHtml(task)}</b></div>
+      <div><span>Cargo</span><b>${escapeHtml(cargo)}</b></div>
+      <div><span>Network</span><b>${escapeHtml(network)}</b></div>
+      <div><span>Deadline</span><b>${escapeHtml(deadline)}</b></div>
+    </div>
+    <div class="reserve-note"><b>Energy acceptance active.</b> The robot may bid only when task + charger-return reserve remains feasible.</div>`;
+}
+
+function eventDescription(event) {
+  if (!event) return {tag: 'LIVE', text: 'Robots are coordinating from local state and peer intent.'};
+  const task = event.task || 'task';
+  if (event.type === 'TN') return {tag: 'ANNOUNCE', text: `${task} broadcast by WMS; robots now evaluate their own eligibility.`};
+  if (event.type === 'BD') return {tag: 'BID', text: `${event.src} submitted a battery-feasible bid for ${task}.`};
+  if (event.type === 'AW') return {tag: 'AWARD', text: `${event.winner || event.dst || event.src} won ${task}; the WMS did not choose the winner.`};
+  if (event.type === 'TD') return {tag: 'COMPLETE', text: `${event.src} completed ${task}; completion is now shared with peers.`};
+  return {tag: event.type || 'EVENT', text: `${event.src || 'Fleet'} updated ${task}.`};
+}
+
+function updateEventSpotlight(frame) {
+  const latest = App.auctionEvents.filter(event => event.t <= frame.t + 1e-6).at(-1);
+  const description = eventDescription(latest);
+  el('eventSpotlight').innerHTML = `<span>${escapeHtml(description.tag)}</span><strong>${escapeHtml(description.text)}</strong>`;
+}
+
+function updatePresentation(frame) {
+  const latest = App.auctionEvents.filter(event => event.t <= frame.t + 1e-6).at(-1);
+  const description = eventDescription(latest);
+  const fleet = frame.fleet || [];
+  const active = fleet.find(item => item.task && !item.failed);
+  if (active && active.id !== App.selectedRobotId) selectRobot(active.id, false);
+
+  const phase = frame.t % 56;
+  if (phase < 9) {
+    setCameraMode('overview', false);
+    el('juryHeadline').textContent = 'One warehouse. No central traffic brain.';
+    el('juryNarration').textContent = 'The WMS announces work; every eligible AMR evaluates the task locally.';
+  } else if (phase < 20) {
+    setCameraMode('tactical', false);
+    el('juryHeadline').textContent = description.tag === 'AWARD' ? 'The best eligible robot wins.' : 'Every bid is energy-feasible.';
+    el('juryNarration').textContent = description.text;
+  } else if (phase < 39) {
+    setCameraMode('follow', false);
+    el('juryHeadline').textContent = 'Follow the decision into motion.';
+    el('juryNarration').textContent = 'The selected AMR publishes intent, reserves upcoming cells and retains charger-return reserve.';
+  } else if (phase < 47 && (App.data.meta.humans || 0) > 0) {
+    setCameraMode('pov', false);
+    el('juryHeadline').textContent = 'A human does not broadcast intent.';
+    el('juryNarration').textContent = 'Local perception—not a network message—must trigger the robot response.';
+  } else {
+    setCameraMode('tactical', false);
+    el('juryHeadline').textContent = 'Leases expire. The fleet recovers.';
+    el('juryNarration').textContent = 'Temporary reservations prevent stale claims from permanently blocking the warehouse.';
+  }
 }
 
 function updateManagerDot(frame) {
@@ -841,13 +1051,17 @@ function escapeHtml(value) {
 }
 
 function uniqueAuctionEvents(events) {
-  const awardKeys = new Set();
+  const seen = new Set();
   return events.filter(event => {
-    if (event.type !== 'AW') return true;
-    const key = [event.task, event.e ?? 0,
+    let key;
+    if (event.type === 'TN') key = ['TN', event.task, event.e ?? 0].join('|');
+    else if (event.type === 'BD') key = ['BD', event.task, event.e ?? 0, event.src].join('|');
+    else if (event.type === 'AW') key = ['AW', event.task, event.e ?? 0,
       event.winner || event.dst || event.src].join('|');
-    if (awardKeys.has(key)) return false;
-    awardKeys.add(key);
+    else if (event.type === 'TD') key = ['TD', event.task, event.src].join('|');
+    else return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
@@ -906,6 +1120,11 @@ function renderSummary(s, meta) {
   const contacts = s.contacts_robot_robot + s.contacts_robot_human
                  + s.contacts_robot_rack;
   const finished = s.completed_all;
+  const remaining = Math.max(0, Number(s.tasks_announced || 0) - Number(s.tasks_completed || 0));
+  const runTitle = finished ? 'Workload completed' : 'Time-boxed stress result';
+  const runDetail = finished
+    ? `All tasks closed in ${s.makespan_s.toFixed(1)} seconds.`
+    : `${remaining} task${remaining === 1 ? '' : 's'} remained active when the ${s.sim_seconds.toFixed(1)} s evidence window ended.`;
 
   el('summary').innerHTML = `
     <div class="summary-live">
@@ -914,34 +1133,47 @@ function renderSummary(s, meta) {
       <small id="progressTime">t = 0.0 s</small>
     </div>
 
-    <p class="summary-final-label">
-      Final result after complete simulation
-    </p>
+    <div class="outcome-banner ${finished ? 'complete' : 'window'}">
+      <span>${finished ? 'COMPLETE' : 'WINDOW ENDED'}</span>
+      <div><strong>${runTitle}</strong><small>${runDetail}</small></div>
+    </div>
 
     <dl>
       <dt>Tasks completed</dt>
       <dd>${s.tasks_completed} / ${s.tasks_announced}</dd>
 
-      <dt>${finished ? 'Makespan' : 'Ran for'}</dt>
-      <dd>${s.makespan_s.toFixed(1)} s${finished ? '' : ' (timeout)'}</dd>
+      <dt>${finished ? 'Measured makespan' : 'Evidence window'}</dt>
+      <dd>${(finished ? s.makespan_s : s.sim_seconds).toFixed(1)} s</dd>
       <dt>Robot&ndash;robot contacts</dt>
       <dd class="${s.contacts_robot_robot ? 'bad' : 'good'}">${s.contacts_robot_robot}</dd>
       <dt>Robot&ndash;human contacts</dt>
       <dd class="${s.contacts_robot_human ? 'bad' : 'good'}">${s.contacts_robot_human}</dd>
       <dt>Robot&ndash;rack contacts</dt>
       <dd class="${s.contacts_robot_rack ? 'bad' : 'good'}">${s.contacts_robot_rack}</dd>
-      <dt>Worst separation</dt>
+      <dt>Closest observed separation</dt>
       <dd>${s.min_separation_m.toFixed(2)} m</dd>
-
-      <dt>Deadlocks broken</dt>
-      <dd>${s.deadlocks_detected}</dd>
+      <dt>Safety-stop control ticks</dt>
+      <dd>${Number(s.safety_stop_ticks || 0)}</dd>
+      <dt>Energy-risk bids blocked</dt>
+      <dd class="good">${Number(s.energy_bids_suppressed || 0)}</dd>
     </dl>
+    <details class="run-diagnostics">
+      <summary>Coordination diagnostics <i>⌄</i></summary>
+      <dl>
+        <dt>Deadlocks detected</dt><dd>${Number(s.deadlocks_detected || 0)}</dd>
+        <dt>Pedestrian yield ticks</dt><dd>${Number(s.human_yield_ticks || 0)}</dd>
+        <dt>Auction bids submitted</dt><dd>${Number(s.auction_bids_sent || 0)}</dd>
+        <dt>Peer messages exchanged</dt><dd>${Number(s.msgs_sent || 0)}</dd>
+      </dl>
+    </details>
+    <p class="evidence-scope">Simulation evidence · ${contacts} observed contacts in this run · not a physical safety certification.</p>
   `;
 }
 
 function updateSummaryProgress(frame) {
-  const done = (frame.fleet || [])
-    .reduce((sum, robot) => sum + (robot.done || 0), 0);
+  const done = Number.isFinite(frame.tasks_completed)
+    ? frame.tasks_completed
+    : (frame.fleet || []).reduce((sum, robot) => sum + (robot.done || 0), 0);
 
   const total = App.data.meta.tasks;
 

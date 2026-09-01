@@ -163,6 +163,42 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     activated_obstacles: set[str] = set()
     cleared_obstacles: set[str] = set()
 
+    def capture_trace_frame() -> None:
+        """Append one self-consistent telemetry frame, including unique progress."""
+        nonlocal auction_events
+        if trace is None:
+            return
+        snap = world.snapshot()
+        snap["fleet"] = [
+            {"id": rid, "state": brain.state, "mode": brain.mode,
+             "task": brain.task.tid if brain.task else None,
+             "goal": list(brain.goal) if brain.goal else None,
+             "pick": list(brain.task.pick) if brain.task else None,
+             "drop": list(brain.task.drop) if brain.task else None,
+             "cargo_type": brain.task.cargo_type if brain.task else None,
+             "cargo_weight": brain.task.cargo_weight if brain.task else None,
+             "task_priority": brain.task.priority if brain.task else None,
+             "deadline": brain.task.deadline if brain.task else None,
+             "carry": (brain.task.tid
+                       if brain.task and brain.goal == brain.task.drop else None),
+             "path": [list(cell) for cell in
+                      brain.path[brain.pidx:brain.pidx + 8]],
+             "peers": sorted(brain.peers.keys()),
+             "blocked_on": brain.blocked_on,
+             "priority_key": (brain._pub_priority_key.to_wire()
+                              if brain.policy in PIBT_POLICIES else None),
+             "done": len(brain.completed), "failed": rid in failed_nodes}
+            for rid, brain in sorted(brains.items())
+        ]
+        snap["manager_alive"] = bool(manager and manager.alive)
+        snap["tasks_completed"] = len({
+            tid for brain in brains.values()
+            for tid, _started, _finished in brain.completed
+        })
+        snap["auction_events"] = auction_events
+        auction_events = []
+        trace.append(snap)
+
     for k in range(steps):
         t = k * dt
 
@@ -254,34 +290,23 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
 
         if trace is not None and k % int(cfg.rates.world_hz /
                                          cfg.rates.telemetry_hz) == 0:
-            snap = world.snapshot()
-            snap["fleet"] = [
-                {"id": r, "state": b.state, "mode": b.mode,
-                 "task": b.task.tid if b.task else None,
-                 "goal": list(b.goal) if b.goal else None,
-                 "pick": list(b.task.pick) if b.task else None,
-                 "drop": list(b.task.drop) if b.task else None,
-                 "carry": b.task.tid if (b.task and b.goal == b.task.drop) else None,
-                 # The intent horizon, i.e. exactly what this robot is broadcasting.
-                 # The dashboard draws these as reservation cones so the coordination
-                 # is visible rather than implied - decentralisation is invisible on
-                 # screen unless the messages are drawn.
-                 "path": [list(c) for c in b.path[b.pidx:b.pidx + 8]],
-                 "peers": sorted(b.peers.keys()),
-                 "blocked_on": b.blocked_on,
-                 "priority_key": (b._pub_priority_key.to_wire()
-                                  if b.policy in PIBT_POLICIES else None),
-                 "done": len(b.completed), "failed": r in failed_nodes}
-                for r, b in sorted(brains.items())
-            ]
-            snap["manager_alive"] = bool(manager and manager.alive)
-            snap["auction_events"] = auction_events
-            auction_events = []
-            trace.append(snap)
+            capture_trace_frame()
 
-        done = sum(len(b.completed) for b in brains.values())
-        if makespan is None and total_tasks and done >= total_tasks:
-            makespan = t
+        # A lossy peer auction may temporarily create duplicate executors. Completion
+        # is a property of a task ID, not of an executor, so replicated completions
+        # count once. Summing per-robot lists could declare 16/16 while a distinct
+        # task was still visibly in flight.
+        done = len({tid for b in brains.values() for tid, _start, _end in b.completed})
+        if total_tasks and done >= total_tasks:
+            if makespan is None:
+                makespan = t
+            # A playback run must include the completion frame. Otherwise the summary
+            # says 16/16 while the final visible frame still shows 15/16 and a carried
+            # task. Capture it immediately, including when completion lands on the
+            # final physics tick of the configured evidence window.
+            if trace is not None and (
+                    not trace or trace[-1].get("tasks_completed", 0) < total_tasks):
+                capture_trace_frame()
             break
 
     world.finalize()
@@ -294,8 +319,13 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
     sim_s = world.t
     n = len(brains)
     robot_hours = n * sim_s / 3600.0
-    task_times = [d - s for b in brains.values() for _, s, d in b.completed]
-    done = sum(len(b.completed) for b in brains.values())
+    completion_times: dict[str, float] = {}
+    for brain in brains.values():
+        for tid, started, finished in brain.completed:
+            duration = finished - started
+            completion_times[tid] = min(completion_times.get(tid, duration), duration)
+    task_times = list(completion_times.values())
+    done = len(completion_times)
     seps = sorted(world.min_separations)
 
     def agg(key: str) -> float:
@@ -336,6 +366,7 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         energy_bids_suppressed=int(agg("energy_bids_suppressed")),
         energy_no_eligible_rounds=int(agg("energy_no_eligible_rounds")),
         safety_stop_ticks=int(agg("safety_stops")),
+        human_yield_ticks=sum(h.yield_ticks for h in world.humans.values()),
         seconds_degraded=round(agg("seconds_degraded") / max(1, n), 1),
         msgs_sent=int(agg("msgs_sent")),
         bytes_sent=int(agg("bytes_sent")),
@@ -390,6 +421,21 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
             "pose_units": "metres",
             "robot_diameter_m": 2.0 * DEFAULT.robot.radius_m,
             "has_manager": policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL),
+            "dead_zones": [list(zone) for zone in sc.net.dead_zones],
+            "energy_reserve_frac": DEFAULT.traffic.energy_reserve_frac,
+            "energy_uncertainty_frac": DEFAULT.traffic.energy_uncertainty_frac,
+            "tasks_catalog": [
+                {
+                    "id": task.tid,
+                    "pick": list(task.pick),
+                    "drop": list(task.drop),
+                    "cargo_type": task.cargo_type,
+                    "cargo_weight": task.cargo_weight,
+                    "priority": task.priority,
+                    "deadline": task.deadline,
+                }
+                for task in _announced_tasks(sc, allocation_policy)
+            ],
             # So the dashboard can say WHICH model produced a run. A BIOS_4 result with
             # no model behind it is an untrained control, not a policy, and the two must
             # never be confused on screen.

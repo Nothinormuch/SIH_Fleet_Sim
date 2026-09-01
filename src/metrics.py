@@ -131,6 +131,7 @@ class PolicyResult:
     energy_bids_suppressed: int = 0
     energy_no_eligible_rounds: int = 0
     safety_stop_ticks: int = 0
+    human_yield_ticks: int = 0
     seconds_degraded: float = 0.0
 
     msgs_sent: int = 0

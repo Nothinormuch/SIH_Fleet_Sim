@@ -48,7 +48,7 @@ from src.amr import POLICIES, POLICY_BIOS4        # noqa: E402
 from src.bios4 import MAX_MODEL_BYTES, ModelError, model_from_json  # noqa: E402
 from src.evolve import TrainConfig, evolve         # noqa: E402
 from src.main import run_for_dashboard            # noqa: E402
-from src.scenarios import SCENARIOS               # noqa: E402
+from src.scenarios import SCENARIOS, SHOWCASE_SCENARIOS  # noqa: E402
 from src.task_allocation import ALLOCATION_POLICIES  # noqa: E402
 
 # Simulations are CPU-bound and a long one takes a while; serialise them so a reloading
@@ -392,8 +392,15 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------ endpoints
 
     def _api_scenarios(self) -> None:
+        showcase = []
+        for scenario_id, profile in SHOWCASE_SCENARIOS.items():
+            showcase.append({
+                "id": scenario_id,
+                **{key: value for key, value in profile.items() if key != "builder"},
+            })
         self._json(200, {
-            "scenarios": sorted(SCENARIOS),
+            "scenarios": [item["id"] for item in showcase],
+            "showcase": showcase,
             "policies": sorted(POLICIES),
             "allocation_policies": sorted(ALLOCATION_POLICIES),
         })
