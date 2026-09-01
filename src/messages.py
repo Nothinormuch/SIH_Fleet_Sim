@@ -481,13 +481,16 @@ def bid(src: str, seq: int, t: float, task_id: str, cost: float,
 
 def award(src: str, seq: int, t: float, task_id: str, cost: float,
           dst: str | None = None, epoch: int = 0,
-          lease_until: float | None = None) -> Message:
+          lease_until: float | None = None,
+          winner: str | None = None) -> Message:
     body: dict[str, Any] = {
         "task": task_id, "cost": round(cost, 3), "e": int(epoch),
     }
     if dst is not None:
         body["dst"] = dst
         body["winner"] = dst
+    elif winner is not None:
+        body["winner"] = winner
     if lease_until is not None:
         body["ttl"] = round(max(0.0, lease_until - t), 3)
     return Message(AWARD, src, seq, t, body)

@@ -43,7 +43,7 @@ def test_run_request_validation_rejects_clamping_and_combined_overload():
     assert parsed["robots"] == 100
     assert parsed["duration"] == 120.0
     assert parsed["seed"] == 9
-    assert parsed["policy"] == "BIOS_PIBT.5"
+    assert parsed["policy"] == "BIOS_PIBT.6"
 
 
 def test_jury_showcases_share_the_energy_aware_auction_profile():

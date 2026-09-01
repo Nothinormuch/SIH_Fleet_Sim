@@ -222,6 +222,12 @@ class TrafficSpec:
     # loss/dead-zone ablation; faster renewal reduced availability, while a longer
     # task lease delayed crashed-owner recovery.
     v6_degraded_lease_refresh_s: float = 0.5
+    # After repeated epoch churn under combined random loss and a radio hole, extend
+    # only that task's claim using bounded linear backoff. Deterministic partitions
+    # keep the normal expiry; global lease extension failed the recovery ablation.
+    v6_churn_epoch: int = 8
+    v6_churn_lease_step_s: float = 2.0
+    v6_churn_lease_max_s: float = 40.0
     v6_catalog_gossip_s: float = 1.0
     v6_bid_refresh_s: float = 0.6
     v6_bid_cache_s: float = 0.8

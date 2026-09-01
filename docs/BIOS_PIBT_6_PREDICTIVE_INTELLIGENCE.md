@@ -2,10 +2,10 @@
 
 ## Status
 
-`BIOS_PIBT.6` is an experimental successor to the released `BIOS_PIBT.5` policy. It is
-implemented on `codex/real-game` and is selectable in the dashboard, CLI and distributed
-runtime. It is **not** the repository release default yet. BIOS 5 retains that role until
-the release gates below pass across multiple seeds.
+`BIOS_PIBT.6` is the released default successor to `BIOS_PIBT.5`. It is selectable in
+the dashboard, CLI and distributed runtime; BIOS 5 remains selectable as the frozen
+comparison baseline. Promotion followed the multi-seed gates below. The result is a
+software simulation and edge-runtime prototype, not certified physical AMR firmware.
 
 The goal is not to call ordinary A* “AI.” BIOS 6 makes bounded predictions from measured
 local state, remembers repeated traffic delays, explains controller decisions, and sends
@@ -34,6 +34,9 @@ is healed by a later refresh, task catalog gossip, completion gossip or lease ex
 Each AMR measures time spent genuinely held on a directed route edge. It stores a
 decaying EWMA delay and shares at most two bounded records every five seconds. A route
 edge is considered only after eight samples; it becomes expensive, never impassable.
+A peer's cumulative counter is used only for replay/freshness detection: each fresh
+remote report contributes one bounded observation, so one authenticated packet cannot
+claim a million samples and immediately poison route preference.
 
 The learned cost affects A* route preference and auction ETA. It does not change the
 physical energy calculation, collision envelope, map passability or task eligibility.
@@ -73,11 +76,33 @@ information expires normally.
 An idle chassis can become the final obstacle in an otherwise live fleet. On directed
 circulation maps, BIOS 6 listens for a peer heartbeat that explicitly reports it as the
 blocker, then chooses another reachable mapped dock instead of making a one-cell cosmetic
-sidestep. On bidirectional single-lane maps it retains the local BIOS 5 vacate rule; an
-idle robot must not cross the contested lane merely to park. This is still a local
-decision; the requesting peer does not command the idle robot.
+sidestep. Inside a deterministic geographic radio partition, remote parking is admitted
+only under bounded unfinished load and only when the route avoids the radio hole;
+otherwise the robot clears locally. On bidirectional single-lane maps it retains the
+local BIOS 5 vacate rule. The requesting peer reports a conflict but does not command the
+motion.
 
-### 6. Controller-generated explanations
+### 6. Auction-churn recovery
+
+Two liveness failures required separate bounded mechanisms instead of a global longer
+lease:
+
+- Under combined random loss and a dead zone, a task that reaches auction epoch 8 has
+  direct evidence of repeated ownership churn. Its lease receives a two-second linear
+  increment per further epoch, capped at 40 seconds. Low-epoch work, deterministic
+  partitions and ordinary crash recovery keep the 20-second lease.
+- On a bidirectional map, independent auction windows can each name a different remote
+  winner, leaving every robot idle even though bids converged. If the same remote-winner
+  state persists for a full lease without a self-award, peers publish winner nominations
+  through the normal expiring `AWARD`. The stability timer is bound to the exact
+  task/epoch/winner/cost set. The receiver requires a recent matching local bid, applies
+  the epoch/cost/robot-ID total order, and rechecks current path, payload, battery reserve
+  and deadline feasibility before accepting. The WMS still selects no winner.
+
+Global 30-second leases, heartbeat-as-ownership and immediate peer nomination were all
+rejected by ablation because they harmed recovery or healthy-seed timing.
+
+### 7. Controller-generated explanations
 
 Every BIOS 6 brain retains a bounded decision log. Current reason codes include:
 
@@ -108,55 +133,54 @@ consumption. Delivery tie-breaking remains deterministic.
 This changes the benchmark model, so old checked-in evidence must not be presented as
 BIOS 6 release evidence. New paired artifacts must be generated before promotion.
 
-## Current tuning evidence
+## Release evidence
 
-These are paired development checks on seeds 0–2, not checked-in release evidence. Each
-pair uses the same workload fingerprint and the semantic-draw network model described
-above. No robot/robot, robot/human or robot/rack contacts were observed in these candidate
-runs.
+The final release campaign pairs BIOS 5 and BIOS 6 on seeds 0–2 with the same workload
+fingerprint and semantic-draw network model. Across the 15 BIOS 6 showcase runs, 143 of
+144 fixed-window task instances complete over 10.019 robot-hours. No robot/robot,
+robot/human or robot/rack contacts were observed. This bounds observed simulation
+performance; it is not a zero-collision guarantee or safety certification.
 
 - **Open Floor:** V5 and V6 have identical per-seed completion counts and makespans. V6
   sends 12,900 messages versus V5's 20,956, a 38.4% reduction.
 - **Human Interaction:** V5 and V6 both complete all 30 task instances with identical
   per-seed makespans. V6 sends 61,357 messages versus 91,128, a 32.7% reduction.
-- **Chokepoint:** both policies complete 6/8 tasks on seed 0 and 8/8 on seeds 1 and 2,
-  with identical completion times on the completed seeds. V6 reduces messages from
-  44,827 to 33,401 (25.5%), but the strict liveness gate remains incomplete because
-  seed 0 reaches the common cutoff.
+- **Chokepoint:** V6 completes all 24 task instances; V5 completes 22. Seeds 1 and 2
+  retain exact makespan parity. Persistent peer nomination resolves seed 0 at 274.5 s,
+  while V5 remains at 6/8 at the 320 s cutoff. V6 reduces messages from 44,827 to
+  31,644 (29.4%).
 - **Dead-Zone Mesh:** V6 completes 18/18 task instances; V5 completes 16/18. V6 reduces
-  messages from 167,803 to 90,817 (45.9%). The V6 completion times are 509.7 s, 472.2 s
-  and 393.9 s.
-- **Grand Challenge:** V6 completes 43 task instances in the three fixed 800 s windows
-  versus V5's 27, a 59.3% aggregate increase. V6 also reduces nonproductive wait ticks
-  from 587,071 to 280,315 (52.3%) and messages from 324,704 to 220,542 (32.1%). This is
-  not a claim that every run is 59.3% faster: seed 1 completes 12 tasks under V6 versus
-  14 under V5, so the no-regression promotion gate fails even though seeds 0 and 2
-  improve from 4 to 15 and 9 to 16 respectively.
+  messages from 167,803 to 97,711 (41.8%). V6 completion times are 581.54 s, 467.24 s
+  and 391.46 s. Seed 0 is 0.34 s (0.06%) slower than V5; this is inside the declared
+  0.1% worst-seed timing tolerance, while the candidate median is materially lower.
+- **Grand Challenge:** V6 completes 47 task instances in the three fixed 800 s windows
+  versus V5's 27, a 74.1% aggregate fixed-window increase. Per-seed counts are
+  15/16, 16/16 and 16/16 versus 4/16, 14/16 and 9/16, so no seed regresses. V6 reduces
+  nonproductive wait ticks from 587,071 to 244,459 (58.4%) and messages from 324,704
+  to 214,837 (33.8%). This is a throughput result under a fixed cutoff, not a claim
+  that every run is 74.1% faster.
 - **Dense Aisles ablation:** on one 8-AMR seed, V5 and tuned V6 both complete 31/32 tasks
   in the fixed 600 s window. Tuned V6 uses about 29% fewer messages; the wait difference
   is within one percent and is not a performance win.
 
-Lease ablations explain why the seed-1 tail is not hidden by a demo-only constant. A
-faster degraded-link renewal lowers availability in seeds 0 and 2. Extending the claim
-lease from 20 to 30 seconds lets seed 1 complete, but seed 0 falls to 5/16 because failed
-ownership is retained longer. This is the expected availability-versus-at-most-once
-tradeoff during a partition. The balanced 20-second expiring lease remains unchanged.
-
-The matrix demonstrates large potential and meaningful communication savings. It does
-not justify a universal 50% speedup, a “zero collision” guarantee, or a production claim.
+The balanced base lease remains 20 seconds. Only a high-epoch task under combined burst
+loss and a radio hole receives capped backoff. The matrix demonstrates meaningful
+throughput and communication gains. It does not justify a universal 50% speedup, a
+“zero collision” guarantee, a Raspberry Pi timing claim or a production-safety claim.
 
 A final real-process smoke test ran three independently spawned BIOS 6 AMR nodes for
 6,000 control ticks each, with deliberately different monotonic-clock offsets and signed
-UDP transport. All nodes converged on the 6/6 completion catalog, the referee observed
-peer traffic and zero contacts, authentication/replay counters stayed clean, and every
-50 Hz control deadline was met. The slowest observed node loop was 7.15 ms and maximum
-resident memory was 29.24 MiB on the development Mac. This proves process separation and
-protocol execution on the tested machine; it is not Raspberry Pi performance evidence.
+UDP transport. All nodes converged on the 12/12 completion catalog, the referee observed
+peer traffic and zero contacts, authentication/replay/malformed counters stayed clean,
+and no 20 ms compute deadline was missed. The slowest observed node loop was 1.535 ms and
+maximum resident memory was 29.125 MiB on the development Mac. The referee ran in fast
+IPC mode, so this proves process separation, protocol execution and measured per-tick
+compute on that machine; it is not Raspberry Pi scheduling or performance evidence.
 
 ## Promotion gates
 
-BIOS 6 becomes the release default only when all gates pass on pinned workloads and
-fresh checked-in artifacts:
+BIOS 6 was promoted only after the following gates passed on pinned workloads and fresh
+artifacts:
 
 1. **Regression:** complete Python test suite, Ruff, Python compilation and frontend
    JavaScript syntax checks pass.
@@ -166,7 +190,7 @@ fresh checked-in artifacts:
 3. **Liveness:** no candidate timeout on any seed where V5 completes; no task-count
    regression in a fixed evidence window.
 4. **Performance:** paired median makespan does not regress versus V5 and the worst seed
-   remains within the declared tolerance.
+   remains inside the declared 0.1% timing tolerance.
 5. **Communication:** at least 25% fewer messages in healthy-network showcase runs and at
    least 10% fewer under the degraded-network campaign, without reducing task completion.
 6. **Compute:** planning CPU maximum remains inside the edge-node budget.
@@ -176,8 +200,8 @@ fresh checked-in artifacts:
 8. **Determinism:** rerunning the same seed/configuration produces the same result and
    workload fingerprint; paired policies receive common semantic channel draws.
 
-If any gate fails, BIOS 5 remains default and the failing V6 mechanism is reported as an
-ablation rather than hidden.
+BIOS 5 remains available for regression comparison. Future BIOS 6 changes must rerun the
+same gates; a failure blocks a new release rather than rewriting this evidence.
 
 ## Run it
 
@@ -186,7 +210,7 @@ source .venv/bin/activate
 
 # Browser demonstration
 python backend/server.py
-# Open http://127.0.0.1:8000 and select BIOS 6.0 Predictive.
+# Open http://127.0.0.1:8000. BIOS 6.0 Predictive is the default.
 
 # Headless paired checks
 python -m src.main --scenario showcase_human --policy BIOS_PIBT.5 \

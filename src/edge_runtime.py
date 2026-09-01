@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import Protocol
 
-from .amr import AMRBrain, POLICY_BIOS_PIBT_V5, Task
+from .amr import AMRBrain, POLICY_BIOS_PIBT_V6, Task
 from .scenarios import SCENARIOS
 from .settings import DEFAULT, Config
 from .task_allocation import ALLOCATION_AUCTION, ALLOCATION_PREASSIGNED
@@ -292,7 +292,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), default="dense_aisles")
     parser.add_argument("--robots", type=int, default=4)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--policy", default=POLICY_BIOS_PIBT_V5)
+    parser.add_argument("--policy", default=POLICY_BIOS_PIBT_V6)
     parser.add_argument("--allocation-policy", default=ALLOCATION_AUCTION)
     parser.add_argument("--group", default=DEFAULT_GROUP)
     parser.add_argument("--peer-port", type=int, default=DEFAULT_PORT)

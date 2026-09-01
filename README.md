@@ -22,20 +22,20 @@ only, so a robot node drops onto a bare Raspberry Pi image with no build step.
 
 ## Decentralized priority algorithm
 
-The default policy is `BIOS_PIBT.5` with peer `auction` allocation. It combines V3's
-traffic layer with battery-aware priority/deadline cargo allocation. Every
-AMR broadcasts a
+The default policy is `BIOS_PIBT.6` with peer `auction` allocation. It combines V5's
+battery-aware priority/deadline cargo allocation with event-triggered communication,
+bounded predictive hints and measured recovery escalation. Every AMR broadcasts a
 frozen lexicographic priority plus its next-cell intent. On grid-like rack maps it
 plans on a strongly connected one-way circulation graph and takes an expiring,
 two-phase peer lease on every destination cell. This prevents head-on entry and restores
 one-robot-per-cell ownership before a queue forms. Merge contenders use the same frozen
 total order; no process assigns moves and the dashboard is a passive observer.
 
-`BIOS_PIBT.6` is available on the experimental `codex/real-game` branch. It adds
-event-triggered communication, short-horizon occupancy prediction, distributed
-congestion experience, charger-aware dock choice, idle-lane clearing and machine-derived
-decision explanations. V5 remains the command-line and release default until V6 passes
-the multi-seed safety, liveness, performance and multi-process gates documented in
+BIOS 6 adds short-horizon occupancy prediction, distributed congestion experience,
+charger-aware dock choice, load-aware idle-lane clearing, bounded auction-churn backoff,
+peer winner nomination after persistent split views and machine-derived decision
+explanations. BIOS 5 remains selectable as the frozen release baseline. The BIOS 6
+multi-seed safety, liveness, performance and multi-process gates are documented in
 [`docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md`](docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md).
 
 Maps that cannot be oriented without losing reachability use bounded directional task
@@ -165,8 +165,8 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
 | `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
 | `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Retained decentralized comparison policy. |
-| `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, payload/cargo factors, priority/deadline ordering, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Default fully decentralized route + allocation policy. |
-| `BIOS_PIBT.6` | V5 plus event-triggered traffic, decaying peer congestion experience, soft anonymous-moving-object forecasts, charger contention avoidance, idle-lane clearing and decision traces. | Experimental candidate. It is selectable in the BIOS 6 branch dashboard but is not the release default. |
+| `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, payload/cargo factors, priority/deadline ordering, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Frozen decentralized release baseline. |
+| `BIOS_PIBT.6` | V5 plus event-triggered traffic, decaying peer congestion experience, soft anonymous-moving-object forecasts, charger contention avoidance, load-aware idle clearing, churn recovery and decision traces. | Default fully decentralized route + allocation policy. |
 
 Task ownership is selected independently of the route policy. `auction` lets peers
 broadcast bids and converge on deterministic leased awards; this is the fully
@@ -258,15 +258,16 @@ battery state and cargo-aware energy admission. A WMS injects tasks; it never se
 winner. Each AMR admits a bid only when the task, cargo factor and post-task charger return
 remain above the protected reserve.
 
-The previous checked-in showcase numbers remain BIOS 5 release evidence. This branch
-corrects the semantic packet-loss model and the Grand Challenge obstacle topology, so
-those older numbers must not be relabelled as BIOS 6 results. The current paired
-three-seed development matrix records zero observed robot/robot, robot/human and
-robot/rack contacts, large message reductions, and a 59.3% aggregate Grand Challenge
-task-completion increase; it also exposes one Grand Challenge seed where V6 completes
-12 tasks versus V5's 14. The exact evidence and promotion decision are documented in
+The previous checked-in acceptance campaign remains BIOS 5 versus stop-and-wait evidence;
+it must not be relabelled as BIOS 6 evidence. The final BIOS 6 three-seed showcase matrix
+records zero observed robot/robot, robot/human and robot/rack contacts in 10.019 candidate
+robot-hours. Open Floor and Human Interaction retain exact per-seed makespan parity while
+cutting messages by 38.4% and 32.7%. BIOS 6 completes all 24 Chokepoint tasks versus
+V5's 22, and all 18 Dead-Zone tasks versus V5's 16. In Grand Challenge fixed windows it
+completes 47 tasks versus 27 (+74.1%), cuts waits by 58.4% and messages by 33.8%, with no
+per-seed task-count regression. These are simulation observations, not physical safety
+certification or a universal speedup claim. Exact evidence and limitations are in
 [`docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md`](docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md).
-These are simulation observations, not physical safety certification.
 
 Pick a showcase, route policy, task-allocation policy, fleet size and seed; the server
 runs the simulation and returns the map, every telemetry frame and the result summary,

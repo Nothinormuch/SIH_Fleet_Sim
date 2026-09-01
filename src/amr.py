@@ -172,6 +172,10 @@ class AMRBrain:
         # both travel over a lossy, delayed network. Keep the destination marker until
         # the task is visible and the task loop can accept it with the current pose.
         self._awarded: set[str] = set()
+        # Peer nominations are advisory auction results, not manager commands. Keep
+        # their exact epoch/cost/lease so eligibility can be revalidated locally at
+        # the moment of acceptance using the robot's current sensors and battery.
+        self._peer_nominations: dict[str, tuple[int, float, float]] = {}
         # A pre-assigned work queue. The headline benchmark uses this so that task
         # allocation is IDENTICAL across the route-coordination policies - otherwise a makespan
         # difference could be caused by who got which job rather than by how the
@@ -189,6 +193,10 @@ class AMRBrain:
         self._bid_opened: dict[str, float] = {}
         self._last_lease_broadcast = -1e9
         self._v3_round_started: float | None = None
+        self._remote_winner_since: float | None = None
+        self._remote_winner_fingerprint: tuple[
+            tuple[str, int, str, float], ...
+        ] | None = None
         self._energy_retry_after = -1e9
         # A duplicate worker canceled by peer completion must first leave the lane it
         # occupied. Becoming goal-less in a single-file block turns an otherwise
@@ -586,8 +594,13 @@ class AMRBrain:
                 edge, (0.0, 0, t))
             merged = (delay if old_samples == 0
                       else (1.0 - alpha) * old_delay + alpha * delay)
+            # The wire value is the sender's cumulative local counter, not evidence
+            # that this receiver independently observed that many delays. Count one
+            # authenticated, fresh report as one bounded observation. This prevents
+            # a single packet with a forged large counter from instantly crossing the
+            # experience threshold and applying the maximum route penalty.
             self._edge_experience[edge] = (
-                merged, max(old_samples, samples), t)
+                merged, min(1_000_000, old_samples + 1), t)
             self.stats["experience_updates_received"] += 1
 
     def _v6_prediction_costs(self, t: float, start: Cell) -> dict[Cell, float]:
@@ -2348,9 +2361,40 @@ class AMRBrain:
             if assigned is not None:
                 self._awarded.remove(assigned)
                 self._accept_task(t, self.open_tasks[assigned], sensors.cell)
-            elif self.queue:
+            else:
+                nominated = next((
+                    (tid, nomination)
+                    for tid, nomination in sorted(self._peer_nominations.items())
+                    if tid in self.open_tasks
+                ), None)
+                if nominated is not None:
+                    tid, (epoch, cost, lease_until) = nominated
+                    task = self.open_tasks[tid]
+                    claim = self._task_claims.get(tid)
+                    eligible = (
+                        claim is not None
+                        and claim[0] == epoch
+                        and math.isclose(claim[1], cost, rel_tol=1e-9,
+                                         abs_tol=5e-4)
+                        and claim[2] == self.rid
+                        and claim[3] == lease_until
+                        and lease_until > t
+                        and self._energy_feasible(task, sensors, t=t)[0]
+                    )
+                    self._peer_nominations.pop(tid, None)
+                    if eligible:
+                        self._accept_task(
+                            t, task, sensors.cell,
+                            lease_until=lease_until, bid_cost=cost)
+                    elif self._task_claims.get(tid) == claim:
+                        # Do not let an ineligible nomination reserve this robot or
+                        # suppress a valid peer winner for the rest of the lease.
+                        self._task_claims.pop(tid, None)
+                        task.lease_owner = None
+                        task.lease_until = 0.0
+            if self.task is None and self.queue:
                 self._accept_task(t, self.queue.pop(0), sensors.cell)
-            elif self._auction_enabled():
+            elif self.task is None and self._auction_enabled():
                 self._run_auction(t, sensors, outbox)
             if self.goal is None:
                 self._vacate_if_in_the_way(t, sensors)
@@ -2478,6 +2522,10 @@ class AMRBrain:
             # This is triggered only by an explicit peer clearance request and only on
             # a directed circulation map. Crossing a bidirectional single-file block
             # while idle would inject exactly the opposing traffic this rule prevents.
+            # In a deterministic geographic partition, a parking route through the
+            # radio hole would turn an idle clearance into uncoordinated traffic. Such
+            # routes are rejected below; an outside route remains valid and the
+            # bounded adjacent clearance is the fallback when none exists.
             parking_routes: list[tuple[int, Cell]] = []
             for dock in sorted(self.env.docks):
                 if dock == here or dock in taken:
@@ -2487,7 +2535,7 @@ class AMRBrain:
                     edge_allowed=(
                         lambda a, b: self.circulation.allows(self.env, a, b))
                     if self.circulation.enabled else None)
-                if route:
+                if route and self._v6_remote_idle_vacate_allowed(route):
                     parking_routes.append((len(route), dock))
             if parking_routes:
                 self.goal = min(parking_routes)[1]
@@ -2524,6 +2572,30 @@ class AMRBrain:
                 from_cell=list(here), to_cell=list(self.goal),
                 requesting_robots=sorted(p.rid for p in blockers_requesting_clearance))
             self._replan(t, here)
+
+    def _route_crosses_radio_dead_zone(self, route: list[Cell]) -> bool:
+        """Whether any route cell centre lies inside a configured radio hole."""
+        return any(
+            (cell[0] + 0.5 - zone_x) ** 2
+            + (cell[1] + 0.5 - zone_y) ** 2 <= radius ** 2
+            for cell in route
+            for zone_x, zone_y, radius in self.cfg.net.dead_zones
+        )
+
+    def _v6_remote_idle_vacate_allowed(self, route: list[Cell]) -> bool:
+        """Keep parking traffic bounded under a stable geographic partition."""
+        if self.cfg.net.loss > 0.0 or not self.cfg.net.dead_zones:
+            return True
+        unfinished = sum(
+            task.tid not in self.completed_tasks
+            for task in self.open_tasks.values())
+        # When unfinished work already exceeds mapped parking capacity, sending an
+        # idle chassis across the warehouse injects another route into the busiest
+        # phase. Clear one adjacent cell instead. Under lighter load a remote dock is
+        # useful, provided its route never enters the radio hole.
+        if unfinished > max(1, len(self.env.docks)):
+            return False
+        return not self._route_crosses_radio_dead_zone(route)
 
     def _run_auction(self, t: float, sensors: Sensors,
                      outbox: list[msg.Message]) -> None:
@@ -2586,7 +2658,7 @@ class AMRBrain:
             return
 
         winner_cost, winner = min(bids, key=lambda item: (item[0], item[1]))
-        lease_until = t + self.cfg.traffic.auction_lease_s
+        lease_until = t + self._task_lease_duration(target)
         claim = (target.auction_epoch, winner_cost, winner, lease_until)
         self._record_task_claim(target.tid, claim)
         self._bid_opened.pop(target.tid, None)
@@ -2625,6 +2697,8 @@ class AMRBrain:
         ]
         if not available:
             self._v3_round_started = None
+            self._remote_winner_since = None
+            self._remote_winner_fingerprint = None
             return
 
         if self._v3_round_started is None:
@@ -2803,9 +2877,13 @@ class AMRBrain:
                 corridor_load[cid] = corridor_load.get(cid, 0) + 1
             assignments.append((rid, tid, cost, epoch))
 
-        lease_until = t + self.cfg.traffic.auction_lease_s
-        won: tuple[str, float, int] | None = None
+        won: tuple[str, float, int, float] | None = None
         for rid, tid, cost, epoch in assignments:
+            task_record = self.open_tasks.get(tid)
+            lease_until = t + (
+                self._task_lease_duration(task_record)
+                if task_record is not None
+                else self.cfg.traffic.auction_lease_s)
             if self.circulation.enabled:
                 # On the strongly connected one-way graph, replicated greedy
                 # matching fills the batch in one round. Recording its remote slots
@@ -2813,7 +2891,45 @@ class AMRBrain:
                 # refreshes the lease, and a disagreement expires harmlessly.
                 self._record_task_claim(tid, (epoch, cost, rid, lease_until))
             if rid == self.rid:
-                won = (tid, cost, epoch)
+                won = (tid, cost, epoch, lease_until)
+
+        nominate_remote = (
+            self.policy == POLICY_BIOS_PIBT_V6
+            and not self.circulation.enabled
+            and won is None and bool(assignments)
+        )
+        if nominate_remote:
+            fingerprint = tuple(sorted(
+                (tid, epoch, rid, round(cost, 6))
+                for rid, tid, cost, epoch in assignments
+            ))
+            if (self._remote_winner_fingerprint != fingerprint
+                    or self._remote_winner_since is None):
+                self._remote_winner_fingerprint = fingerprint
+                self._remote_winner_since = t
+            elif (t - self._remote_winner_since
+                    >= self.cfg.traffic.auction_lease_s):
+                # Independent auction windows need not close on the same control
+                # tick. If every local view names another robot for a full lease, no
+                # self-award exists and all robots can remain idle forever. Publish
+                # the nominations only after that condition persists. Receivers still
+                # apply the epoch/cost/ID total order; the WMS selects nobody.
+                for rid, tid, cost, epoch in assignments:
+                    task_record = self.open_tasks.get(tid)
+                    nomination_until = t + (
+                        self._task_lease_duration(task_record)
+                        if task_record is not None
+                        else self.cfg.traffic.auction_lease_s)
+                    self._record_task_claim(
+                        tid, (epoch, cost, rid, nomination_until))
+                    outbox.append(msg.award(
+                        self.rid, self._next_seq(), t, tid, cost,
+                        epoch=epoch, lease_until=nomination_until,
+                        winner=rid))
+                self._remote_winner_since = t
+        else:
+            self._remote_winner_since = None
+            self._remote_winner_fingerprint = None
 
         self._v3_round_started = None
         if won is None:
@@ -2822,7 +2938,7 @@ class AMRBrain:
                     t, sensors, available_by_id, candidates, best_by_task,
                     corridor_load, corridor_allowed_tasks, anchor_tasks)
             return
-        tid, cost, epoch = won
+        tid, cost, epoch, lease_until = won
         task = self.open_tasks.get(tid)
         if task is None:
             return
@@ -3142,6 +3258,20 @@ class AMRBrain:
             task.lease_until = claim[3]
         return True
 
+    def _task_lease_duration(self, task: Task) -> float:
+        """Return bounded per-task backoff for transient asymmetric loss."""
+        base = self.cfg.traffic.auction_lease_s
+        if (self.policy != POLICY_BIOS_PIBT_V6
+                or self.cfg.net.loss <= 0.0
+                or not self.cfg.net.dead_zones
+                or task.auction_epoch < self.cfg.traffic.v6_churn_epoch):
+            return base
+        failed_epochs = task.auction_epoch - self.cfg.traffic.v6_churn_epoch + 1
+        return min(
+            self.cfg.traffic.v6_churn_lease_max_s,
+            base + failed_epochs * self.cfg.traffic.v6_churn_lease_step_s,
+        )
+
     @staticmethod
     def _claim_wins(new: tuple[int, float, str, float],
                     old: tuple[int, float, str, float]) -> bool:
@@ -3158,6 +3288,7 @@ class AMRBrain:
         task.lease_owner = None
         task.lease_until = 0.0
         self._awarded.discard(task.tid)
+        self._peer_nominations.pop(task.tid, None)
 
     def _expire_task_claims(self, t: float) -> None:
         for tid, claim in list(self._task_claims.items()):
@@ -3167,6 +3298,7 @@ class AMRBrain:
                     and claim[2] == self.rid:
                 self._drop_current_task()
             self._task_claims.pop(tid, None)
+            self._peer_nominations.pop(tid, None)
             task = self.open_tasks.get(tid)
             if task is not None and tid not in self.completed_tasks:
                 if claim[2] != self.rid:
@@ -3195,6 +3327,7 @@ class AMRBrain:
             self._record_task_claim(
                 task.tid, (task.auction_epoch, bid_cost, self.rid, lease_until))
         self._awarded.discard(task.tid)
+        self._peer_nominations.pop(task.tid, None)
         self._task_started_t = t
         self._priority_grace_since = None
         self._priority_grace_until = -1e9
@@ -3495,7 +3628,7 @@ class AMRBrain:
         if claim is None or claim[2] != self.rid:
             return
         self._last_lease_broadcast = t
-        lease_until = t + self.cfg.traffic.auction_lease_s
+        lease_until = t + self._task_lease_duration(self.task)
         self._record_task_claim(
             self.task.tid, (claim[0], claim[1], self.rid, lease_until))
         outbox.append(msg.award(
@@ -3713,8 +3846,28 @@ class AMRBrain:
                 # claims; otherwise a central assignment could vanish mid-task when
                 # the manager's one-shot message is older than the lease.
                 if b.get("dst") is None:
-                    self._record_task_claim(
-                        tid, (epoch, cost, owner, lease_until))
+                    local_bid = self._bids.get(tid, {}).get((epoch, self.rid))
+                    local_bid_t = self._bid_seen_t.get(
+                        (tid, epoch, self.rid), -1e9)
+                    matching_local_bid = (
+                        local_bid is not None
+                        and round(local_bid, 3) == round(cost, 3)
+                        and t - local_bid_t
+                        <= max(2.0 * self.cfg.traffic.auction_lease_s,
+                               self._task_lease_duration(task)
+                               if task is not None else 0.0)
+                    )
+                    # A peer can nominate this robot only for a task/epoch/cost this
+                    # robot actually bid recently. Peers may still publish claims for
+                    # other winners, but they cannot command local task execution.
+                    recorded = False
+                    if owner != self.rid or matching_local_bid:
+                        recorded = self._record_task_claim(
+                            tid, (epoch, cost, owner, lease_until))
+                    if (recorded and owner == self.rid
+                            and self.task is None and self.state == ST_IDLE):
+                        self._peer_nominations[tid] = (
+                            epoch, cost, lease_until)
                 if b.get("dst") == self.rid:
                     self._awarded.add(tid)
             elif m.type == msg.TASK_DONE:
@@ -3733,6 +3886,7 @@ class AMRBrain:
                 self._bids.pop(tid, None)
                 self._bid_opened.pop(tid, None)
                 self._awarded.discard(tid)
+                self._peer_nominations.pop(tid, None)
                 for key in [key for key in self._bid_seen_t if key[0] == tid]:
                     self._bid_seen_t.pop(key, None)
             elif m.type == msg.MGR_BEACON:
