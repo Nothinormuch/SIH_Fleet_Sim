@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📚 Academic Research References & Algorithmic Foundations (SIH26123) - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>📚 Academic Research References & Algorithmic Foundations (SIH26123)</h1>
+<p>This document lists all the formal algorithms, standard methods, and academic research papers implemented or referenced in the <strong>SIH_Fleet_Sim</strong> codebase.</p>
+<hr>
+<h2>1. Multi-Agent Traffic & Conflict Resolution</h2>
+<h3>🔹 <strong>PIBT (Priority Inheritance with Backtracking)</strong></h3>
+<ul>
+  <li><strong>Seminal Paper:</strong> </li>
+</ul>
+<p>> Okumura, K., Machida, M., Défago, X., & Tamura, Y. (2022). <em>"Priority Inheritance with Backtracking for Multi-Agent Path Finding on Graphs."</em> <strong>Artificial Intelligence</strong>, 310, 103752. (Earlier version in IJCAI 2019).</p>
+<ul>
+  <li><strong>Where we use it:</strong> Core traffic solver in <code>src/amr.py</code> (<code>BIOS_PIBT.5</code>). Resolves instantaneous node conflicts by recursively inheriting priority to push lower-priority robots into passing bays.</li>
+  <li><strong>PPT Citation:</strong> <code>Okumura et al., &quot;Priority Inheritance with Backtracking for MAPF&quot;, Artificial Intelligence (2022)</code></li>
+</ul>
+<hr>
+<h3>🔹 *<em>Space-Time A\</em> (4D Cooperative Pathfinding)**</h3>
+<ul>
+  <li><strong>Seminal Paper:</strong></li>
+</ul>
+<p>> Silver, D. (2005). <em>"Cooperative Pathfinding."</em> <strong>Proceedings of the AAAI Conference on Artificial Intelligence and Interactive Digital Entertainment (AIIDE)</strong>, 1(1), 117-122.</p>
+<ul>
+  <li><strong>Where we use it:</strong> Path planner for individual AMRs searching across $(x, y, \theta, t)$ grid with reservation tables in <code>src/amr.py</code> and central manager.</li>
+  <li><strong>PPT Citation:</strong> <code>Silver, D., &quot;Cooperative Pathfinding&quot;, AIIDE (2005)</code></li>
+</ul>
+<hr>
+<h3>🔹 <strong>CBS (Conflict-Based Search for Multi-Agent Pathfinding)</strong></h3>
+<ul>
+  <li><strong>Seminal Paper:</strong></li>
+</ul>
+<p>> Sharon, G., Stern, R., Felner, A., & Sturtevant, N. R. (2015). <em>"Conflict-Based Search for Optimal Multi-Agent Pathfinding."</em> <strong>Artificial Intelligence</strong>, 219, 40-66.</p>
+<ul>
+  <li><strong>Where we use it:</strong> Referenced as the theoretical optimal benchmark for discrete multi-agent path planning in <code>docs/CRITIQUE.md</code>.</li>
+  <li><strong>PPT Citation:</strong> <code>Sharon et al., &quot;Conflict-Based Search for Optimal MAPF&quot;, Artificial Intelligence (2015)</code></li>
+</ul>
+<hr>
+<h2>2. Task Allocation & Combinatorial Optimization</h2>
+<h3>🔹 <strong>Market-Based Multi-Robot Auctions (Sequential Single-Item / SSI)</strong></h3>
+<ul>
+  <li><strong>Seminal Paper:</strong></li>
+</ul>
+<p>> Koenig, S., Tovey, C., Lagoudakis, M., et al. (2006). <em>"The Sequential Single-Item Auction Approach to Distributed Multi-Robot Task Allocation."</em> In <strong>Decision Making in Manufacturing and Services</strong>, 1(1-2).</p>
+<p>> Dias, M. B., Zlot, R., Kalra, N., & Stentz, A. (2006). <em>"Market-Based Multirobot Coordination: A Survey and Analysis."</em> <strong>Proceedings of the IEEE</strong>, 94(7), 1257-1270.</p>
+<ul>
+  <li><strong>Where we use it:</strong> Decentralized task bidding (<code>src/task_allocation.py</code>) where robots compute marginal cost bids $C_i = f(\text{Battery}, \text{Distance}, \text{Payload})$.</li>
+  <li><strong>PPT Citation:</strong> <code>Dias et al., &quot;Market-Based Multirobot Coordination&quot;, IEEE Proceedings (2006)</code></li>
+</ul>
+<hr>
+<h3>🔹 <strong>The Hungarian Algorithm (Kuhn-Munkres Bipartite Matching)</strong></h3>
+<ul>
+  <li><strong>Seminal Paper:</strong></li>
+</ul>
+<p>> Kuhn, H. W. (1955). <em>"The Hungarian Method for the Assignment Problem."</em> <strong>Naval Research Logistics Quarterly</strong>, 2(1‐2), 83-97.</p>
+<p>> Munkres, J. (1957). <em>"Algorithms for the Assignment and Transportation Problems."</em> <strong>Journal of the SIAM</strong>, 5(1), 32-38.</p>
+<ul>
+  <li><strong>Where we use it:</strong> Centralized optimal assignment baseline implemented in <code>src/task_allocation.py</code> ($O(N^3)$ matrix solver).</li>
+  <li><strong>PPT Citation:</strong> <code>Kuhn, H. W., &quot;The Hungarian Method for the Assignment Problem&quot;, NRLQ (1955)</code></li>
+</ul>
+<hr>
+<h2>3. Distributed Systems Theory & Networking</h2>
+<h3>🔹 <strong>Fischer-Lynch-Paterson (FLP) Impossibility Theorem</strong></h3>
+<ul>
+  <li><strong>Seminal Paper:</strong></li>
+</ul>
+<p>> Fischer, M. J., Lynch, N. A., & Paterson, M. S. (1985). <em>"Impossibility of Distributed Consensus with One Faulty Process."</em> <strong>Journal of the ACM (JACM)</strong>, 32(2), 374-382.</p>
+<ul>
+  <li><strong>Where we use it:</strong> Core theoretical defense in <code>docs/CRITIQUE.md</code> proving why no lossy wireless protocol can guarantee consensus, justifying why <strong>Safety (50 Hz local loop)</strong> must be strictly separated from <strong>Networking</strong>.</li>
+  <li><strong>PPT Citation:</strong> <code>Fischer, Lynch, &amp; Paterson, &quot;Impossibility of Distributed Consensus&quot;, JACM (1985)</code></li>
+</ul>
+<hr>
+<h3>🔹 <strong>HMAC: Keyed-Hashing for Message Authentication</strong></h3>
+<ul>
+  <li><strong>Specification:</strong></li>
+</ul>
+<p>> Krawczyk, H., Bellare, M., & Canetti, R. (1997). <em>"HMAC: Keyed-Hashing for Message Authentication."</em> <strong>IETF RFC 2104</strong>.</p>
+<ul>
+  <li><strong>Where we use it:</strong> Message integrity verification and anti-spoofing in <code>src/transport.py</code> using HMAC-SHA256 signatures on wire UDP frames.</li>
+  <li><strong>PPT Citation:</strong> <code>IETF RFC 2104 / FIPS PUB 198-1 (HMAC-SHA256)</code></li>
+</ul>
+<hr>
+<h2>4. Machine Learning & Neuroevolution</h2>
+<h3>🔹 <strong>Evolution Strategies (ES) for Policy Optimization</strong></h3>
+<ul>
+  <li><strong>Seminal Paper:</strong></li>
+</ul>
+<p>> Salimans, T., Ho, J., Chen, X., Sidor, S., & Sutskever, I. (2017). <em>"Evolution Strategies as a Scalable Alternative to Reinforcement Learning."</em> <strong>arXiv:1703.03864 (OpenAI)</strong>.</p>
+<ul>
+  <li><strong>Where we use it:</strong> Training the compact 549-parameter neural policy network in <code>src/evolve.py</code> and <code>src/bios4.py</code> without requiring PyTorch/GPU runtimes.</li>
+  <li><strong>PPT Citation:</strong> <code>Salimans et al., &quot;Evolution Strategies as a Scalable Alternative to RL&quot;, OpenAI (2017)</code></li>
+</ul>
+<hr>
+<h2>5. Industrial Robotics & Safety Standards</h2>
+<h3>🔹 <strong>ISO 3691-4:2020 & EN ISO 13849-1</strong></h3>
+<ul>
+  <li><strong>Standard Specification:</strong></li>
+</ul>
+<p>> International Organization for Standardization. (2020). <em>"Industrial trucks — Safety requirements and verification — Part 4: Driverless industrial trucks and their systems"</em> (<strong>ISO 3691-4:2020</strong>).</p>
+<ul>
+  <li><strong>Where we use it:</strong> Mathematical sizing of dynamic braking safety field $D_{\text{stop}} = \frac{v^2}{2a} + v\tau + \text{margin}$ and 50 Hz protective e-stop loop in <code>src/amr.py</code>.</li>
+  <li><strong>PPT Citation:</strong> <code>ISO 3691-4:2020 (Safety Requirements for Driverless Industrial Trucks / AMRs)</code></li>
+</ul>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

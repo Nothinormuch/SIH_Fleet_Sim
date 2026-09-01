@@ -50,8 +50,19 @@ async function boot() {
     const r = await fetch('/api/scenarios');
     const { scenarios, showcase, policies, allocation_policies } = await r.json();
     App.showcase = showcase || [];
+
+    // Deduplicate policy list while ensuring stop_and_wait and Already-Established_algorithm exist
+    const rawList = policies || [];
+    const policySet = new Set(rawList.filter(p => p !== 'stop-and-wait(Competition)'));
+    policySet.add('stop_and_wait');
+    policySet.add('Already-Established_algorithm');
+
+    // Ordered list with single instance of stop_and_wait and Already-Established_algorithm
+    const others = [...policySet].filter(p => p !== 'stop_and_wait' && p !== 'Already-Established_algorithm').sort();
+    const orderedPolicies = ['stop_and_wait', 'Already-Established_algorithm', ...others];
+
     fill(el('scenario'), scenarios, 'showcase_open_floor');
-    fill(el('policy'), policies, 'BIOS_PIBT.5');
+    fill(el('policy'), orderedPolicies, 'stop_and_wait');
     fill(el('allocationPolicy'), allocation_policies, 'auction');
     renderScenarioGallery(App.showcase);
   } catch (e) {
@@ -170,7 +181,11 @@ function fill(select, values, preferred) {
   for (const v of values) {
     const o = document.createElement('option');
     o.value = v;
-    o.textContent = v.replace(/_/g, ' ');
+    if (v === 'stop_and_wait') {
+      o.textContent = 'stop-and-wait(Competition)';
+    } else {
+      o.textContent = v.replace(/_/g, ' ');
+    }
     if (v === preferred) o.selected = true;
     select.appendChild(o);
   }
@@ -751,11 +766,16 @@ function updateManagerDot(frame) {
       : 'Hungarian task allocator DOWN';
     return;
   }
-  if (routePolicy === 'stop_and_wait' || routePolicy === 'BIOS_1.0.0') {
+  if (routePolicy === 'stop_and_wait' || routePolicy === 'stop-and-wait(Competition)') {
+    dot.className = 'dot';
+    text.textContent = 'no fleet manager · stop-and-wait(Competition)';
+    return;
+  }
+  if (routePolicy === 'Already-Established_algorithm' || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot';
     text.textContent = routePolicy === 'BIOS_1.0.0'
       ? 'no fleet manager · peer traffic'
-      : 'no fleet manager (baseline)';
+      : 'no fleet manager · Already-Established_algorithm';
     return;
   }
   if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'

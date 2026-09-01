@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BIOS 5 energy-feasible decentralized auction - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>BIOS 5 energy-feasible decentralized auction</h1>
+<h2>Status</h2>
+<p><code>BIOS_PIBT.5</code> is the default software policy and an extension of BIOS_PIBT.3. It does not</p>
+<p>change Layer-0 stopping, PIBT movement resolution, cell/block leases, corridor waves,</p>
+<p>or completion gossip. It changes which idle robots send task bids, how cargo urgency</p>
+<p>is ordered, and when an idle robot returns to charging.</p>
+<p>Tasks remain backward compatible. Missing fields mean <code>cargo_type=&quot;normal&quot;</code>, zero</p>
+<p>weight, priority 1, and no hard completion deadline. Auction close time remains</p>
+<p><code>bid_deadline</code>; delivery deadline is a separate receiver-local field transported as a</p>
+<p>relative TTL. The existing peer claim table remains authoritative for leases, while</p>
+<p><code>Task.lease_owner</code> and <code>Task.lease_until</code> mirror it for inspection.</p>
+<h2>Admission rule</h2>
+<p>For each robot/task pair the robot deterministically estimates energy for:</p>
+<ol>
+  <li>its current cell to pickup;</li>
+  <li>pickup to drop with a loaded-motion multiplier;</li>
+  <li>cargo-adjusted pickup/drop handling time;</li>
+  <li>drop to the nearest reachable charger;</li>
+  <li>a declared uncertainty margin.</li>
+</ol>
+<p>The robot bids only when projected post-task energy is at least the declared emergency</p>
+<p>reserve. A fixed <code>battery &gt; 80%</code> threshold is deliberately not used: the same task has</p>
+<p>different energy cost for robots at different locations.</p>
+<p>Every AMR is the same 100 kg-capacity model. Cargo uses configurable factors: normal</p>
+<p>1.0, fragile 1.1, heavy 1.4, and hazardous 1.25. The weight factor is</p>
+<p><code>1 + 0.35 * cargo_weight / 100 kg</code>. Cargo and weight multiply committed task-motion</p>
+<p>energy; the post-drop charger leg is unladen. Cargo type also multiplies the 12-second</p>
+<p>handling allowance, so it is not a display-only field.</p>
+<p>A BIOS 5 bid is rejected when the robot is not idle, already owns work, is charging,</p>
+<p>has no valid pickup/drop path, exceeds payload capacity, would cross the 15% reserve</p>
+<p>after task plus docking, or cannot complete the drop before a hard deadline. Declared</p>
+<p>priority orders tasks first, then earliest hard deadline, then bid cost and stable IDs.</p>
+<p>The WMS only repeats task announcements and never selects or assigns an auction winner.</p>
+<h2>Candidate reduction and liveness</h2>
+<p>Only the three nearest fresh, idle, sufficiently charged robots are candidates for a task,</p>
+<p>and each robot broadcasts at most its twelve best feasible tasks per round. Candidate</p>
+<p>membership is live rather than age-expanded: busy, charging, failed, stale, and</p>
+<p>energy-infeasible peers leave the set, automatically admitting the next robot. This</p>
+<p>preserves liveness without turning every long-running task back into a broadcast-open</p>
+<p>auction. Missing peer state widens participation rather than suppressing it.</p>
+<h2>Frozen initial parameters</h2>
+<ul>
+  <li>emergency reserve: 15% of nominal capacity</li>
+  <li>estimate uncertainty: 10%</li>
+  <li>loaded-motion multiplier: 1.35</li>
+  <li>pickup/drop service allowance: 12 seconds</li>
+  <li>initial candidate count: 3 robots per task</li>
+  <li>bid bundle: twelve best feasible tasks per robot and round</li>
+  <li>candidate replacement: live peer state; no task-age expansion</li>
+  <li>energy retry backoff when no task is feasible: 5 seconds</li>
+  <li>post-charge auction re-entry: 45%</li>
+  <li>identical-model payload capacity: 100 kg</li>
+  <li>full-payload energy premium: 35%</li>
+  <li>task order: priority, hard deadline, bid cost, stable IDs</li>
+</ul>
+<h2>Refined paired result</h2>
+<p>Eight deterministic seeds used <code>energy_acceptance</code>, eight robots, sixteen tasks,</p>
+<p>heterogeneous starting SOC, and identical workloads for BIOS_PIBT.3 and BIOS_PIBT.5.</p>
+<ul>
+  <li>completion: BIOS 3 = 7/8; BIOS 5 = 8/8</li>
+  <li>aggregate auction bids: 310,596 -> 164,000 (47.20% reduction)</li>
+  <li>aggregate messages: 632,813 -> 476,875 (24.64% reduction)</li>
+  <li>hardest seed: BIOS 3 timed out at 1200 s; BIOS 5 completed at 1020.64 s</li>
+  <li>hardest-seed bids: 101,529 -> 39,118 (61.47% reduction)</li>
+  <li>on the seven seeds completed by both policies, makespan was unchanged</li>
+  <li>observed robot/robot, robot/human and robot/rack contacts: zero</li>
+</ul>
+<p>Against the first successful BIOS 5 implementation itself, the refined candidate rule</p>
+<p>reduced bids from 279,686 to 164,000 (41.36%) and total messages from 592,561 to</p>
+<p>476,875 (19.52%). All eight per-seed makespans were bit-for-bit unchanged at the</p>
+<p>reported two-decimal resolution. A rejected four-task-bundle experiment did reduce</p>
+<p>traffic further but stalled seed 2 at 3/16 tasks; it is not part of the implementation.</p>
+<p>These are energy-stress results, not the stop-and-wait acceptance comparison. They</p>
+<p>measure the benefit of sparse energy-feasible bidding without claiming validation</p>
+<p>accuracy or a universal speedup.</p>
+<h2>Final smoke gates</h2>
+<p>The refined implementation also completed three deterministic liveness checks with no</p>
+<p>robot/robot, robot/human, or robot/rack contacts:</p>
+<ul>
+  <li><code>energy_acceptance</code>, seed 0, 5% uniform packet loss: 16/16 at 528.66 s;</li>
+  <li><code>robot_failure_reassignment</code>, seed 0: 1/1 at 46.82 s after one robot failure;</li>
+  <li><code>partition_recovery</code>, seed 0: 4/4 at 19.38 s.</li>
+</ul>
+<p>These are targeted regression gates, not pooled resilience evidence.</p>
+<p>Reproduce each side of the paired experiment:</p>
+<pre><code class="language-bash">python run.py --scenario energy_acceptance --robots 8 --seeds 8 \
+  --policy BIOS_PIBT.3 --allocation-policy auction --json /tmp/bios3-energy.json
+python run.py --scenario energy_acceptance --robots 8 --seeds 8 \
+  --policy BIOS_PIBT.5 --allocation-policy auction --json /tmp/bios5-energy.json</code></pre>
+<h2>Default-policy release evidence</h2>
+<p>The strict stop-and-wait gate ran 30 paired seeds at each of 4, 6 and 8 robots. BIOS 5</p>
+<p>completed 90/90 candidate runs and all 1,620 tasks; stop-and-wait completed 0/90 before</p>
+<p>the fixed 1,200-second cutoff. Minimum conservative reduction bounds were 63.64%,</p>
+<p>51.17% and 34.16%. No robot/robot, robot/human or robot/rack contacts were observed</p>
+<p>across 88.6512 candidate robot-hours.</p>
+<p>During release testing, an asymmetric auction view exposed a duplicate worker that</p>
+<p>continued after a peer had completed the same logical task. Completion convergence now</p>
+<p>cancels the duplicate, forces it to vacate its current traffic lane before bidding</p>
+<p>again, and has a dedicated regression test. The formerly failing 8-robot seed 10 then</p>
+<p>completed 24/24 tasks in 727.16 seconds.</p>
+<p>A separate 20% packet-loss seed exposed an unsafe liveness fallback: awarding a task</p>
+<p>before an empty cross-corridor approach could oppose an active loaded wave. BIOS 5 now</p>
+<p>elects one idle bidder to reposition only after two lease windows of quiescence, then</p>
+<p>re-auctions from the pickup side. The formerly failing seed completes 12/12 tasks in</p>
+<p>391.34 seconds with zero observed contacts.</p>
+<p>These results justify BIOS 5 as the software-demo default. They remain simulation</p>
+<p>evidence, not physical safety certification or a universal performance guarantee.</p>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

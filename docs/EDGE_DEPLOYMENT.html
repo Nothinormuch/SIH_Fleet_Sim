@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edge deployment and team-member runbook - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>Edge deployment and team-member runbook</h1>
+<p>This runbook covers a clean clone, the authenticated multi-process proof, and one</p>
+<p>independent node per AMR. The batch simulator remains dependency-free; development and</p>
+<p>report tooling live in the virtual environment.</p>
+<h2>Clean clone and virtual environment</h2>
+<pre><code class="language-bash">git clone https://github.com/saksham001k/SIH_Fleet_Priority.git
+cd SIH_Fleet_Priority
+git switch codex/edge-integration-hardening   # until the branch is reviewed
+
+python3 -m venv .venv
+source .venv/bin/activate                     # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install -e &quot;.[dev]&quot;
+
+python -m pytest -q
+python backend/server.py                      # http://127.0.0.1:8000</code></pre>
+<p>Use <code>python -m ...</code> or the <code>.venv/bin/python</code> path after cloning. Do not run commands</p>
+<p>from a different repository copy: <code>git rev-parse --show-toplevel</code> should print the</p>
+<p>directory you just cloned.</p>
+<h2>Prove that the brains are separate processes</h2>
+<pre><code class="language-bash">source .venv/bin/activate
+export SIH_FLEET_PSK=&quot;$(python -c &#x27;import secrets; print(secrets.token_hex(32))&#x27;)&quot;
+python edge_demo.py --robots 3 --duration 5 --port 26231 \
+  --allocation-policy auction --output artifacts/edge-demo-local.json</code></pre>
+<p>The JSON must report different PIDs, different clock offsets, peer messages on every</p>
+<p>node, authenticated transport, no missed 20 ms control deadlines, and no contacts. The</p>
+<p>parent process supplies physics and lidar only; it neither forwards peer messages nor</p>
+<p>chooses routes, priorities, bids, or actuator commands.</p>
+<p>To observe the actual datagrams on Linux:</p>
+<pre><code class="language-bash">sudo tcpdump -ni any udp port 26231</code></pre>
+<h2>Connect a real robot driver</h2>
+<p>Run one <code>edge_node.py</code> process per robot. It receives sensor JSON on its <code>--sensor-port</code>,</p>
+<p>sends actuator JSON to <code>--actuator-port</code>, and exchanges signed multicast peer messages</p>
+<p>on <code>--peer-port</code>. The sensor packet uses SI units:</p>
+<pre><code class="language-json">{
+  &quot;pose&quot;: [1.4, 2.8, 0.0],
+  &quot;v&quot;: 0.0,
+  &quot;omega&quot;: 0.0,
+  &quot;battery_frac&quot;: 0.82,
+  &quot;cell&quot;: [1, 2],
+  &quot;clearance_m&quot;: 4.0,
+  &quot;clearance_static_m&quot;: 4.0,
+  &quot;clearance_dynamic_m&quot;: 4.0,
+  &quot;clearance_omni_m&quot;: 4.0,
+  &quot;detections&quot;: [],
+  &quot;on_dock&quot;: false
+}</code></pre>
+<p>Each actuator packet is <code>{&quot;v&quot;:...,&quot;omega&quot;:...,&quot;safety_stop&quot;:...,&quot;t&quot;:...}</code>. Missing or</p>
+<p>stale sensor frames cause an explicit zero-speed safety stop; invalid/non-finite fields</p>
+<p>are discarded.</p>
+<p>Example development command:</p>
+<pre><code class="language-bash">export SIH_FLEET_PSK=&quot;a-real-shared-secret-from-your-secret-store&quot;
+python edge_node.py --robot-id AMR01 --robot-index 0 --robots 3 \
+  --scenario dense_aisles --interface 192.168.10.21 \
+  --sensor-port 27101 --actuator-port 28101 --report AMR01-report.json</code></pre>
+<p>Use the address of the AMR network interface, not <code>127.0.0.1</code>, for multi-host multicast.</p>
+<p>The network must allow the administratively scoped group <code>239.26.1.23</code> and UDP port</p>
+<p><code>26123</code>. Each machine uses its own monotonic clock; wire time windows are relative TTLs,</p>
+<p>so NTP synchronisation is helpful for logs but not required for correctness.</p>
+<h2>Raspberry Pi service</h2>
+<ol>
+  <li>Create a dedicated <code>sih-fleet</code> user and install the repository in <code>/opt/sih-fleet</code>.</li>
+  <li>Create <code>/opt/sih-fleet/.venv</code> and install the project.</li>
+  <li>Copy <code>config/edge-node.example.env</code> to <code>/etc/sih-fleet/AMR01.env</code>, set the real</li>
+</ol>
+<p>values, and run <code>sudo chmod 600 /etc/sih-fleet/AMR01.env</code>.</p>
+<ol>
+  <li>Create <code>/var/lib/sih-fleet</code>, owned by the service user.</li>
+  <li>Copy <code>deploy/systemd/sih-edge-node@.service</code> into <code>/etc/systemd/system/</code>.</li>
+  <li>Run `sudo systemctl daemon-reload && sudo systemctl enable --now</li>
+</ol>
+<p>sih-edge-node@AMR01`.</p>
+<p>Inspect <code>journalctl -u sih-edge-node@AMR01</code> and the JSON report. Record the exact Pi</p>
+<p>model, OS image, Python version, node count, run duration, CPU time, peak RSS, loop</p>
+<p>mean/p95/p99/max, deadline misses, sensor timeouts, and transport counters.</p>
+<h2>What is and is not proven</h2>
+<p>The checked-in local test proves process isolation, real authenticated UDP multicast,</p>
+<p>independent clock epochs, fail-safe sensor handling, and timing on the machine that ran</p>
+<p>it. It is not a Raspberry Pi measurement. A release claim about Pi CPU/RAM or sustained</p>
+<p>50 Hz operation requires running the command on the named Pi/Jetson and checking in its</p>
+<p>unaltered JSON report.</p>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BIOS_PIBT.2: Decentralized Directed-Cell Protocol - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>BIOS_PIBT.2: Decentralized Directed-Cell Protocol</h1>
+<p><code>BIOS_PIBT.2</code> is the high-density successor to the reactive <code>BIOS_PIBT.1</code></p>
+<p>policy. Version 1 is retained as a benchmark. Version 2 changes the traffic model</p>
+<p>instead of adding another retreat heuristic.</p>
+<h2>Failure that motivated V2</h2>
+<p>The original dashboard accepted <code>robots=100</code> but the server silently clamped the run</p>
+<p>to 24 AMRs. Even at 24, seed 20 completed only 11/96 tasks in 300 seconds and produced</p>
+<p>376 detected wait cycles. The standard warehouse contains 59 short non-passing aisle</p>
+<p>segments; V1's long-corridor threshold protected none of them. Replicated PIBT then</p>
+<p>requested sideways moves in cells where the chassis physically could not move sideways,</p>
+<p>and repeated retreat recovery concentrated robots at shared junctions.</p>
+<p>V2 removes that failure mode with prevention and backpressure.</p>
+<h2>Protocol rules</h2>
+<h3>1. Local safety is independent</h3>
+<p>The 50 Hz protective controller remains below all messaging. It sees anonymous lidar</p>
+<p>detections, including people and failed robots, and may reject any lease or route. A</p>
+<p>network message never overrides braking.</p>
+<h3>2. Route on a strongly connected circulation graph</h3>
+<p>The rack map is converted to alternating one-way aisle and perimeter lanes. The graph</p>
+<p>is checked in tests to satisfy both properties:</p>
+<ul>
+  <li>every free cell is reachable from every other free cell;</li>
+  <li>no traversable edge also permits its reverse.</li>
+</ul>
+<p>Consequently, two planned AMRs cannot meet in a head-on edge swap. A longer loop is</p>
+<p>accepted in exchange for eliminating an unrecoverable physical configuration.</p>
+<p>Maps such as the single bidirectional chokepoint, which cannot be made one-way while</p>
+<p>preserving reachability, continue to use block leases and PIBT.</p>
+<h3>3. Lease every destination cell</h3>
+<p>Before entering a cell, an AMR broadcasts an idempotent <code>CLAIM</code> containing the cell's</p>
+<p>deterministic resource ID, a local-clock TTL, route epoch, and frozen priority key.</p>
+<p>It waits one complete propagation round, then enters only if its claim is the winner.</p>
+<p>Physical occupancy outranks every packet. A claim is renewed while the move is pending</p>
+<p>and is released early when the target changes; lost releases are repaired by TTL expiry.</p>
+<p>This restores the discrete invariant that V1 accidentally violated in continuous</p>
+<p>physics: one robot owns one cell. Two chassis can otherwise occupy different corners</p>
+<p>of a large grid cell without touching and then deadlock on the same departure.</p>
+<h3>4. Resolve merges with one total order</h3>
+<p>Every heartbeat carries this frozen lexicographic key, larger first:</p>
+<ol>
+  <li>emergency battery state;</li>
+  <li>exiting a tree branch;</li>
+  <li>waiting age;</li>
+  <li>task service age;</li>
+  <li>loaded state;</li>
+  <li>negative distance to goal;</li>
+  <li>unique robot ID.</li>
+</ol>
+<p>At a merge, contenders first publish intent for a propagation round. Every edge node</p>
+<p>then compares the same frozen keys. The loser remains outside the destination cell;</p>
+<p>it does not retreat into another traffic stream. Waiting age prevents a permanently</p>
+<p>fixed low-priority robot.</p>
+<h3>5. Repair route discontinuities, never execute them</h3>
+<p>Continuous motion can cross a pose-estimation cell boundary before the old waypoint is</p>
+<p>consumed. If the next route cell is no longer adjacent to the measured cell, V2 stops,</p>
+<p>replans from the measured cell, and refuses the diagonal shortcut. This prevents a</p>
+<p>route repair from cutting a rack corner.</p>
+<h3>6. Do not exceed physical capacity</h3>
+<p>The default cell pitch is 1.4 m. A 0.70 m diameter AMR, 0.30 m standstill field and</p>
+<p>pose noise cannot execute a one-cell invariant on the old 1.0 m pitch: two correctly</p>
+<p>centred neighbours have zero clearance budget. The larger pitch is a physical</p>
+<p>admissibility condition, not a priority tuning parameter.</p>
+<p>For requested fleets above 24, the dense warehouse scales from 31x21 to 61x41 rather</p>
+<p>than silently placing 100 robots on the 24-robot benchmark floor. The dashboard now</p>
+<p>reports and runs the requested fleet size, up to 100.</p>
+<h2>Messages and state machine</h2>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>State</th>
+    <th>Action</th>
+    <th>Exit condition</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td><code>REQUEST</code></td>
+      <td>Publish next cell, intent and frozen key.</td>
+      <td>One propagation round elapsed.</td>
+    </tr>
+    <tr>
+      <td><code>CLAIMED</code></td>
+      <td>Re-broadcast expiring cell lease.</td>
+      <td>Own claim is the deterministic winner.</td>
+    </tr>
+    <tr>
+      <td><code>COMMITTED</code></td>
+      <td>Drive one adjacent centre-to-centre transition.</td>
+      <td>Measured cell reaches target.</td>
+    </tr>
+    <tr>
+      <td><code>RELEASE</code></td>
+      <td>Release old lease; publish the next request.</td>
+      <td>Immediate; TTL is the loss fallback.</td>
+    </tr>
+    <tr>
+      <td><code>WAIT</code></td>
+      <td>Stay outside the claimed cell and age priority.</td>
+      <td>Occupant leaves or a later claim wins.</td>
+    </tr>
+  </tbody>
+</table></div>
+<p>All state is onboard. The HTTP dashboard is a passive listener and is not in this</p>
+<p>state machine.</p>
+<h2>Conditional liveness argument</h2>
+<p>No asynchronous, lossy, partitionable system can give an unconditional liveness</p>
+<p>guarantee. V2 makes a narrower claim under explicit assumptions:</p>
+<ol>
+  <li>the communication component eventually delivers a repeated heartbeat/claim within</li>
+</ol>
+<p>a bounded interval;</p>
+<ol>
+  <li>robot IDs are unique and nonfailed robots execute an admitted one-cell move in</li>
+</ol>
+<p>bounded time;</p>
+<ol>
+  <li>the route graph is strongly connected and has no reverse edge;</li>
+  <li>no directed cycle is completely occupied (capacity admission leaves a hole);</li>
+  <li>task service is finite and idle AMRs vacate a peer's published goal/intent;</li>
+  <li>cell pitch and localisation error satisfy the physical clearance budget.</li>
+</ol>
+<p>Under these assumptions:</p>
+<ul>
+  <li><strong>mutual exclusion:</strong> the propagation gate, total-order claim and physical-occupancy</li>
+</ul>
+<p>override admit at most one robot to a destination cell;</p>
+<ul>
+  <li><strong>no head-on deadlock:</strong> reverse directed edges do not exist;</li>
+  <li><strong>queue progress:</strong> an occupied-cell wait follows the directed route. A finite wait</li>
+</ul>
+<p>cycle would require a completely occupied directed cycle, excluded by assumption 4;</p>
+<p>therefore some front robot reaches a hole and moves, and the hole propagates backward;</p>
+<ul>
+  <li><strong>merge progress:</strong> a finite contender set has one maximum frozen key; its lease is</li>
+</ul>
+<p>admitted, and waiting age supplies fairness across later rounds;</p>
+<ul>
+  <li><strong>task progress:</strong> strong connectivity supplies a finite route to every target, and</li>
+</ul>
+<p>repeated queue/merge progress eventually executes that route.</p>
+<p>This is a deadlock/starvation argument for the traffic protocol. Collision safety still</p>
+<p>belongs to the independent continuous protective layer and must be validated as a rate,</p>
+<p>not inferred from the protocol proof.</p>
+<h2>Reproducible evidence</h2>
+<p>The regression suite verifies the directed graph, cell-resource identity, positive</p>
+<p>clearance budget, PIBT properties, braking, swept collision detection, malformed wire</p>
+<p>packets, authentication, replay handling and message round-trips:</p>
+<pre><code class="language-bash">python -m pytest tests -q</code></pre>
+<p>Pinned high-density comparison (<code>dead_zone_mesh</code>, 24 robots, seed 20, 300 s):</p>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>Policy</th>
+    <th>Tasks</th>
+    <th>Robot contacts</th>
+    <th>Rack contacts</th>
+    <th>Wait cycles</th>
+    <th>Retreats</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td><code>BIOS_PIBT.1</code></td>
+      <td>14/96</td>
+      <td>0</td>
+      <td>0</td>
+      <td>174</td>
+      <td>64</td>
+    </tr>
+    <tr>
+      <td><code>BIOS_PIBT.2</code></td>
+      <td>18/96</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+  </tbody>
+</table></div>
+<p>This is a 28.6% increase in completed work at the cutoff, not a makespan claim: neither</p>
+<p>policy completed all 96 tasks in 300 seconds. V2 reached 95/96 by 2400 seconds in the</p>
+<p>development trace with zero robot/rack contacts and no detected wait cycles. A run that</p>
+<p>does not complete has no makespan, so the project does not report it as a completion-time</p>
+<p>speedup.</p>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

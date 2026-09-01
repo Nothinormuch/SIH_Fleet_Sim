@@ -17,9 +17,10 @@ class RobotSpec:
 
     radius_m: float = 0.35          # footprint radius; two robots touch at 0.70 m
     v_max: float = 1.2              # m/s  (commercial AMRs run 1.0-2.0 in aisles)
-    a_max: float = 0.8              # m/s^2
+    a_max: float = 1.0              # m/s^2
     omega_max: float = 1.6          # rad/s  (~92 deg/s turn-in-place)
     alpha_max: float = 3.2          # rad/s^2
+    v_turn: float = 0.40            # speed carried through a 90 deg direction change
 
     # --- Layer 0: protective stop. Certified, local, never network-dependent. ---
     # The protective field is SPEED-DEPENDENT, which is how real AMR safety scanners
@@ -32,7 +33,6 @@ class RobotSpec:
     omni_stop_m: float = 0.30       # 360 deg guard: stop if anything is this close
     safety_cone_rad: float = 1.05   # +/- 60 deg: unexpected objects (people, peers)
     static_cone_rad: float = 0.35   # +/- 20 deg: mapped shelving directly in the path
-    v_turn: float = 0.20            # speed carried through a 90 deg direction change
 
     sense_radius_m: float = 4.0     # onboard lidar range for *unlabelled* obstacles
     battery_full_wh: float = 480.0
@@ -158,6 +158,8 @@ class TrafficSpec:
     # theirs to reach us, short enough not to dominate travel time through a block.
     gate_commit_s: float = 0.45
     replan_penalty: float = 6.0     # cost added to a contested cell when detouring
+    # Enhanced stop_and_wait baseline: threshold before a block is deemed persistent
+    stop_wait_persistent_s: float = 4.0
     # BIOS_1.0.0 only: a robot held still longer than this edges into ANY free
     # adjacent cell so it can never settle permanently. Deliberately short: the
     # point is a liveness guarantee, not polite traffic theory.

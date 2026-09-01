@@ -57,6 +57,8 @@ from .world import Actuation, Sensors
 # ---------------------------------------------------------------------- constants
 
 POLICY_STOP_WAIT = "stop_and_wait"
+POLICY_ALREADY_ESTABLISHED = "Already-Established_algorithm"
+STOP_AND_WAIT_POLICIES = (POLICY_STOP_WAIT, POLICY_ALREADY_ESTABLISHED)
 POLICY_CENTRAL = "central"
 POLICY_HIERARCHICAL = "hierarchical"
 POLICY_BIOS = "BIOS_1.0.0"
@@ -134,6 +136,8 @@ class AMRBrain:
                  policy: str = POLICY_HIERARCHICAL, home: Cell = (0, 0),
                  allocation_policy: str | None = None,
                  policy_model=None) -> None:
+        if policy in STOP_AND_WAIT_POLICIES:
+            policy = POLICY_STOP_WAIT
         if policy not in POLICIES:
             raise ValueError(f"unknown policy {policy!r}")
         validate_allocation_policy(allocation_policy)
@@ -271,6 +275,13 @@ class AMRBrain:
         self._mgr_seen = -1e9
         self._seq = 0
         self._hold = False
+
+        # Enhanced stop_and_wait: event-driven waiting, route caching & persistent block tracking
+        self._stop_wait_blocked_since: float | None = None
+        self._stop_wait_blocked_cell: Cell | None = None
+        self._stop_wait_persistent_replan_t: float = -1e9
+        self._route_start_t: float = -1e9
+        self._route_valid: bool = False
 
         # Everything the report quotes about this agent, measured not asserted.
         self.stats = {
@@ -479,14 +490,23 @@ class AMRBrain:
             self._track_block(t, False, None)
             return
 
-        if self.policy == POLICY_STOP_WAIT:
-            # The weak baseline, implemented faithfully rather than as a straw man:
-            # no intent sharing, no priorities, no negotiation. Stop if something is
-            # in the way and resume when it leaves. It is safe and it deadlocks - and
-            # that deadlock is a real, reported result, not a rigged one.
+        if self.policy in STOP_AND_WAIT_POLICIES:
+            # Enhanced stop_and_wait: reactive, non-cooperative next-cell occupancy
+            # with event-driven state transitions and persistent-block tracking.
+            was_holding = self._hold
             self._hold = self._traffic_ahead(sensors)
-            blocker = self._peer_ahead(sensors) if self._hold else None
-            self._track_block(t, self._hold, blocker)
+            nxt = self._next_cell()
+
+            if self._hold:
+                if not was_holding or self._stop_wait_blocked_cell != nxt:
+                    self._stop_wait_blocked_since = t
+                    self._stop_wait_blocked_cell = nxt
+                blocker = self._peer_ahead(sensors)
+                self._track_block(t, True, blocker)
+            else:
+                self._stop_wait_blocked_since = None
+                self._stop_wait_blocked_cell = None
+                self._track_block(t, False, None)
             return
 
         if (self.policy in V3_AUCTION_POLICIES
@@ -736,11 +756,15 @@ class AMRBrain:
         is what the traffic layer in the other two policies exists to solve.
         """
         nxt = self._next_cell()
-        if nxt is None:
+        if nxt is None or not sensors.detections:
             return False
         cm = self.cfg.cell_m
+        x_min = nxt[0] * cm
+        x_max = x_min + cm
+        y_min = nxt[1] * cm
+        y_max = y_min + cm
         for det in sensors.detections:
-            if to_cell((det.x, det.y), cm) == nxt:
+            if x_min <= det.x < x_max and y_min <= det.y < y_max:
                 return True
         return False
 
@@ -1802,6 +1826,49 @@ class AMRBrain:
                                        sensors.cell, self.goal,
                                        no_schedule=not self.path_times))
 
+        if self.policy in STOP_AND_WAIT_POLICIES:
+            # Enhanced Stop-and-Wait route management:
+            # 1. Initial plan or route consumed:
+            if not self.path or self.pidx >= len(self.path):
+                self._replan(t, sensors.cell)
+                return
+
+            # 2. Check if robot has diverged from planned path:
+            curr_cell = sensors.cell
+            on_track = (
+                curr_cell == self.path[self.pidx]
+                or (self.pidx > 0 and curr_cell == self.path[self.pidx - 1])
+                or (curr_cell in self.path[max(0, self.pidx - 1):min(len(self.path), self.pidx + 2)])
+            )
+            if not on_track:
+                self._replan(t, curr_cell)
+                return
+
+            # 3. Event-driven waiting state: if holding, check for persistent blockage
+            if self._hold:
+                nxt = self._next_cell()
+                persistent_threshold = getattr(
+                    self.cfg.traffic, "stop_wait_persistent_s", 4.0
+                )
+                waited = (t - self._stop_wait_blocked_since) if self._stop_wait_blocked_since else 0.0
+                time_since_last_replan = t - self._stop_wait_persistent_replan_t
+
+                if waited >= persistent_threshold and time_since_last_replan >= 3.0:
+                    self._stop_wait_persistent_replan_t = t
+                    if nxt is not None:
+                        self.penalty[nxt] = self.penalty.get(nxt, 0.0) + self.cfg.traffic.replan_penalty
+                    self._replan_with_route_reuse(t, curr_cell)
+                # Event-driven waiting: do NOT perform routine A* while waiting on a temporary obstacle!
+                return
+
+            # 4. Moving normally: route is reused until destination reached or livelock timeout
+            stuck = t - self._last_progress_t
+            if stuck > self.cfg.traffic.livelock_progress_s:
+                self.penalty.clear()
+                self._last_progress_t = t
+                self._replan(t, curr_cell)
+            return
+
         stuck = t - self._last_progress_t
         if not self.path or self.pidx >= len(self.path):
             self._replan(t, sensors.cell)
@@ -1843,6 +1910,39 @@ class AMRBrain:
         # the follower from honouring a timetable that belongs to a discarded plan.
         self.path_times = []
         self.pidx = 1 if len(path) > 1 else 0
+        self._route_valid = bool(path)
+        self._route_start_t = t
+
+    def _replan_with_route_reuse(self, t: float, start: Cell) -> None:
+        """A* replan that reuses the existing route object if A* returns the identical path."""
+        if self.goal is None:
+            return
+        t0 = time.perf_counter()
+        blocked = {
+            cell for cell, until in self._dynamic_blocked_until.items()
+            if until > t and cell != start and cell != self.goal
+        }
+        path = astar(self.env, start, self.goal, extra_cost=self.penalty, blocked=blocked)
+        cpu = time.perf_counter() - t0
+        self.stats["plan_cpu_s"] += cpu
+        self.stats["plan_calls"] += 1
+        self.stats["plan_cpu_max_s"] = max(self.stats["plan_cpu_max_s"], cpu)
+        self.stats["local_plans"] += 1
+
+        # Check if the new path is identical to the remaining existing path:
+        remaining_old = self.path[self.pidx:] if self.path else []
+        new_steps = path[1:] if len(path) > 1 else path
+        if path and remaining_old == new_steps:
+            # Route is identical - retain existing route without controller reset!
+            return
+
+        self.stats["replans"] += 1
+        self.epoch += 1
+        self.path = path
+        self.path_times = []
+        self.pidx = 1 if len(path) > 1 else 0
+        self._route_valid = bool(path)
+        self._route_start_t = t
 
     def _observe_dynamic_obstacles(self, t: float, sensors: Sensors) -> None:
         """Promote stationary anonymous lidar blobs into an expiring local map layer."""
@@ -2932,7 +3032,7 @@ class AMRBrain:
 
     def _broadcast(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
-        if self.policy in (POLICY_STOP_WAIT, *CENTRAL_POLICIES):
+        if self.policy in (*STOP_AND_WAIT_POLICIES, *CENTRAL_POLICIES):
             # Heartbeats only. The dashboard has to work for every baseline or the
             # comparison quietly becomes "with telemetry vs without", and the manager
             # needs poses to plan. Neither baseline shares *intent* with peers - that

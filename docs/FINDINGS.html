@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Engineering findings - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>Engineering findings</h1>
+<p>Bugs that were real, cost time, and are worth not rediscovering. Several of them are</p>
+<p>also the most defensible content in the submission: they are the difference between a</p>
+<p>simulation that <em>looks</em> like it works and one whose numbers mean something.</p>
+<hr>
+<h2>1. A fixed protective field is wrong in both directions</h2>
+<p><strong>Symptom:</strong> every robot froze permanently at t = 0.</p>
+<p>A stationary robot one metre from shelving had 1.15 m of clearance against a fixed 1.8 m</p>
+<p>protective field, so it could never set off — and it could not turn away either, because</p>
+<p>the stop also killed rotation.</p>
+<p><strong>Fix:</strong> size the field from the braking equation, <code>v²/(2a) + v·τ + margin</code>. At <code>v_max</code></p>
+<p>that is ~1.17 m; at standstill it collapses to the 0.15 m margin. A parked robot can pull</p>
+<p>away from a wall; a robot at full speed cannot drive into one. This is what real AMR</p>
+<p>safety scanners do (ISO 3691-4 field-set switching) and it is not an optimisation.</p>
+<p>Also: <strong>rotation must survive a protective stop.</strong> A robot that may not turn cannot face</p>
+<p>away from whatever stopped it, and a stop it cannot recover from is just a slower way to</p>
+<p>deadlock.</p>
+<h2>2. Mapped geometry and unexpected objects need different fields</h2>
+<p><strong>Symptom:</strong> with the field fixed, robots still crawled at wall-adjacent pick cells.</p>
+<p>A ±60° cone at a robot hugging shelving always reads a few centimetres — and picks</p>
+<p>happen exactly there. Collapsing "known wall" and "unknown object" into one number makes</p>
+<p>every pick station unreachable.</p>
+<p><strong>Fix:</strong> two channels. Mapped racks get a narrow ±20° cone and a crawl limit, because the</p>
+<p>planner only routes through cells it knows are free. Unexpected objects get the full</p>
+<p>speed-scaled field and absolute authority. The hard backstop against mapped geometry</p>
+<p>stays, and when it fires the world records a rack contact — so a wrong map shows up in</p>
+<p>the results instead of hiding.</p>
+<h2>3. A linear "slow-down zone" is not physics, and it costs an order of magnitude</h2>
+<p><strong>Symptom:</strong> robots with 1.3 m of clear space ahead travelled at <strong>0.04 m/s</strong>. The fleet</p>
+<p>was not deadlocked; it was moving at 1/30 speed, which is indistinguishable from</p>
+<p>deadlocked over a 400-second run.</p>
+<p>A linear taper between the stop field and an arbitrary warning distance has no physical</p>
+<p>meaning. Worse, it self-reinforced: the <em>desired</em> speed sized the field that then</p>
+<p>throttled the robot, and the field never shrank because the robot never got to move.</p>
+<p><strong>Fix:</strong> invert the braking equation — <code>max_speed_for_clearance(gap)</code> returns the fastest</p>
+<p>speed from which that gap is still enough to stop. At 1.3 m the answer is full speed.</p>
+<p>This single change took the first task from "never completes" to completing.</p>
+<h2>4. The field must account for <em>closing</em> speed, not just own speed</h2>
+<p><strong>Symptom:</strong> two robots meeting head-on collided at 0.06 m separation despite both</p>
+<p>braking correctly.</p>
+<p>They closed at 1.42 m/s combined while each budgeted for its own 0.71 m/s. Braking only</p>
+<p>slows <em>you</em>; the other party keeps coming for the entire time you are stopping.</p>
+<p><strong>Fix:</strong> solve <code>gap ≥ v·τ + v²/(2a) + v_close·(τ + v/a) + margin</code> for <code>v</code>. Detections</p>
+<p>carry an estimated velocity (a real 2D safety lidar plus tracker provides range rate).</p>
+<p>Head-on traffic now needs a much larger gap — which is precisely the argument for a</p>
+<p>coordination layer: messaging exists so the safety layer rarely has to fire.</p>
+<h2>5. A forward cone cannot see a side merge</h2>
+<p><strong>Symptom:</strong> the <code>central</code> policy logged 389 contacts at 0.09 m separation.</p>
+<p>Two robots converging on a junction at ninety degrees each sit outside the other's ±60°</p>
+<p>cone. Nothing triggers, and they meet in the middle.</p>
+<p><strong>Fix:</strong> a 360° guard with a hard stop at 0.30 m, in addition to the directional field.</p>
+<p>Real AMRs carry 360° protective coverage for exactly this reason.</p>
+<h2>6. Coordination bugs that had nothing to do with the radio</h2>
+<p>These are the ones worth presenting, because each is a way a plausible protocol fails</p>
+<p>while every component looks correct in isolation.</p>
+<p><strong>Priority inversion at a queue.</strong> A robot at a corridor mouth yielded to a peer queued</p>
+<p><em>behind</em> it, because ageing had given the blocked peer a higher priority. The robot in</p>
+<p>front stops for the robot it is itself blocking, and the queue never moves. Ageing makes</p>
+<p>this certain rather than unlikely: whoever is stuck at the back accrues priority fastest.</p>
+<p><em>Fix:</em> position decides between robots entering by the same mouth; priority only decides</p>
+<p>between robots arriving at different mouths, where both genuinely could go first.</p>
+<p><strong>Symmetric yielding from a stale key.</strong> Each robot compared its own <em>live</em> priority</p>
+<p>against the peer's <em>published</em> one. Both did the same, so inside one heartbeat period</p>
+<p>both could conclude they were the loser. Both yield, forever, and the wait-for graph</p>
+<p>shows a mutual block that no cycle-breaker can fix because neither robot is wrong.</p>
+<p><em>Fix:</em> arbitrate on published-vs-published, which makes the relation antisymmetric.</p>
+<p><strong>Continuous ageing thrashes any commit round.</strong> Two waiting robots swapped rank several</p>
+<p>times a second, so neither ever held the lead long enough to complete a 0.45 s commit</p>
+<p>round. <em>Fix:</em> discrete five-second ageing steps — stable far longer than a round takes,</p>
+<p>while still guaranteeing nobody starves.</p>
+<p><strong>Right of way inside a block.</strong> A robot already inside a single-file aisle deferred to a</p>
+<p>higher-priority peer waiting outside it. The aisle can then never empty and the waiting</p>
+<p>robot can never enter. <em>Fix:</em> whoever is committed inside a block outranks anyone still</p>
+<p>outside it, regardless of priority.</p>
+<p><strong>Giving way while blocked.</strong> The give-way manoeuvre was itself subject to traffic holds,</p>
+<p>so it waited for the robot it was giving way to. <em>Fix:</em> retreats are exempt from Layer 1</p>
+<p>(Layer 0 still protects them), and they are time-boxed so they cannot latch.</p>
+<p><strong>Waiting in the doorway.</strong> A robot queued at a corridor mouth stands exactly where the</p>
+<p>robot inside must drive to leave. No cycle to detect, no rule violated, and neither moves.</p>
+<p><em>Fix:</em> pull off the axis — sideways, not backwards, since reversing just relocates the</p>
+<p>obstruction down the lane the other robot needs.</p>
+<p><strong>Block control everywhere is worse than none.</strong> Applying full block exclusion to all 59</p>
+<p>short gaps in a racking layout turned the warehouse into a series of toll gates and made</p>
+<p>throughput <em>worse than doing nothing</em>. Block control is now scoped to runs of ≥ 6 cells,</p>
+<p>where per-cell yielding genuinely cannot recover.</p>
+<h2>7. Discrete collision freedom is not continuous executability</h2>
+<p><strong>Symptom:</strong> PIBT returned a collision-free next-cell configuration, yet two robots</p>
+<p>remained safety-stopped forever.</p>
+<p>The grid endpoints were valid, but a leader turning west while its follower entered</p>
+<p>from the south initially reduced the physical chassis gap. A similar straight-convoy</p>
+<p>failure occurred when the leader was laterally off-center and the follower had already</p>
+<p>crossed half a cell. Layer 0 was correct to reject both commands; discrete occupancy had</p>
+<p>not proved their swept trajectories executable.</p>
+<p><strong>Fix:</strong> stage a follower at its own cell centre when the leader turns, or when measured</p>
+<p>separation is already inside the standstill guard margin. The leader then receives a</p>
+<p>bounded recovery command only while relative velocity increases every close-peer gap.</p>
+<p>Straight, well-spaced convoys still flow without serialization.</p>
+<h2>8. Idle parking must avoid the route, not just the destination</h2>
+<p><strong>Symptom:</strong> an idle robot noticed that it blocked a peer, stepped aside, then selected</p>
+<p>another cell in the same advertised intent horizon. It oscillated between two cells at</p>
+<p>the corridor mouth while the task-owning robot was repeatedly displaced away from its</p>
+<p>goal.</p>
+<p><strong>Fix:</strong> parking candidates exclude peer cells, peer goals and every cell in the current</p>
+<p>peer intent horizon. The idle AMR therefore selects a genuine side bay. Idle heartbeats</p>
+<p>also clear the peer's previous active intent, and a robot with no goal never publishes</p>
+<p>the tail of an old path.</p>
+<h2>9. Priority permission needs bounded hysteresis</h2>
+<p><strong>Symptom:</strong> two merge contenders alternated permission every control tick. The winner's</p>
+<p>blocked timer—and therefore its waiting priority—was cleared as soon as PIBT authorized</p>
+<p>motion, before the chassis had time to turn and enter the next cell.</p>
+<p>Keeping the age forever solved that race but starved other traffic whenever the winner</p>
+<p>could not physically translate.</p>
+<p><strong>Fix:</strong> retain the accumulated waiting rank only for the six-second verified recovery</p>
+<p>window. Cell progress resets it immediately; failure to progress lets it expire. This</p>
+<p>is long enough to execute one admitted transition and bounded enough not to become a</p>
+<p>permanent priority lease.</p>
+<hr>
+<h2>Simulation-harness lessons</h2>
+<ul>
+  <li><strong>Sample start cells without replacement.</strong> Two robots spawned in one cell overlap for</li>
+</ul>
+<p>the entire run, and the contact counter reports ~400 "collisions" that are one broken</p>
+<p>initial condition. A benchmark that starts in an impossible state cannot measure</p>
+<p>anything.</p>
+<ul>
+  <li>*<em>A schedule is an </em>earliest-entry<em> bound, not a pace.</em>* Timestamps computed from a</li>
+</ul>
+<p>nominal cruise speed slower than the robot can actually drive leave every robot</p>
+<p>permanently "ahead of schedule", holding at every single cell. The fleet crawled at one</p>
+<p>cell per replan.</p>
+<ul>
+  <li><strong>Do not re-issue an unchanged plan every second.</strong> It resets the robot to the head of</li>
+</ul>
+<p>a fresh schedule each time, so it never gets far enough into one to benefit.</p>
+<ul>
+  <li><strong>Compress space-time plans carefully.</strong> Waiting is encoded as "stay in the same cell</li>
+</ul>
+<p>for k steps". Hand the robot only the cell list and it collapses the repeats and sails</p>
+<p>straight through the conflict the wait was avoiding — and the central baseline silently</p>
+<p>stops being conflict-free.</p>
+<ul>
+  <li><strong>Per-destination delivery queues.</strong> One shared queue drained and re-pushed per poll is</li>
+</ul>
+<p>quadratic in fleet size; it dominated runtime before anything else did.</p>
+<ul>
+  <li><strong>Ray-cast with grid traversal, not fixed steps.</strong> Amanatides–Woo costs one iteration</li>
+</ul>
+<p>per cell crossed instead of eighty per ray. At 50 Hz × N robots it decides whether the</p>
+<p>benchmark runs in seconds or minutes.</p>
+<hr>
+<h2>BIOS_4 — what a learned coordination policy actually bought</h2>
+<p><code>BIOS_4</code> picks one of five verbs at the 10 Hz traffic layer — proceed, hold, yield to a</p>
+<p>passing bay, respect the block token, replan — from a 549-parameter network trained by an</p>
+<p>evolution strategy. It does not drive the wheels. Trained on seeds 0–2, **reported here on</p>
+<p>held-out seeds 8–11 at 420 s, which is longer than any episode it ever saw:**</p>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>policy</th>
+    <th>tasks (4 seeds)</th>
+    <th>per seed</th>
+    <th>progress</th>
+    <th>r-r</th>
+    <th>r-h</th>
+    <th>rack</th>
+    <th>min sep</th>
+    <th>replans</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td><code>stop_and_wait</code></td>
+      <td>0/48</td>
+      <td>0,0,0,0</td>
+      <td>59</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0.855</td>
+      <td>366</td>
+    </tr>
+    <tr>
+      <td><code>central</code></td>
+      <td>0/48</td>
+      <td>0,0,0,0</td>
+      <td>54</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0.849</td>
+      <td>32</td>
+    </tr>
+    <tr>
+      <td><code>hierarchical</code></td>
+      <td>0/48</td>
+      <td>0,0,0,0</td>
+      <td>31</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0.851</td>
+      <td>974</td>
+    </tr>
+    <tr>
+      <td><code>BIOS_1.0.0</code></td>
+      <td>7/48</td>
+      <td>4,3,<strong>0,0</strong></td>
+      <td>99</td>
+      <td>0</td>
+      <td>0</td>
+      <td><strong>15</strong></td>
+      <td>0.732</td>
+      <td>1556</td>
+    </tr>
+    <tr>
+      <td><strong><code>BIOS_4</code></strong></td>
+      <td><strong>13/48</strong></td>
+      <td>3,3,3,4</td>
+      <td>129</td>
+      <td>0</td>
+      <td>0</td>
+      <td><strong>0</strong></td>
+      <td>0.865</td>
+      <td>729</td>
+    </tr>
+  </tbody>
+</table></div>
+<p><strong>The per-seed column is the result, not the total.</strong> <code>BIOS_1.0.0</code> scores well on two</p>
+<p>seeds and <em>completely fails</em> on the other two; <code>BIOS_4</code> delivers on all four. A</p>
+<p>best-of-one-seed comparison would have shown <code>BIOS_1.0.0</code> winning (4 vs 3) and hidden the</p>
+<p>thing that actually matters. This is the same reason <code>safety_report()</code> pools runs, applied</p>
+<p>to throughput.</p>
+<p>Three secondary results worth more than the headline:</p>
+<ul>
+  <li><strong><code>BIOS_1.0.0</code> drives into shelving and <code>BIOS_4</code> does not</strong> — 15 rack contacts against</li>
+</ul>
+<p>zero, and a worse worst-separation (0.732 m vs 0.865 m). Panic-on-stick edges into "any</p>
+<p>free adjacent cell" and Layer 0's creep window lets it through the omni guard; over</p>
+<p>28 robot-minutes that finds the racking. The learned policy reaches the same liveness</p>
+<p>without needing the valve nearly as often.</p>
+<ul>
+  <li><strong>The backstop is not doing the work.</strong> The unstick valve fired 23 times across four</li>
+</ul>
+<p>420 s runs. If the learned policy were merely riding on panic-on-stick, that number</p>
+<p>would be in the hundreds — a genome that always holds triggers it roughly 120 times per</p>
+<p>robot per run. It is instrumented (<code>PolicyResult.bios4_unstick</code>) precisely so this claim</p>
+<p>can be checked rather than asserted.</p>
+<ul>
+  <li><strong>The reroute cooldown halved the churn.</strong> 729 replans against <code>BIOS_1.0.0</code>'s 1556 and</li>
+</ul>
+<p><code>hierarchical</code>'s 974. Replanning was left rate-limited at 3 s deliberately: unlimited</p>
+<p>replanning is a known pathology here, and evolution would otherwise have rediscovered it</p>
+<p>and called it a strategy.</p>
+<h3>The guarantees do not depend on the training working</h3>
+<p>Tested rather than claimed. An always-hold model still moves the fleet (the valve fires</p>
+<p>above the model, on its own timer); an always-proceed model — the most reckless verb,</p>
+<p>ignoring block ownership and peer intent entirely — still produces zero contacts, because</p>
+<p>Layer 0 is below all of it. Twelve <em>arbitrary</em> 549-parameter genomes over 12 episodes</p>
+<p>likewise produced zero robot-robot and zero robot-human contacts. A badly trained BIOS_4 is</p>
+<p>slow; it is not unsafe and it does not deadlock.</p>
+<h3>Training lessons</h3>
+<ul>
+  <li><strong>A sparse reward has no slope.</strong> Over a 120 s episode the fleet completes 0–3 of 12</li>
+</ul>
+<p>tasks, so a fitness of "tasks completed" is almost all zeros and evolution has nothing to</p>
+<p>climb. <code>progress_cells</code> — cells of <em>net</em> approach to a goal — is the dense companion.</p>
+<p>Monotone on purpose: crediting every goalward step would pay a robot to oscillate, and</p>
+<p>the fitness would be maximised by twitching in place.</p>
+<ul>
+  <li><strong>An argmax policy starts on a plateau.</strong> Initialised at zero, every logit is equal, the</li>
+</ul>
+<p>first legal verb always wins, and small updates never flip the decision. The ES iterate</p>
+<p>sat at exactly the same fitness for <strong>thirteen generations</strong> before escaping. The elite</p>
+<p>still improved throughout, because it comes from the sampled population rather than from</p>
+<p>the iterate — which is the only reason the run produced anything. Ship the best genome</p>
+<p>ever <em>scored</em>, never the final iterate.</p>
+<ul>
+  <li><strong>Cost per episode is a random variable over seeds.</strong> The same 90 s episode ranges from</li>
+</ul>
+<p>2.07 s to 5.96 s of wall clock depending on the seed. A training budget estimated from</p>
+<p>one seed was wrong by 3.4×.</p>
+<ul>
+  <li><strong>Population variance dwarfs the gradient.</strong> Generation best swung between 8 and 3039</li>
+</ul>
+<p>while the mean climbed steadily from −4784 to roughly +150. The mean is the signal that</p>
+<p>the search is working; the best is mostly luck.</p>
+<h3>What this does not show</h3>
+<p>One training run, one scenario, one fleet size. 13/48 is 27% of the task set — no policy</p>
+<p>here completes it. There is no variance estimate over <em>training</em> seeds, so "BIOS_4 beats</p>
+<p>BIOS_1.0.0" is one sample of a training process, not a distribution. And none of it has</p>
+<p>touched real hardware: the sim-to-real claim rests on the observation space being</p>
+<p>restricted to what a robot can actually sense and receive, which is an argument, not a</p>
+<p>measurement.</p>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

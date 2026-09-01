@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SIH_Fleet_Sim — Technical Architecture & Technology Stack Presentation Slide">
+  <title>SIH_Fleet_Sim — Technical Architecture & Tech Stack</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    /* ── Reset ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: #0b0f19;
+      color: #e8ecf4;
+      overflow: hidden;
+    }
+
+    /* ── Slide Container (16:9) ──────────────────────────── */
+    .slide {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(160deg, #0d1117 0%, #111827 50%, #0f172a 100%);
+      position: relative;
+    }
+
+    /* Subtle grid overlay */
+    .slide::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(56,189,248,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56,189,248,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Title Bar ───────────────────────────────────────── */
+    .title-bar {
+      position: relative;
+      z-index: 1;
+      padding: 24px 48px 18px;
+      border-bottom: 1px solid rgba(56,189,248,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .title-main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .title-main h1 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 40%, #c084fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .title-sub {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #94a3b8;
+      letter-spacing: 0.5px;
+    }
+
+    .title-badge {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .badge {
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 5px 14px;
+      border-radius: 20px;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .badge-bel {
+      background: rgba(56,189,248,0.12);
+      color: #38bdf8;
+      border: 1px solid rgba(56,189,248,0.25);
+    }
+
+    .badge-sih {
+      background: rgba(192,132,252,0.12);
+      color: #c084fc;
+      border: 1px solid rgba(192,132,252,0.25);
+    }
+
+    /* ── Two-Column Body ─────────────────────────────────── */
+    .body {
+      flex: 1;
+      display: flex;
+      position: relative;
+      z-index: 1;
+      overflow: hidden;
+    }
+
+    /* ── LEFT COLUMN — Tech Stack Categorized Text ───────── */
+    .col-left {
+      width: 55%;
+      padding: 24px 36px 20px 48px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-right: 1px solid rgba(56,189,248,0.08);
+    }
+
+    .col-left::-webkit-scrollbar { width: 4px; }
+    .col-left::-webkit-scrollbar-track { background: transparent; }
+    .col-left::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.2); border-radius: 4px; }
+
+    .section-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-label::before {
+      content: '';
+      display: inline-block;
+      width: 16px;
+      height: 2px;
+      background: #38bdf8;
+      border-radius: 1px;
+    }
+
+    /* Stack Categories Container */
+    .tech-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .tech-cat {
+      background: rgba(30,41,59,0.45);
+      border: 1px solid rgba(56,189,248,0.08);
+      border-radius: 10px;
+      padding: 12px 16px;
+      transition: border-color 0.3s, background 0.3s;
+    }
+
+    .tech-cat:hover {
+      border-color: rgba(56,189,248,0.22);
+      background: rgba(30,41,59,0.65);
+    }
+
+    .cat-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #f1f5f9;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .cat-title .cat-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .dot-fe { background: #38bdf8; }
+    .dot-be { background: #818cf8; }
+    .dot-ai { background: #c084fc; }
+    .dot-net { background: #34d399; }
+    .dot-safe { background: #f87171; }
+    .dot-hw { background: #fbbf24; }
+
+    .cat-items {
+      font-size: 0.74rem;
+      color: #94a3b8;
+      line-height: 1.45;
+      font-weight: 500;
+    }
+
+    .cat-items span {
+      color: #e2e8f0;
+      font-weight: 600;
+    }
+
+    /* Why This Stack Card */
+    .why-card {
+      background: rgba(15,23,42,0.6);
+      border: 1px solid rgba(192,132,252,0.15);
+      border-radius: 10px;
+      padding: 12px 18px;
+    }
+
+    .why-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #c084fc;
+      margin-bottom: 8px;
+    }
+
+    .why-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      list-style: none;
+    }
+
+    .why-list li {
+      font-size: 0.72rem;
+      color: #cbd5e1;
+      line-height: 1.4;
+      position: relative;
+      padding-left: 14px;
+    }
+
+    .why-list li::before {
+      content: '▸';
+      position: absolute;
+      left: 0;
+      color: #38bdf8;
+      font-size: 0.75rem;
+    }
+
+    /* ── RIGHT COLUMN — Mermaid Tech Stack Architecture ───── */
+    .col-right {
+      width: 45%;
+      padding: 20px 32px 20px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      overflow-y: auto;
+    }
+
+    .col-right::-webkit-scrollbar { width: 4px; }
+    .col-right::-webkit-scrollbar-track { background: transparent; }
+    .col-right::-webkit-scrollbar-thumb { background: rgba(192,132,252,0.2); border-radius: 4px; }
+
+    .arch-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #c084fc;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      align-self: flex-start;
+    }
+
+    .arch-label::before {
+      content: '';
+      display: inline-block;
+      width: 16px;
+      height: 2px;
+      background: #c084fc;
+      border-radius: 1px;
+    }
+
+    .mermaid-wrapper {
+      width: 100%;
+      flex: 1;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 2px;
+    }
+
+    .mermaid-wrapper .mermaid {
+      width: 100%;
+    }
+
+    .mermaid-wrapper .mermaid svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    /* ── Footer ──────────────────────────────────────────── */
+    .footer {
+      position: relative;
+      z-index: 1;
+      padding: 10px 48px;
+      border-top: 1px solid rgba(56,189,248,0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .footer span {
+      font-size: 0.62rem;
+      color: #475569;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+    }
+
+    @media (max-width: 1100px) {
+      .body { flex-direction: column; }
+      .col-left, .col-right { width: 100%; }
+      .col-left { border-right: none; border-bottom: 1px solid rgba(56,189,248,0.08); }
+      .tech-grid { grid-template-columns: 1fr; }
+      .why-list { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="slide">
+
+  <!-- ═══ TITLE BAR ═══ -->
+  <div class="title-bar">
+    <div class="title-main">
+      <h1>Edge-AI Distributed Fleet Coordination System</h1>
+      <span class="title-sub">SIH_Fleet_Sim — Technology Stack & System Architecture</span>
+    </div>
+    <div class="title-badge">
+      <span class="badge badge-bel">BEL</span>
+      <span class="badge badge-sih">SIH26123</span>
+    </div>
+  </div>
+
+  <!-- ═══ TWO-COLUMN BODY ═══ -->
+  <div class="body">
+
+    <!-- ─── LEFT: Categorized Technology Stack ─── -->
+    <div class="col-left">
+
+      <div>
+        <div class="section-label">Technology Stack</div>
+      </div>
+
+      <div class="tech-grid">
+
+        <!-- Presentation -->
+        <div class="tech-cat">
+          <div class="cat-title"><span class="cat-dot dot-fe"></span>Presentation Layer</div>
+          <div class="cat-items">
+            <span>HTML5 Canvas 2D</span> • <span>Vanilla JavaScript</span> • <span>CSS3 Grid</span> • <span>Sub-Pixel Telemetry Interpolator</span>
+          </div>
+        </div>
+
+        <!-- Backend -->
+        <div class="tech-cat">
+          <div class="cat-title"><span class="cat-dot dot-be"></span>Backend & Server</div>
+          <div class="cat-items">
+            <span>Python 3 Stdlib</span> • <span>http.server</span> • <span>REST Endpoints</span> • <span>Headless Referee Engine</span>
+          </div>
+        </div>
+
+        <!-- AI & Coordination -->
+        <div class="tech-cat">
+          <div class="cat-title"><span class="cat-dot dot-ai"></span>AI & Coordination Engine</div>
+          <div class="cat-items">
+            <span>BIOS_PIBT.3 Algorithm</span> • <span>BIOS_4 MLP Policy</span> • <span>Space-Time 4D A*</span> • <span>Contract-Net Auction</span>
+          </div>
+        </div>
+
+        <!-- Communication -->
+        <div class="tech-cat">
+          <div class="cat-title"><span class="cat-dot dot-net"></span>Communication Protocol</div>
+          <div class="cat-items">
+            <span>UDP Multicast (239.255.42.99)</span> • <span>POSIX Sockets</span> • <span>P2P Datagram Wire Spec</span> • <span>Gossip Sync</span>
+          </div>
+        </div>
+
+        <!-- Safety & Physics -->
+        <div class="tech-cat">
+          <div class="cat-title"><span class="cat-dot dot-safe"></span>Safety & Physics (50 Hz)</div>
+          <div class="cat-items">
+            <span>ISO 3691-4 Safety Standard</span> • <span>Continuous Swept LiDAR</span> • <span>Non-Holonomic Kinematics</span>
+          </div>
+        </div>
+
+        <!-- Hardware & Edge -->
+        <div class="tech-cat">
+          <div class="cat-title"><span class="cat-dot dot-hw"></span>Hardware & Edge Deployment</div>
+          <div class="cat-items">
+            <span>Raspberry Pi Edge Nodes</span> • <span>2D LiDAR Sensors</span> • <span>PWM / CAN Controllers</span> • <span>Systemd Daemon</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Why This Stack -->
+      <div class="why-card">
+        <div class="why-title">Why This Technology Stack?</div>
+        <ul class="why-list">
+          <li><strong>Zero External Dependencies:</strong> 100% Python stdlib core runs on bare Raspberry Pi without build steps.</li>
+          <li><strong>Hard Real-Time Safety:</strong> Air-gapped 50 Hz onboard LiDAR loop guarantees zero physical collisions.</li>
+          <li><strong>Lightweight Edge AI:</strong> 645-parameter neural model (< 3 KB memory) executes in sub-millisecond cycles.</li>
+          <li><strong>Network Fault Resilience:</strong> P2P UDP multicast operates seamlessly under 30% packet loss & RF dead zones.</li>
+        </ul>
+      </div>
+
+    </div>
+
+    <!-- ─── RIGHT: Mermaid Technology Architecture Diagram ─── -->
+    <div class="col-right">
+      <div class="arch-label">System Architecture Diagram</div>
+      <div class="mermaid-wrapper">
+        <pre class="mermaid">
+flowchart TD
+
+    subgraph PRESENTATION["PRESENTATION / DASHBOARD LAYER"]
+        UI["HTML5 Canvas 2D Visualizer"]
+        INT["Sub-Pixel Telemetry Interpolator"]
+        UI --- INT
+    end
+
+    subgraph SERVER["SERVER & CONTROL LAYER"]
+        HTTP["Python http.server API"]
+        REF["Ground Truth Sim Referee"]
+        HTTP --- REF
+    end
+
+    subgraph AI_LAYER["AI & COORDINATION ENGINE"]
+        AUCTION["Contract-Net Auction"]
+        ASTAR["Space-Time 4D A* Planner"]
+        PIBT["BIOS_PIBT.3 / BIOS_4 MLP"]
+        AUCTION --> ASTAR --> PIBT
+    end
+
+    subgraph SAFETY["HARD REAL-TIME SAFETY LOOP (50 Hz)"]
+        LIDAR["ISO 3691-4 LiDAR Swept Safety Field"]
+        ESTOP["Air-Gapped Dynamic E-Stop Brake"]
+        LIDAR --> ESTOP
+    end
+
+    subgraph COMM["COMMUNICATION & MESH NETWORK"]
+        UDP["UDP Multicast Sockets (239.255.42.99)"]
+        WIRE["P2P Wire Protocol (JSON / TTL Leases)"]
+        UDP --- WIRE
+    end
+
+    subgraph HARDWARE["EDGE HARDWARE & PHYSICAL SENSORS"]
+        RPI["Raspberry Pi Edge Node"]
+        SENSORS["2D LiDAR & Encoders"]
+        ACT["PWM / CAN Motor Driver"]
+        RPI --- SENSORS
+        RPI --- ACT
+    end
+
+    PRESENTATION <-->|"HTTP / REST API"| SERVER
+    SERVER <-->|"Local Telemetry (10 Hz)"| AI_LAYER
+    AI_LAYER <-->|"Peer Datagrams"| COMM
+    SAFETY -->|"Authoritative Override"| HARDWARE
+    COMM <-->|"Socket I/O"| HARDWARE
+
+    classDef default fill:#ffffff,stroke:#222222,color:#111111,stroke-width:1.5px,font-size:10.5px;
+    classDef layerBox fill:#f8fafc,stroke:#475569,color:#0f172a,stroke-width:1px;
+
+    class UI,INT,HTTP,REF,AUCTION,ASTAR,PIBT,LIDAR,ESTOP,UDP,WIRE,RPI,SENSORS,ACT default;
+        </pre>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ FOOTER ═══ -->
+  <div class="footer">
+    <span>SIH_Fleet_Sim · Bharat Electronics Limited · SIH26123</span>
+    <span>Edge-AI Distributed Fleet Coordination — Technology Stack & Architecture</span>
+  </div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ffffff',
+      primaryTextColor: '#111111',
+      primaryBorderColor: '#222222',
+      lineColor: '#444444',
+      secondaryColor: '#f8fafc',
+      tertiaryColor: '#f1f5f9',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontSize: '10.5px'
+    },
+    flowchart: {
+      htmlLabels: true,
+      curve: 'basis',
+      padding: 10,
+      nodeSpacing: 22,
+      rankSpacing: 28,
+      useMaxWidth: true
+    }
+  });
+</script>
+
+</body>
+</html>

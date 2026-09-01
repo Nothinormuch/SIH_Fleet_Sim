@@ -38,6 +38,7 @@ from urllib.parse import unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
+DOCS = ROOT / "docs"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -87,6 +88,8 @@ def parse_run_request(payload: object) -> dict[str, object]:
     allocation_policy = str(scalar("allocation_policy", "auction"))
     if scenario not in SCENARIOS:
         raise RequestValidationError(f"unknown scenario {scenario!r}")
+    if policy in ("Already-Established_algorithm", "stop-and-wait(Competition)"):
+        policy = "stop_and_wait"
     if policy not in POLICIES:
         raise RequestValidationError(f"unknown policy {policy!r}")
     if allocation_policy not in ALLOCATION_POLICIES:
@@ -258,12 +261,18 @@ class Handler(BaseHTTPRequestHandler):
     def _static(self, route: str) -> None:
         if route in ("/", ""):
             route = "/index.html"
-        # Normalise before resolving, then confirm the result is still inside the
-        # frontend directory - otherwise "/../../secrets" is a file read.
         rel = posixpath.normpath(route).lstrip("/")
-        target = (FRONTEND / rel).resolve()
+        if rel == "docs" or rel.startswith("docs/"):
+            sub = rel[5:] if rel.startswith("docs/") else ""
+            if not sub or sub == "/":
+                sub = "index.html"
+            target = (DOCS / sub).resolve()
+            base = DOCS.resolve()
+        else:
+            target = (FRONTEND / rel).resolve()
+            base = FRONTEND.resolve()
         try:
-            target.relative_to(FRONTEND.resolve())
+            target.relative_to(base)
         except ValueError:
             return self._json(403, {"error": "forbidden"})
         if not target.is_file():

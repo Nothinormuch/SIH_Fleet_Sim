@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decentralized AMR Priority and Path Conflict Resolution - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>Decentralized AMR Priority and Path Conflict Resolution</h1>
+<p>This branch implements an edge-only coordination policy named</p>
+<p><code>BIOS_PIBT.1</code>. Its purpose is narrow and testable: decide which AMR may occupy</p>
+<p>the next grid cell, displace lower-priority traffic when space exists, and serialize</p>
+<p>entry to single-file warehouse aisles without a fleet-manager decision.</p>
+<p>The long-range route remains local A*. PIBT resolves only the next move. The onboard</p>
+<p>continuous safety controller remains authoritative and may reject any network-derived</p>
+<p>decision. The simulator contains a low-speed recovery creep for a locally verified</p>
+<p>free-cell escape; this is a simulation motion primitive, not a substitute for a</p>
+<p>certified safe-direction function on real hardware.</p>
+<h2>Why PIBT</h2>
+<p>Priority Inheritance with Backtracking (PIBT) was designed for iterative multi-agent</p>
+<p>path finding, including warehouse pickup-and-delivery workloads. It assigns a unique</p>
+<p>priority at each step. If a high-priority agent requests an occupied vertex, the</p>
+<p>occupant temporarily inherits the priority and recursively chooses another vertex. If</p>
+<p>that chain cannot move, the original requester backtracks to another candidate.</p>
+<p>The original paper states that PIBT can be implemented in a fully decentralized form</p>
+<p>and proves finite-time reachability under a graph condition: every adjacent vertex pair</p>
+<p>must belong to a simple cycle of length at least three. A normal warehouse can violate</p>
+<p>that condition at shelf spurs and dead ends. The exPIBT work addresses this limitation</p>
+<p>with temporary priorities and movement restrictions in attached trees.</p>
+<p>Research sources:</p>
+<ul>
+  <li><a href="https://www.ijcai.org/proceedings/2019/76">Okumura et al., PIBT, IJCAI 2019</a></li>
+  <li><a href="https://arxiv.org/abs/2205.12504">Fujitani et al., temporary priority for tree-shaped paths</a></li>
+  <li><a href="https://github.com/Kei18/pypibt">Reference Python implementation by the PIBT author</a></li>
+</ul>
+<p>The code in <code>src/priority.py</code> is an independent, dependency-free implementation of the</p>
+<p>core mechanism; no source was copied from the reference project.</p>
+<h2>Priority order</h2>
+<p>Every heartbeat carries a frozen <code>PriorityKey</code>. Larger values move first and every AMR</p>
+<p>uses the same lexicographic comparison.</p>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>Rank</th>
+    <th>Field</th>
+    <th>Current rule</th>
+    <th>Purpose</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><code>emergency</code></td>
+      <td>battery below 10%</td>
+      <td>Preserve a robot at operational risk.</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><code>exiting_branch</code></td>
+      <td>current cell is in a tree appendage and the goal is outside it</td>
+      <td>Drain dead ends before admitting conflicting traffic.</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><code>waiting_age</code></td>
+      <td>seconds continuously blocked, quantized</td>
+      <td>Prevent starvation.</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><code>service_age</code></td>
+      <td>seconds since current task began, quantized</td>
+      <td>Bound task starvation across repeated conflicts.</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><code>loaded</code></td>
+      <td>robot is carrying toward the drop point</td>
+      <td>Avoid wasting already-executed pickup travel.</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td><code>distance_bias</code></td>
+      <td>negative Manhattan distance to goal</td>
+      <td>Prefer the robot nearer completion when stronger fields tie.</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td><code>robot_id</code></td>
+      <td>stable unique ID</td>
+      <td>Produce a total order with no equal keys.</td>
+    </tr>
+  </tbody>
+</table></div>
+<p>The key is latched when broadcast. A robot never compares its continuously increasing</p>
+<p>local value against an older peer value; doing that allows both sides of a conflict to</p>
+<p>believe they lost.</p>
+<h2>Decision procedure</h2>
+<p>At the 10 Hz traffic loop, each AMR independently performs the following operation:</p>
+<pre><code class="language-text">positions &lt;- own sensor cell + fresh peer heartbeat cells
+goals     &lt;- own goal + peer goals
+preferred &lt;- own A* next cell + peer first intent cells
+
+for robot in descending published priority:
+    try preferred cell, then goal-directed neighbours, then wait
+    reject an already-reserved target
+    reject a two-robot edge swap
+    if target is occupied:
+        occupant inherits requester&#x27;s priority
+        recursively assign the occupant first
+    if recursive assignment fails:
+        roll back tentative assignments and try another target</code></pre>
+<p><code>pibt_step()</code> is pure: it has no socket, global coordinator, system clock, or mutable</p>
+<p>singleton. Given the same snapshot, every edge node returns the same next</p>
+<p>configuration. It rejects contradictory snapshots and partial configurations instead</p>
+<p>of manufacturing unsafe movement.</p>
+<h2>Topology and corridor handling</h2>
+<p><code>src/topology.py</code> computes the graph 2-core once per warehouse map. Vertices peeled</p>
+<p>from the core form tree appendages. A robot that must leave its current appendage gets</p>
+<p>temporary exit priority. This implements the priority signal motivated by exPIBT, but</p>
+<p>it does <strong>not yet</strong> implement all movement restrictions from that paper; therefore its</p>
+<p>deadlock-free theorem must not be claimed for this simulator.</p>
+<p>Long degree-two aisle runs are treated as exclusive blocks. The contender with the</p>
+<p>highest frozen claim key receives an expiring lease. Important protocol properties are:</p>
+<ul>
+  <li>claim expiry is a duration interpreted on the receiver's local clock;</li>
+  <li>a request's priority is frozen for the whole lease attempt;</li>
+  <li>the winner waits one propagation round before entry;</li>
+  <li>admission is latched, so the winner does not restart the gate timer every 100 ms;</li>
+  <li>physical presence inside a block outranks every remote claim;</li>
+  <li>releases are optional; TTL expiry repairs lost release messages.</li>
+</ul>
+<p>These leases are peer-to-peer messages. They do not require a server or synchronized</p>
+<p>clocks.</p>
+<h2>Wire additions</h2>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>Message</th>
+    <th>Field</th>
+    <th>Meaning</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td><code>HB</code></td>
+      <td><code>pk</code></td>
+      <td>Seven-element serialized <code>PriorityKey</code>.</td>
+    </tr>
+    <tr>
+      <td>block <code>CL</code></td>
+      <td><code>ttl</code></td>
+      <td>Lease duration; evaluated against the receiver's local time.</td>
+    </tr>
+    <tr>
+      <td>block <code>CL</code></td>
+      <td><code>pk</code></td>
+      <td>Frozen priority for deterministic contender convergence.</td>
+    </tr>
+    <tr>
+      <td><code>IN</code></td>
+      <td>existing <code>cells</code>, <code>w</code></td>
+      <td>Ordered next cells and occupancy windows used as preferred moves.</td>
+    </tr>
+  </tbody>
+</table></div>
+<p>All messages remain self-contained and idempotent JSON datagrams.</p>
+<h2>Verification</h2>
+<p>Run the regression suite:</p>
+<pre><code class="language-bash">python -m pytest tests -q</code></pre>
+<p>The priority tests cover serialization and total ordering, a three-robot inheritance</p>
+<p>chain, edge-swap rejection with backtracking, deterministic four-agent rotation, and</p>
+<p>temporary priority for a tree appendage. The existing suite also covers A*, corridor</p>
+<p>decomposition, swept collision detection, braking bounds, malformed messages, network</p>
+<p>determinism, dead zones, and a single-robot end-to-end task.</p>
+<p>Run the same task set against all policies:</p>
+<pre><code class="language-bash">python run.py --scenario open_floor_control --policy all --robots 4 --seeds 3
+python run.py --scenario dense_aisles --policy all --robots 4 --seeds 3
+python run.py --scenario crossing_chokepoint --policy all --robots 4 --seeds 3</code></pre>
+<p>Development snapshot, three seeds with four AMRs:</p>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>Scenario</th>
+    <th>BIOS_PIBT.1 results by seed</th>
+    <th>Inter-robot contacts</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td><code>open_floor_control</code></td>
+      <td>16/16 in 204.4 s; 16/16 in 230.6 s; 16/16 in 183.2 s</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td><code>dense_aisles</code></td>
+      <td>15/16; 15/16; 16/16 in 291.8 s</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td><code>crossing_chokepoint</code> (420 s cutoff)</td>
+      <td>10/12; 6/12; 10/12</td>
+      <td>0</td>
+    </tr>
+  </tbody>
+</table></div>
+<p>At an extended cutoff, the same crossing seeds finish all 12 tasks in 538.0 s,</p>
+<p>758.2 s and 532.1 s. Across the nine pinned runs, the policy records zero inter-robot</p>
+<p>contacts over 3.745 robot-hours.</p>
+<p>This is evidence that the resolver improves progress, but it is <strong>not</strong> evidence of the</p>
+<p>required 20% makespan reduction: a makespan ratio is undefined when the baseline does</p>
+<p>not finish. <code>metrics.compare()</code> intentionally reports that comparison as incomparable.</p>
+<h2>Known limitation and next engineering step</h2>
+<p>PIBT assumes discrete, synchronized moves. This simulator has asynchronous lossy</p>
+<p>messages, noisy cell estimates, acceleration limits, turn-in-place dynamics, and a</p>
+<p>continuous protective field. <code>BIOS_PIBT.1</code> now bridges that gap with early look-ahead</p>
+<p>admission, cell-centre recovery, brake-before-turn control and swept-clearance passing</p>
+<p>bay selection. The three-seed matrix records no inter-robot contacts and the extended</p>
+<p>single-corridor runs converge, but two dense seeds do not finish their final task before</p>
+<p>the pinned 600 s cutoff. Throughput still needs improvement.</p>
+<p>The next step is to formalize the current recovery into a two-phase <strong>motion primitive</strong>:</p>
+<ol>
+  <li>reserve the target cell and publish the inherited move;</li>
+  <li>brake to a stable cell centre;</li>
+  <li>rotate in place;</li>
+  <li>execute the reserved one-cell transition with a bounded time window;</li>
+  <li>acknowledge completion or expire the reservation and recompute.</li>
+</ol>
+<p>Only after that acknowledged primitive is complete—and both policies finish the same</p>
+<p>pinned workload—should this project publish a 20% completion-time result.</p>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

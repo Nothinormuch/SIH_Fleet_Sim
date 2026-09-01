@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIH26123 — where the problem statement is wrong, and what we build instead - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>SIH26123 — where the problem statement is wrong, and what we build instead</h1>
+<p>The statement asks for decentralised P2P coordination, multi-agent collision avoidance</p>
+<p>and task re-allocation for ≥ 3 AMRs on Pi/Jetson-class hardware, delivered as a</p>
+<p>simulation with a fleet dashboard. Success criteria: <strong>zero inter-robot collisions</strong> and</p>
+<p><strong>≥ 20 % faster than stop-and-wait</strong>.</p>
+<p>The premise is wrong in specific, citable ways. These are load-bearing errors, not</p>
+<p>nitpicks: a submission that repeats the statement's framing back at the panel is arguing</p>
+<p>from a false model of how AMR fleets work. Being visibly aware of that is the</p>
+<p>differentiator — the statement does not need to be right for the submission to be.</p>
+<h2>The errors</h2>
+<p><strong>"Centralised" is equivocated with "cloud."</strong> Real fleets — Amazon Robotics, Locus,</p>
+<p>Geek+, 6 River, OTTO — run an on-prem fleet manager on the LAN at ~1–5 ms round trip. The</p>
+<p>latency argument only works against an architecture nobody deploys.</p>
+<p><strong>The latency numbers do not survive arithmetic.</strong> AMRs run 1–2 m/s ≈ 1–2 mm per ms.</p>
+<p>50 ms is 6–10 cm, and global routing runs at 0.1–1 Hz anyway. Network round-trip is not</p>
+<p>what causes warehouse collisions; localisation error is — and localisation error is a</p>
+<p>constant positional offset that does not care how the fleet is coordinated.</p>
+<p><strong>P2P does not fix Wi-Fi dead zones.</strong> Same radio, same hole: if a robot cannot reach the</p>
+<p>server it cannot reach its peers either. Worse, infrastructure-mode Wi-Fi relays</p>
+<p>"peer-to-peer" frames through the access point, so it is not decentralised at layer 2 and</p>
+<p>inherits the identical failure. A real dead-zone fix needs a <em>different link</em> — 802.11s</p>
+<p>mesh, Wi-Fi Direct, UWB — which the statement never mentions. <code>transport.py</code> models both</p>
+<p>cases and <code>tests/test_core.py</code> asserts the result.</p>
+<p><strong>The three control loops are conflated.</strong> Safety stop 10–100 Hz (onboard, certified),</p>
+<p>local avoidance ~10 Hz (onboard), global route 0.1–1 Hz (central is fine). Commercial</p>
+<p>AMRs already do the first two onboard — the "split-second decisions" the statement wants</p>
+<p>moved to the edge were never in the cloud. The standard layered architecture already</p>
+<p>solves the stated problem.</p>
+<p><strong>Decentralised safety inverts the real safety architecture.</strong> Under ISO 3691-4 /</p>
+<p>EN ISO 13849 / ANSI-RIA R15.08, protective stopping must be independent, local and</p>
+<p>certified (PLd/SIL2 scanner). It may not depend on a Wi-Fi message from a peer. Messaging</p>
+<p>is for <em>efficiency</em>, never for safety.</p>
+<p><strong>Decentralising degrades plan quality.</strong> Optimal MAPF is NP-hard; going local makes it</p>
+<p>myopic, not tractable. At the densities where chokepoints matter, task time is dominated</p>
+<p>by plan quality rather than round-trip time, so the efficiency claim can come out</p>
+<p>backwards. Our own measurements so far show exactly that: the centralised reservation</p>
+<p>planner outperforms the decentralised fallback.</p>
+<p><strong>Distributed deadlock detection re-centralises itself.</strong> Cycle detection in a wait-for</p>
+<p>graph needs global state, and every practical scheme needs a total order — robot ID,</p>
+<p>priority, or a token — which is a centrally assigned artifact. It also converts deadlock</p>
+<p>into livelock, and the statement sets no liveness criterion.</p>
+<p><strong>"Zero collisions" is unfalsifiable and unreachable as stated.</strong> Absence over finitely</p>
+<p>many runs is not evidence (safety is a rate with a confidence interval). In an</p>
+<p>asynchronous system with loss and crashes you cannot guarantee agreement (Fischer–Lynch–</p>
+<p>Paterson), and the only safe fallback is… stop-and-wait, the disparaged baseline. It also</p>
+<p>counts <em>only</em> robot-robot contacts — humans, forklifts and racks are excluded, and a</p>
+<p>shared-intent protocol is structurally blind to anything that does not broadcast.</p>
+<p><strong>"20 % vs stop-and-wait" is a self-selected strawman.</strong> Nobody runs naive stop-and-wait;</p>
+<p>the real state of the art is reservation-based traffic management. Speedup swings from</p>
+<p>~5 % to 300 % with map topology and density, so the number is meaningless without a</p>
+<p>pinned scenario — and can be manufactured to order by choosing a friendly map.</p>
+<p><strong>N ≥ 3 cannot test the hypothesis.</strong> The whole justification is <em>scaling</em>; congestion,</p>
+<p>cascading deadlock and O(N²) message load appear at 20–100+. At N = 3 centralised wins</p>
+<p>trivially, and three robots in three disjoint aisles satisfy both criteria while solving</p>
+<p>nothing.</p>
+<p><strong>Two outright self-contradictions.</strong> (a) "must run on constrained edge hardware" versus</p>
+<p>a deliverable that is a simulation. (b) "no central server" versus a dashboard</p>
+<p>aggregating the whole fleet's live state — which is a central aggregator with the same</p>
+<p>single point of failure and the same connectivity dependence.</p>
+<p><strong>"Edge-AI" is a title-only buzzword.</strong> Nothing described needs learning: MAPF/CBS/ECBS/</p>
+<p>ORCA and auctions are CPU-bound search and geometry. That is why the statement names a</p>
+<p>GPU board (Jetson Nano — also EOL, superseded by Orin Nano) for a workload with no neural</p>
+<p>network in it.</p>
+<h2>What we build instead</h2>
+<ol>
+  <li><strong>Hierarchical, not fully decentralised.</strong> Central optimiser when reachable, negotiated</li>
+</ol>
+<p>local fallback on partition, certified local safety stop always. We say plainly that</p>
+<p>full decentralisation is a <em>degraded mode</em>, not a superior architecture.</p>
+<ol>
+  <li><strong>Three baselines, not two.</strong> Stop-and-wait, <em>reservation-based centralised</em>, and ours.</li>
+</ol>
+<p>Beating only the weak one is transparent to any judge who knows the field.</p>
+<ol>
+  <li><strong>Safety as a rate with an interval</strong>, plus a packet-loss sweep and a partition test.</li>
+</ol>
+<p>"0 contacts in N robot-hours, 95 % upper bound X per 1000 robot-hours" beats "zero</p>
+<p>collisions". <code>metrics.py</code> refuses to emit a speedup ratio when a policy fails to</p>
+<p>complete.</p>
+<ol>
+  <li><strong>A non-communicating dynamic obstacle in the demo</strong> — a warehouse worker walking a</li>
+</ol>
+<p>cross-aisle. It is the case the statement forgot and the one that proves the safety</p>
+<p>layer is real rather than decorative. Detections deliberately carry no identity.</p>
+<p>Cheapest contradiction to neutralise: run the planner node unmodified on an actual Pi and</p>
+<p>publish per-cycle CPU time and RAM alongside the sim. The architecture already supports</p>
+<p>it — the agent does no I/O — but no hardware is available for this build, so the harness</p>
+<p>reports <code>plan_cpu_mean_ms</code> / <code>plan_cpu_max_ms</code> from the host instead, and the report must</p>
+<p>say so rather than implying a Pi measurement.</p>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

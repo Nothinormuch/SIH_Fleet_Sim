@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIH_Fleet_Sim — System Flowcharts</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0e1a;
+      --surface: #111827;
+      --surface2: #1a2235;
+      --border: #1e3a5f;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #3b82f6;
+      --accent2: #8b5cf6;
+      --accent3: #10b981;
+      --accent4: #f59e0b;
+      --accent5: #ef4444;
+      --accent6: #06b6d4;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ---- Header ---- */
+    .hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 3rem 2rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 0%, rgba(59,130,246,0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero h1 {
+      font-size: 2.4rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa, #34d399);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+    .hero p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .badge-row {
+      display: flex;
+      gap: 0.6rem;
+      justify-content: center;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .badge.blue   { background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+    .badge.purple { background: rgba(139,92,246,0.15); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.3); }
+    .badge.green  { background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3); }
+    .badge.amber  { background: rgba(245,158,11,0.15); color: #fcd34d; border: 1px solid rgba(245,158,11,0.3); }
+
+    /* ---- Nav ---- */
+    .toc {
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+    .toc h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 0.6rem;
+    }
+    .toc-link {
+      display: block;
+      padding: 0.65rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .toc-link:hover {
+      background: var(--surface2);
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+    .toc-link .num {
+      color: var(--accent);
+      font-weight: 700;
+      margin-right: 0.5rem;
+    }
+
+    /* ---- Sections ---- */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem 4rem;
+    }
+    .chart-section {
+      margin-top: 3rem;
+      scroll-margin-top: 1rem;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .section-header .icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+    .section-header h2 {
+      font-size: 1.3rem;
+      font-weight: 700;
+    }
+    .section-desc {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.2rem;
+      max-width: 900px;
+    }
+    .chart-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      overflow-x: auto;
+    }
+    .chart-box .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+    .chart-box .mermaid svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    /* Color rows for section icons */
+    .icon-blue   { background: rgba(59,130,246,0.15); color: #60a5fa; }
+    .icon-purple { background: rgba(139,92,246,0.15); color: #a78bfa; }
+    .icon-green  { background: rgba(16,185,129,0.15); color: #34d399; }
+    .icon-amber  { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .icon-red    { background: rgba(239,68,68,0.15);  color: #f87171; }
+    .icon-cyan   { background: rgba(6,182,212,0.15);  color: #22d3ee; }
+
+    .back-top {
+      display: inline-block;
+      margin-top: 1rem;
+      color: var(--accent);
+      font-size: 0.8rem;
+      text-decoration: none;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+    .back-top:hover { opacity: 1; }
+
+    @media (max-width: 640px) {
+      .hero h1 { font-size: 1.6rem; }
+      .chart-box { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ======== HERO ======== -->
+  <header class="hero">
+    <h1>🗺️ SIH_Fleet_Sim — System Flowcharts</h1>
+    <p>Edge-AI Distributed Fleet Coordination for Autonomous Mobile Robots — Every algorithm, protocol, and subsystem visualized.</p>
+    <div class="badge-row">
+      <span class="badge blue">BIOS_PIBT.3</span>
+      <span class="badge purple">BIOS_4 Neuroevolution</span>
+      <span class="badge green">ISO 3691-4 Certified</span>
+      <span class="badge amber">SIH26123 — BEL</span>
+    </div>
+  </header>
+
+  <!-- ======== TOC ======== -->
+  <nav class="toc" id="top">
+    <h2>📑 Flowchart Index</h2>
+    <div class="toc-grid">
+      <a class="toc-link" href="#s1"><span class="num">01</span>Master System Lifecycle</a>
+      <a class="toc-link" href="#s2"><span class="num">02</span>Layer 0 — ISO 3691-4 Safety (50 Hz)</a>
+      <a class="toc-link" href="#s3"><span class="num">03</span>Layer 1 — BIOS_PIBT.3 Traffic Engine</a>
+      <a class="toc-link" href="#s4"><span class="num">04</span>Layer 1 — BIOS_4 Neural Policy</a>
+      <a class="toc-link" href="#s5"><span class="num">05</span>Layer 2 — Directed Circulation &amp; A*</a>
+      <a class="toc-link" href="#s6"><span class="num">06</span>Layer 3 — Contract Net Auction</a>
+      <a class="toc-link" href="#s7"><span class="num">07</span>Transport Mesh &amp; Fault Injection</a>
+      <a class="toc-link" href="#s8"><span class="num">08</span>Physics Referee &amp; Collision Detection</a>
+      <a class="toc-link" href="#s9"><span class="num">09</span>Frontend Visualizer &amp; Camera System</a>
+      <a class="toc-link" href="#s10"><span class="num">10</span>Edge Hardware Deployment</a>
+      <a class="toc-link" href="#s11"><span class="num">11</span>AMRBrain.step() — Agent Tick</a>
+      <a class="toc-link" href="#s12"><span class="num">12</span>Module Dependency Graph</a>
+    </div>
+  </nav>
+
+  <!-- ======== CHARTS ======== -->
+  <div class="container">
+
+    <!-- -------- 1. Master Lifecycle -------- -->
+    <section class="chart-section" id="s1">
+      <div class="section-header">
+        <div class="icon icon-blue">🚀</div>
+        <h2>1. Master System Lifecycle — End-to-End</h2>
+      </div>
+      <p class="section-desc">Complete lifecycle from system launch, topology parsing, WMS task injection, through the multi-rate control loops (50/10/1 Hz), physics evaluation, to telemetry streaming and statistical benchmarking.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef init fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef loop fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef net fill:#1e1e38,stroke:#8b5cf6,stroke-width:2px,color:#fff
+    classDef safety fill:#3b0764,stroke:#ec4899,stroke-width:2px,color:#fff
+    classDef viz fill:#182747,stroke:#06b6d4,stroke-width:2px,color:#fff
+    classDef metric fill:#2d1b00,stroke:#f59e0b,stroke-width:2px,color:#fff
+
+    Start(["System Launch"]):::init --> LoadConfig["Load Config & Parameters"]:::init
+    LoadConfig --> BuildMap["Generate Warehouse Environment"]:::init
+    BuildMap --> DecomposeGraph["Topological Graph Analysis"]:::init
+    DecomposeGraph --> InitFleet["Instantiate AMR Agents"]:::init
+    InitFleet --> WMS["WMS Task Injector"]:::net
+    WMS -->|"Broadcast TASK_NEW"| AuctionRound["Decentralized Batch Auction"]:::net
+    AuctionRound --> AssignGoal["Winner Sets Pick/Drop Goal"]:::net
+    AssignGoal --> PlanRoute{"Central Server Available?"}:::loop
+    PlanRoute -- Yes --> CentralAStar["Global Space-Time A*"]:::loop
+    PlanRoute -- No --> LocalAStar["Onboard A* + Directed Graph"]:::loop
+    CentralAStar --> Waypoints["Active Waypoint"]:::loop
+    LocalAStar --> Waypoints
+    Waypoints --> ReadInbox["Read Multicast Inbox"]:::loop
+    ReadInbox --> PIBT_Engine["Execute BIOS_PIBT.3 Engine"]:::loop
+    PIBT_Engine --> GenAct["Generate Desired Actuation"]:::loop
+    GenAct --> SafetyCheck["360 LiDAR Safety Check"]:::safety
+    SafetyCheck --> BreachCheck{"Obstacle in d_stop?"}:::safety
+    BreachCheck -- Yes --> HardEStop["HARD PROTECTIVE STOP"]:::safety
+    BreachCheck -- No --> AllowAct["Permit Actuation"]:::safety
+    HardEStop --> FinalCmd["Final Motor Command"]:::safety
+    AllowAct --> FinalCmd
+    FinalCmd --> Physics["World Kinematics Integration"]:::loop
+    Physics --> SweptColl["Swept Collision Check"]:::loop
+    SweptColl --> Telemetry["Telemetry Snapshot JSON"]:::viz
+    Telemetry --> Canvas["Browser Canvas 2D Renderer"]:::viz
+    SweptColl --> MetricsLog["Statistical Metrics Aggregator"]:::metric
+    MetricsLog --> SimDone{"Simulation Done?"}:::metric
+    SimDone -- No --> WMS
+    SimDone -- Yes --> Report(["Generate Final Report"]):::metric
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 2. Layer 0 Safety -------- -->
+    <section class="chart-section" id="s2">
+      <div class="section-header">
+        <div class="icon icon-red">🛡️</div>
+        <h2>2. Layer 0 — ISO 3691-4 Certified Safety Loop (50 Hz)</h2>
+      </div>
+      <p class="section-desc">Purely local, certified, air-gapped from the network. If an obstacle breaches the dynamic stopping envelope, Layer 0 overrides motor commands immediately.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef check fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef alert fill:#831843,stroke:#f43f5e,stroke-width:2px,color:#fff
+    classDef pass fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff
+
+    Start(["50 Hz Safety Interrupt"]):::check --> ReadSensors["Read 360 deg LiDAR + Wheel Odometry"]:::check
+    ReadSensors --> Extract["Extract Detections: Range, Bearing, Velocity"]:::check
+    Extract --> Filter["Separate Static Geometry vs Dynamic Objects"]:::check
+    Filter --> Brake["Calculate d_stop = v^2/2a + v*t_react + margin"]:::check
+    Brake --> Cone{"Obstacle in Forward Cone and dist lte d_stop?"}:::check
+    Cone -- YES --> HardStop["ISO 3691-4 PROTECTIVE STOP: v=0, omega=0"]:::alert
+    Cone -- NO --> Omni{"Object in 360 deg Omni Bubble lte 0.35m?"}:::check
+    Omni -- YES --> Slow["PROPORTIONAL SPEED SCALING"]:::alert
+    Omni -- NO --> PassThru["PASSTHROUGH: Allow Desired Actuation"]:::pass
+    HardStop --> Motor(["Send Motor Signals"]):::check
+    Slow --> Motor
+    PassThru --> Motor
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 3. BIOS_PIBT.3 -------- -->
+    <section class="chart-section" id="s3">
+      <div class="section-header">
+        <div class="icon icon-purple">🤝</div>
+        <h2>3. Layer 1 — BIOS_PIBT.3 Traffic Negotiation (10 Hz)</h2>
+      </div>
+      <p class="section-desc">Coordinates intersecting robots without a central server using Priority Inheritance Backtracking, 2-Phase Cell Leases, and Directional Corridor Wave Tokens.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef step fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef dec fill:#172554,stroke:#60a5fa,stroke-width:2px,color:#fff
+    classDef lease fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff
+    classDef act fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#fff
+
+    Start(["10 Hz Traffic Tick"]):::step --> Snapshot["Assemble Fleet Snapshot from Peer Inboxes"]:::step
+    Snapshot --> PKey["Compute Lexicographic Priority Key"]:::step
+    PKey --> Corridor{"Next Cell in Single-File Corridor?"}:::dec
+    Corridor -- YES --> Token{"Who Owns Block Token?"}:::dec
+    Token -- "Unclaimed" --> Claim["Acquire Block Token Lease"]:::lease
+    Token -- "Opposing Wave" --> Wait["Hold at Corridor Mouth"]:::act
+    Token -- "My Wave" --> Enter["Proceed into Corridor"]:::act
+    Corridor -- NO --> Candidates["Identify Candidate Moves"]:::step
+    Candidates --> Sort["Sort by Preference, Distance, Hold Penalty"]:::step
+    Sort --> TryCell["Select Top Candidate C_next"]:::step
+    TryCell --> Occupied{"C_next Occupied by Peer P?"}:::dec
+    Occupied -- NO --> Lease["Broadcast LEASE_ACQUIRE for C_next"]:::lease
+    Lease --> Conflict{"Higher Priority Peer Claimed?"}:::dec
+    Conflict -- YES --> Backtrack["Backtrack: Try Next Candidate"]:::step
+    Conflict -- NO --> Confirm["Broadcast LEASE_CONFIRM"]:::lease
+    Confirm --> Proceed["Set Action: PROCEED"]:::act
+    Occupied -- YES --> Priority{"I Have Higher Priority?"}:::dec
+    Priority -- YES --> Push["PIBT: Transfer Priority to Peer P"]:::step
+    Push --> Vacate{"Peer P Found Vacating Cell?"}:::dec
+    Vacate -- YES --> Confirm
+    Vacate -- NO --> Backtrack
+    Backtrack --> More{"More Candidates?"}:::dec
+    More -- YES --> TryCell
+    More -- NO --> Hold["Set Action: HOLD"]:::act
+    Priority -- NO --> Yield["Yield to Peer P"]:::act
+    Proceed --> Broadcast["Broadcast INTENT and LEASE Messages"]:::step
+    Enter --> Broadcast
+    Wait --> Broadcast
+    Hold --> Broadcast
+    Yield --> Broadcast
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 4. BIOS_4 Neural -------- -->
+    <section class="chart-section" id="s4">
+      <div class="section-header">
+        <div class="icon icon-amber">🧠</div>
+        <h2>4. Layer 1 — BIOS_4 Neuroevolution Policy</h2>
+      </div>
+      <p class="section-desc">549-parameter neural network maps a 28-dimensional onboard feature vector into 5 discrete high-level coordination verbs.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart LR
+    classDef feat fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef nn fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff
+    classDef act fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#fff
+
+    subgraph Features ["28-Dim Feature Vector"]
+        direction TB
+        F1["Ego: clear_fwd, clear_omni, speed, turning"]:::feat
+        F2["Goal: has_path, dist_goal, goal_sin/cos"]:::feat
+        F3["Stall: blocked_s, no_progress_s, in_cycle"]:::feat
+        F4["Peers: peers_near, peer_dist, closing, i_lose"]:::feat
+        F5["Block: next_in_block, block_taken, wave_aligned"]:::feat
+    end
+
+    subgraph Network ["549-Param MLP"]
+        direction TB
+        N1["Normalize to 0-1"]:::nn
+        N2["Dense 28 to 16 + Tanh"]:::nn
+        N3["Dense 16 to 8 + Tanh"]:::nn
+        N4["Output 8 to 5 Logits"]:::nn
+        N1 --> N2 --> N3 --> N4
+    end
+
+    subgraph Actions ["5 Verbs"]
+        direction TB
+        A0["PROCEED: Advance"]:::act
+        A1["HOLD: Stay put"]:::act
+        A2["YIELD: Side step"]:::act
+        A3["CLAIM: Block token"]:::act
+        A4["REROUTE: Replan"]:::act
+    end
+
+    Features --> N1
+    N4 --> A0
+    N4 --> A1
+    N4 --> A2
+    N4 --> A3
+    N4 --> A4
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 5. Layer 2 Routing -------- -->
+    <section class="chart-section" id="s5">
+      <div class="section-header">
+        <div class="icon icon-green">🗺️</div>
+        <h2>5. Layer 2 — Directed Circulation &amp; Space-Time A*</h2>
+      </div>
+      <p class="section-desc">Bidirectional rack corridors are converted into strongly-connected one-way directed loops. Space-Time A* finds conflict-free paths across 4D coordinates (x, y, theta, t).</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef graph fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef alg fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef out fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff
+
+    Start(["Start Route Planning"]):::graph --> Parse["Parse Warehouse Grid"]:::graph
+    Parse --> Aisles["Identify Rack Aisles and Arteries"]:::graph
+    Aisles --> Circ["Directed Circulation: Alternating One-Way Lanes"]:::graph
+    Circ --> Bridge["Detect Bidirectional Chokepoints"]:::graph
+    Bridge --> Goal["Receive Task Goal"]:::alg
+    Goal --> InitA["Initialize Space-Time A* Search"]:::alg
+    InitA --> Queue{"Priority Queue Empty?"}:::alg
+    Queue -- YES --> Relax["Relax Constraints and Retry"]:::alg
+    Relax --> InitA
+    Queue -- NO --> Pop["Pop Node with Min f = g + h"]:::alg
+    Pop --> AtGoal{"At Goal Cell?"}:::alg
+    AtGoal -- YES --> Reconstruct["Reconstruct Conflict-Free Path"]:::out
+    AtGoal -- NO --> Expand["Expand Neighbors in Directed Graph"]:::alg
+    Expand --> Reserved{"Cell Reserved at t+1?"}:::alg
+    Reserved -- YES --> Prune["Discard"]:::alg
+    Reserved -- NO --> Add["Push to Open Set"]:::alg
+    Prune --> Queue
+    Add --> Queue
+    Reconstruct --> Waypoints(["Send Waypoints to Layer 1"]):::out
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 6. Auction -------- -->
+    <section class="chart-section" id="s6">
+      <div class="section-header">
+        <div class="icon icon-amber">⚖️</div>
+        <h2>6. Layer 3 — Decentralized Contract Net Auction</h2>
+      </div>
+      <p class="section-desc">No central dispatcher. Each idle AMR computes its bid cost, broadcasts over the mesh, and the lowest-cost robot wins via deterministic consensus with expiring lease guarantees.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant WMS as WMS Task Injector
+    participant A as AMR-A (Idle, Near)
+    participant B as AMR-B (Idle, Far)
+    participant C as AMR-C (Busy)
+
+    WMS->>A: TASK_NEW (T101: Pick, Drop)
+    WMS->>B: TASK_NEW (T101: Pick, Drop)
+    A-->>C: Gossip Sync TASK_NEW
+
+    Note over A,C: Local Bidding
+    A->>A: Cost = 16.3
+    B->>B: Cost = 26.6
+    C->>C: Busy: No Bid
+
+    A->>B: BID (T101, Cost: 16.3)
+    B->>A: BID (T101, Cost: 26.6)
+
+    Note over A,B: AMR-A Wins (16.3 < 26.6)
+
+    A->>B: AWARD (T101, Owner: AMR-A, TTL: 5s)
+    A->>A: State: TO_PICK
+
+    loop Every 2s
+        A->>B: AWARD_RENEW (T101)
+    end
+
+    A->>B: TASK_DONE (T101)
+    B->>C: Gossip TASK_DONE
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 7. Transport -------- -->
+    <section class="chart-section" id="s7">
+      <div class="section-header">
+        <div class="icon icon-cyan">📡</div>
+        <h2>7. Transport Mesh &amp; Network Fault Injection</h2>
+      </div>
+      <p class="section-desc">Identical API for headless simulation and real Raspberry Pi hardware over UDP Multicast (239.255.42.99:26123), with realistic lossy fault injection.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef mode fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef fault fill:#4c0519,stroke:#f43f5e,stroke-width:2px,color:#fff
+    classDef wire fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff
+
+    Start(["transport.send / receive"]):::mode --> Select{"Runtime Mode?"}:::mode
+    Select -- "Real Hardware" --> UDP["OS UDP Multicast Socket"]:::wire
+    UDP --> Serialize["JSON Serialization"]:::wire
+    Serialize --> NIC["Broadcast to Physical Network"]:::wire
+    Select -- "Simulation" --> Sim["In-Memory Mesh Channel"]:::mode
+    Sim --> Faults{"Apply Fault Injection?"}:::mode
+    Faults -- YES --> DeadZone{"Inside Wi-Fi Dead-Zone?"}:::fault
+    DeadZone -- YES --> Drop["Packet Dropped"]:::fault
+    DeadZone -- NO --> RandomLoss{"Random lte Loss Rate?"}:::fault
+    RandomLoss -- YES --> Drop
+    RandomLoss -- NO --> Jitter["Add Latency Jitter"]:::fault
+    Faults -- NO --> Direct["Deliver Instantly"]:::mode
+    Jitter --> Inbox["Append to Peer Inboxes"]:::mode
+    Direct --> Inbox
+    NIC --> Inbox
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 8. Physics Referee -------- -->
+    <section class="chart-section" id="s8">
+      <div class="section-header">
+        <div class="icon icon-blue">⚙️</div>
+        <h2>8. Ground Truth Physics Referee &amp; Collision Detection</h2>
+      </div>
+      <p class="section-desc">The impartial physics referee enforces differential drive kinematics, battery depletion, dynamic human worker trajectories, and continuous swept-polygon collision checking.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef world fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef human fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#fff
+    classDef coll fill:#7f1d1d,stroke:#ef4444,stroke-width:2px,color:#fff
+
+    Start(["50 Hz Physics Tick"]):::world --> Fetch["Collect Motor Actuations from AMRs"]:::world
+    Fetch --> Kin["Kinematic Integration: dx, dy, dtheta"]:::world
+    Kin --> Battery["Battery Depletion and Charging Model"]:::world
+    Battery --> Humans["Step Dynamic Human Workers"]:::human
+    Humans --> Swept["Continuous Swept Collision Check"]:::coll
+    Swept --> Sep{"d_min lt Robot Diameter?"}:::coll
+    Sep -- YES --> Collision["RECORD COLLISION EVENT"]:::coll
+    Sep -- NO --> NearMiss{"d_min lt Safety Buffer?"}:::coll
+    NearMiss -- YES --> RecordNM["RECORD NEAR-MISS"]:::coll
+    NearMiss -- NO --> Clear["Clear State"]:::world
+    Collision --> GenSensors["Generate LiDAR Scans for Next Tick"]:::world
+    RecordNM --> GenSensors
+    Clear --> GenSensors
+    GenSensors --> Yield(["Provide Sensors to AMR Brains"]):::world
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 9. Frontend -------- -->
+    <section class="chart-section" id="s9">
+      <div class="section-header">
+        <div class="icon icon-amber">🎨</div>
+        <h2>9. Frontend Visualizer &amp; Multi-Camera System</h2>
+      </div>
+      <p class="section-desc">WebSocket telemetry at 10 Hz, interpolated to 60 FPS Canvas rendering with Overview, Follow, POV, and PiP camera modes.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef net fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef render fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef cam fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff
+    classDef hud fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fff
+
+    Start(["Browser Loads index.html"]):::net --> Canvas["Init Canvas 2D + PiP Canvas"]:::render
+    Canvas --> WS["Connect to Backend"]:::net
+    WS --> Frames["Ingest Telemetry Frames at 10 Hz"]:::net
+    Frames --> RAF["requestAnimationFrame 60 FPS"]:::render
+    RAF --> Interp["Sub-Pixel Position + Slerp Heading Interpolation"]:::render
+    Interp --> CamMode{"Camera Mode?"}:::cam
+    CamMode -- "Overview" --> Overview["Auto-fit Warehouse Bounds"]:::cam
+    CamMode -- "Follow" --> Follow["Center on Selected Robot"]:::cam
+    CamMode -- "POV" --> POV["First-Person Perspective"]:::cam
+    Overview --> Layers["Multi-Layer Rendering Pipeline"]:::render
+    Follow --> Layers
+    POV --> Layers
+    Layers --> L1["Layer 1: Grid, Racks, Stations"]:::render
+    L1 --> L2["Layer 2: Heatmap, Circulation Arrows"]:::render
+    L2 --> L3["Layer 3: P2P Mesh Links, Intent Arrows"]:::render
+    L3 --> L4["Layer 4: Robot Chassis, HALO Rings, Payload"]:::render
+    L4 --> L5["Layer 5: LiDAR Arcs, Safety Cones, Humans"]:::render
+    L5 --> PiP{"PiP Active?"}:::cam
+    PiP -- YES --> PiPRender["Render PiP Mini-Map"]:::cam
+    PiP -- NO --> HUD
+    PiPRender --> HUD["HUD: Collisions, Throughput, Inspector"]:::hud
+    HUD --> RAF
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 10. Edge Deployment -------- -->
+    <section class="chart-section" id="s10">
+      <div class="section-header">
+        <div class="icon icon-green">🤖</div>
+        <h2>10. Edge Hardware Deployment — Sim-to-Real</h2>
+      </div>
+      <p class="section-desc">Zero-dependency edge deployment on physical Raspberry Pi nodes using standard library sockets, certified hardware bridges, and LED HALO status indicators.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef pi fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef hw fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef wire fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff
+
+    Start(["Power On Raspberry Pi"]):::pi --> Boot["python edge_node.py --robot-id AMR_01"]:::pi
+    Boot --> Stdlib["Init Zero-Dependency Python Core"]:::pi
+    Stdlib --> HAL["Init Hardware HAL Drivers"]:::hw
+    HAL --> LiDAR["Connect 2D Safety LiDAR"]:::hw
+    HAL --> Motors["Connect Motor Controllers"]:::hw
+    HAL --> LEDs["Init NeoPixel RGB HALO Ring"]:::hw
+    LEDs --> Network["Bind UDP Multicast Socket"]:::wire
+    Network --> Loop["Start 50 Hz Control Loop"]:::pi
+    Loop --> Sensors["Read Physical LiDAR + Wheel Encoders"]:::hw
+    Sensors --> L0["Execute Layer 0 E-Brake Check"]:::pi
+    L0 --> Obstacle{"Obstacle in Stopping Envelope?"}:::pi
+    Obstacle -- YES --> EStop["HARDWARE E-STOP: LED RED"]:::hw
+    Obstacle -- NO --> L1["Execute BIOS_PIBT.3 + Auction"]:::pi
+    L1 --> Drive["Drive Motors: LED GREEN/BLUE"]:::hw
+    EStop --> Sleep["Wait for Next 50 Hz Tick"]:::pi
+    Drive --> Sleep
+    Sleep --> Loop
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 11. AMRBrain.step() -------- -->
+    <section class="chart-section" id="s11">
+      <div class="section-header">
+        <div class="icon icon-purple">🔄</div>
+        <h2>11. AMRBrain.step() — Complete Agent Tick</h2>
+      </div>
+      <p class="section-desc">Every method call inside one AMRBrain.step() invocation, showing the three control loop timescales and Layer 0 final authority.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef entry fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff
+    classDef l0 fill:#831843,stroke:#f43f5e,stroke-width:2px,color:#fff
+    classDef l1 fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef l2 fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef l3 fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fff
+
+    Entry(["AMRBrain.step(t, sensors, inbox)"]):::entry
+    Entry --> Ingest["_ingest: Parse HB, INTENT, CLAIM, BID, AWARD, TASK msgs"]:::l1
+    Ingest --> Expire["_expire_peers + _expire_task_claims"]:::l1
+    Expire --> DynObs["_observe_dynamic_obstacles"]:::l1
+    DynObs --> TaskLoop["_task_loop: idle-to_pick-to_drop state machine"]:::l3
+    TaskLoop --> RouteQ{"1 Hz Route Tick?"}:::l2
+    RouteQ -- Yes --> Route["_route_loop: A* path planning"]:::l2
+    RouteQ -- No --> TrafficQ
+    Route --> TrafficQ{"10 Hz Traffic Tick?"}:::l1
+    TrafficQ -- Yes --> Traffic["_traffic_loop: PIBT / BIOS_4 arbitration"]:::l1
+    TrafficQ -- No --> BiosClaim
+    Traffic --> BiosClaim["_bios_claim: Corridor block token mgmt"]:::l1
+    BiosClaim --> Follow["_follow: Trajectory follower v, omega"]:::l2
+    Follow --> Safety["_safety: Layer 0 FINAL AUTHORITY"]:::l0
+    Safety --> HBQ{"Heartbeat Tick?"}:::l1
+    HBQ -- Yes --> Broadcast["_broadcast: HB, INTENT, CLAIM, Gossip"]:::l1
+    HBQ -- No --> Return
+    Broadcast --> Return(["Return: Actuation, Outbox"]):::entry
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+    <!-- -------- 12. Module Dependencies -------- -->
+    <section class="chart-section" id="s12">
+      <div class="section-header">
+        <div class="icon icon-cyan">📦</div>
+        <h2>12. Module Dependency Graph</h2>
+      </div>
+      <p class="section-desc">Every import relationship across all source files in the project.</p>
+      <div class="chart-box">
+        <pre class="mermaid">
+flowchart TD
+    classDef core fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef brain fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#fff
+    classDef infra fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#fff
+    classDef entry fill:#7f1d1d,stroke:#ef4444,stroke-width:2px,color:#fff
+
+    geometry["geometry.py"]:::core
+    settings["settings.py"]:::core
+    environment["environment.py"]:::core
+    topology["topology.py"]:::core
+    planner["planner.py"]:::core
+    messages["messages.py"]:::infra
+    transport["transport.py"]:::infra
+    task_alloc["task_allocation.py"]:::core
+    assignment["assignment.py"]:::core
+    priority["priority.py"]:::brain
+    world["world.py"]:::brain
+    amr["amr.py"]:::brain
+    bios4["bios4.py"]:::brain
+    fleet_mgr["fleet_manager.py"]:::brain
+    scenarios["scenarios.py"]:::infra
+    metrics["metrics.py"]:::infra
+    main["main.py"]:::entry
+    evolve["evolve.py"]:::entry
+    server["server.py"]:::entry
+
+    geometry --> environment
+    geometry --> world
+    geometry --> planner
+    geometry --> priority
+    geometry --> amr
+    settings --> world
+    settings --> amr
+    settings --> transport
+    environment --> topology
+    environment --> planner
+    environment --> priority
+    environment --> world
+    environment --> amr
+    environment --> fleet_mgr
+    topology --> amr
+    planner --> amr
+    planner --> fleet_mgr
+    priority --> amr
+    messages --> transport
+    messages --> amr
+    messages --> fleet_mgr
+    messages --> main
+    transport --> main
+    task_alloc --> amr
+    task_alloc --> main
+    assignment --> fleet_mgr
+    world --> main
+    amr --> main
+    bios4 --> amr
+    bios4 --> evolve
+    fleet_mgr --> main
+    scenarios --> main
+    scenarios --> evolve
+    metrics --> main
+    main --> server
+    main --> evolve
+        </pre>
+      </div>
+      <a class="back-top" href="#top">↑ Back to index</a>
+    </section>
+
+  </div>
+
+  <!-- ======== Mermaid JS ======== -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        darkMode: true,
+        background: '#111827',
+        primaryColor: '#1e293b',
+        primaryTextColor: '#e2e8f0',
+        primaryBorderColor: '#3b82f6',
+        lineColor: '#475569',
+        secondaryColor: '#312e81',
+        tertiaryColor: '#064e3b',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        fontSize: '13px',
+      },
+      flowchart: {
+        htmlLabels: true,
+        curve: 'basis',
+        rankSpacing: 50,
+        nodeSpacing: 30,
+        padding: 15,
+      },
+      sequence: {
+        actorMargin: 60,
+        messageMargin: 30,
+      },
+    });
+  </script>
+</body>
+</html>

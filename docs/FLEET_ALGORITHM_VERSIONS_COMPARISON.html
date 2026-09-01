@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Comprehensive Fleet Algorithm Evolution & Version Comparison Guide - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>Comprehensive Fleet Algorithm Evolution & Version Comparison Guide</h1>
+<h2>Executive Overview</h2>
+<p>This document provides an exhaustive, comparative technical analysis of all traffic coordination, task allocation, and collision-avoidance algorithms implemented in the <strong>SIH Fleet Simulation</strong> repository (<code>SIH_Fleet_Sim</code>).</p>
+<p>It traces the algorithmic lineage from the naive <strong><code>stop_and_wait</code></strong> baseline through centralized paradigms up to the state-of-the-art <strong><code>BIOS_PIBT.5</code></strong> (Energy-Feasible Decentralized Auction + Directed Circulation + Replicated PIBT).</p>
+<hr>
+<h2>1. Algorithmic Genealogy & Evolution Timeline</h2>
+<p>Each version was engineered to systematically eliminate a proven failure mode identified in empirical stress testing:</p>
+<pre><code class="language-">[ stop_and_wait ]
+       |  Pathology: 100% gridlock in single-file aisles &amp; junctions (0/90 completion)
+       v
+[ central (Hungarian + ST-A*) ]
+       |  Pathology: Single Point of Failure (SPOF); Wi-Fi hiccup freezes entire fleet
+       v
+[ hierarchical (Central + P2P fallback) ]
+       |  Pathology: Schedule interference; peer yielding fights optimizer timetable
+       v
+[ BIOS_1.0.0 (Reactive Heuristics) ]
+       |  Pathology: Panic-on-stick causes 15 rack collisions; cyclic livelocks
+       v
+[ BIOS_PIBT.1 (Decentralized Priority Inheritance) ]
+       |  Pathology: Reversing into retreat bays wedges chassis in dense short aisles
+       v
+[ BIOS_PIBT.2 (Directed Circulation + Cell Leases) ]
+       |  Innovation: Strongly connected 1-way graph eliminates head-on deadlocks structurally
+       |  Limitation: WMS still required for central task dispatching
+       v
+[ BIOS_PIBT.3 (Decentralized Batch Auction + Corridor Waves) ]
+       |  Innovation: Bounded peer auction; drop-cell limits; corridor directional waves
+       |  Pathology: High network broadcast churn; blind to battery depletion &amp; cargo weight
+       v
+[ BIOS_4 (Neuroevolution PolicyNet) ]   [ BIOS_PIBT.5 (Production Flagship) ]
+       |                                          |
+ 549-param learned policy                  Energy-feasible dynamic admission
+ 0 rack contacts                           Cargo physics &amp; hard deadlines
+ Halved replanning churn                   Sparse bidding (47.2% bid reduction)
+                                           100% benchmark completion (90/90)</code></pre>
+<hr>
+<h2>2. Detailed Technical Breakdown by Version</h2>
+<h3>2.1. <code>stop-and-wait(Competition)</code> — The Enhanced Baseline</h3>
+<ul>
+  <li><strong>Primary Role:</strong> The honest, computationally optimized baseline required by the SIH problem statement to measure the $\ge 20\%$ speedup criterion.</li>
+  <li><strong>Mechanism:</strong></li>
+  <li>Global Layer 2: Standard static $A^*$ shortest path.</li>
+  <li>Traffic Layer 1: Evaluates immediate next cell $C_{\text{next}}$. If local LiDAR senses any object inside $C_{\text{next}}$, sets $\text{hold} = \text{True}$ and commands velocity $v = 0.0$.</li>
+  <li>Communication: Sends bare telemetry heartbeats only (so the GUI and benchmark logger function). Withholds all priority, intent, and reservations.</li>
+  <li><strong>Why it Fails:</strong> When two robots enter a narrow single-file aisle in opposite directions, both see each other in their next cell. Both stop and wait forever. <strong>Result: 0/90 runs completed in the SIH acceptance benchmark.</strong></li>
+</ul>
+<hr>
+<h3>2.2. <code>central</code> — The Centralized Cloud Reservation Paradigm</h3>
+<ul>
+  <li><strong>Primary Role:</strong> Replicates the industry standard (e.g., Amazon Robotics / Kiva Systems).</li>
+  <li><strong>Mechanism:</strong></li>
+  <li>Central Fleet Manager computes global task assignments via the $O(N^3)$ Hungarian algorithm.</li>
+  <li>Computes collision-free global space-time reservations using Space-Time $A^*$ (time-expanded reservations).</li>
+  <li>AMRs are thin execution clients: they execute the manager’s time-stamped schedule without peer-to-peer negotiation.</li>
+  <li><strong>Why it Fails:</strong> <strong>Single Point of Failure (SPOF).</strong> If the central manager process crashes or network connectivity drops for $>3.0\text{ s}$, the entire fleet executes an emergency stop and parks. It cannot run autonomously on edge hardware.</li>
+</ul>
+<hr>
+<h3>2.3. <code>hierarchical</code> — Hybrid Manager with Degraded P2P Fallback</h3>
+<ul>
+  <li><strong>Primary Role:</strong> Evaluates whether a central optimizer can be backed up by decentralized peer yielding when disconnected.</li>
+  <li><strong>Mechanism:</strong></li>
+  <li>Runs <code>central</code> timetable when <code>mode == MODE_CENTRAL</code>.</li>
+  <li>Drops to <code>DEGRADED_P2P</code> when the manager times out.</li>
+  <li><strong>Why it Fails:</strong> <strong>Interference pathology.</strong> Layering peer yielding on top of a centralized timetable caused AMRs to defer to peer plans that the central optimizer had already deconflicted. The mechanisms clashed, cutting throughput to roughly half of the pure central baseline (974 replans).</li>
+</ul>
+<hr>
+<h3>2.4. <code>BIOS_1.0.0</code> — Early Reactive P2P Coordination</h3>
+<ul>
+  <li><strong>Primary Role:</strong> First attempt at pure decentralized coordination without a central coordinator.</li>
+  <li><strong>Mechanism:</strong></li>
+  <li>1D scalar priority attached to heartbeats.</li>
+  <li>"Panic-on-Stick": When blocked for $>2.5\text{ s}$, an AMR was allowed to creep into "any free adjacent cell" to unstick itself.</li>
+  <li><strong>Why it Fails:</strong> <strong>Physical rack collisions.</strong> The unstick heuristic edged AMRs sideways into cells where differential-drive turning swept their chassis footprint directly into shelving racks (15 rack collisions observed in 420-second benchmarks).</li>
+</ul>
+<hr>
+<h3>2.5. <code>BIOS_PIBT.1</code> — Decentralized Priority Inheritance with Backtracking</h3>
+<ul>
+  <li><strong>Primary Role:</strong> Replicated execution of Okumura et al. PIBT algorithm.</li>
+  <li><strong>Key Mechanisms:</strong></li>
+  <li><strong>Pure-Function PIBT (<code>pibt_step</code>):</strong> Deterministic solver run independently by every AMR over identical local peer snapshots.</li>
+  <li><strong>7-Tuple Lexicographic <code>PriorityKey</code>:</strong></li>
+</ul>
+<p>$$\mathbf{K} = \langle \text{emergency}, \text{exiting\_branch}, \text{waiting\_age}, \text{service\_age}, \text{loaded}, \text{dist\_bias}, \text{robot\_id} \rangle$$</p>
+<ul>
+  <li><strong>Priority Inheritance:</strong> When high-priority robot $A$ requests cell occupied by $B$, $B$ temporarily inherits $A$'s priority to clear out.</li>
+  <li><strong>Retreat Bays:</strong> Lower priority robots execute physical reverse maneuvers into side bays (<code>ST_RETREAT</code>).</li>
+  <li><strong>Why it Fails:</strong> In dense rack layouts with 59 short non-passing aisles, retreat maneuvers caused cascading backups that jammed shared junctions.</li>
+</ul>
+<hr>
+<h3>2.6. <code>BIOS_PIBT.2</code> — Directed Circulation Graphs & 2-Phase Cell Leases</h3>
+<ul>
+  <li><strong>Primary Role:</strong> Structural conflict elimination rather than reactive evasion.</li>
+  <li><strong>Key Mechanisms:</strong></li>
+  <li><strong>Strongly Connected Directed Circulation Graph:</strong> The warehouse grid is converted into alternating one-way aisles and perimeter loops ($G = (V, \vec{E})$). Head-on edge swaps become topologically impossible!</li>
+  <li><strong>2-Phase Destination-Cell Leases:</strong> An AMR broadcasts an idempotent <code>CLAIM</code> token with a local-clock TTL. Waits 1 propagation round (450 ms at merges) to verify it holds the highest frozen priority key before advancing.</li>
+  <li><strong>Discontinuous Route Repair:</strong> Continuous turning can cross quantization boundaries before consuming a waypoint. V2 stops and replans rather than allowing diagonal shortcuts across rack corners.</li>
+  <li><strong>Physical 1.4 m Pitch:</strong> Discretization scale increased from 1.0 m to 1.4 m to ensure two 0.70 m chassis plus standstill safety fields fit comfortably.</li>
+</ul>
+<hr>
+<h3>2.7. <code>BIOS_PIBT.3</code> — Decentralized Batch Auction & Congestion Control</h3>
+<ul>
+  <li><strong>Primary Role:</strong> Completely eliminates the central WMS dispatcher; decentralizes both traffic AND task allocation.</li>
+  <li><strong>Key Mechanisms:</strong></li>
+  <li><strong>Decentralized First-Price Auction:</strong> Idle AMRs estimate bid cost:</li>
+</ul>
+<p>$$\text{Cost} = A^*(\text{robot} \to \text{pick}) + A^*(\text{pick} \to \text{drop}) + \text{battery\_penalty}$$</p>
+<ul>
+  <li><strong>Replicated Batch Matching:</strong> Robots observe an auction window and deterministically match bids without an auctioneer.</li>
+  <li><strong>Congestion Admission Limits:</strong></li>
+  <li>Max 2 active tasks per physical drop station.</li>
+  <li>Immutable 2-task directional waves through bidirectional chokepoints (both must finish before wave reverses).</li>
+  <li><strong>Completion Gossip:</strong> AMRs gossip <code>TASK_DONE</code> so lost packets cannot re-issue finished tasks.</li>
+</ul>
+<hr>
+<h3>2.8. <code>BIOS_4</code> — Neuroevolution PolicyNet (AI Edge Controller)</h3>
+<ul>
+  <li><strong>Primary Role:</strong> Proof that Layer-0 safety protects even learned black-box neural networks.</li>
+  <li><strong>Mechanism:</strong></li>
+  <li>549-parameter MLP policy network trained via Natural Evolution Strategies (NES) over held-out warehouse seeds.</li>
+  <li>Replaces manual traffic decision logic at Layer 1; outputs discrete verbs (proceed, hold, yield, replan).</li>
+  <li><strong>Performance:</strong> Delivered 13/48 tasks on held-out seeds with <strong>0 rack contacts</strong> (compared to 15 for BIOS 1.0.0) and halved replanning churn to 729.</li>
+</ul>
+<hr>
+<h2>3. Spotlight on <code>BIOS_PIBT.5</code>: The Production Standard</h2>
+<p><code>BIOS_PIBT.5</code> represents the pinnacle of the repository’s decentralized architecture. It refines V3 by integrating real-world physics, cargo constraints, and network bandwidth optimization.</p>
+<pre><code class="language-">+-----------------------------------------------------------------------------+
+|                          BIOS_PIBT.5 ENHANCEMENT SUITE                      |
++-----------------------------------------------------------------------------+
+|  1. Energy-Feasible Admission     |  2. Dynamic Cargo Physics &amp; Deadlines   |
+|  - Predicts complete mission Wh   |  - Cargo multipliers (Fragile, Heavy...) |
+|  - Reserves 15% emergency battery |  - Full payload weight energy penalty   |
+|  - Guarantees return to charger   |  - Hard delivery deadlines via TTL      |
++-----------------------------------+-----------------------------------------+
+|  3. Sparse Bidding (Candidate Top-3)| 4. Liveness &amp; Idle Repositioning      |
+|  - Only top-3 nearest AMRs bid    |  - Automatic vacancy of drop stations   |
+|  - Max 12 feasible tasks / round  |  - Asymmetric duplicate task cancel     |
+|  - 47.2% reduction in auction bids|  - Zero fleet broadcast saturation      |
++-----------------------------------------------------------------------------+</code></pre>
+<h3>Pillar 1: Energy-Feasible Task Admission</h3>
+<p>In traditional fleets, a robot with 25% battery accepts a task, runs out of power mid-transit, and becomes a permanent metallic wall in an aisle.</p>
+<p><code>BIOS_PIBT.5</code> computes a strict forward energy model before submitting a bid:</p>
+<p>$$E_{\text{mission}} = \left( E_{\text{approach}} + E_{\text{loaded}} \cdot M_{\text{cargo}} \cdot W_{\text{payload}} \right) + E_{\text{handling}} + E_{\text{docking}}$$</p>
+<p>Where:</p>
+<ul>
+  <li>$E_{\text{approach}} = P_{\text{move}} \cdot \left( \frac{d(\text{curr} \to \text{pick})}{v_{\text{cruise}}} \right)$</li>
+  <li>$E_{\text{loaded}} = P_{\text{move}} \cdot 1.35 \cdot \left( \frac{d(\text{pick} \to \text{drop})}{v_{\text{cruise}}} \right)$</li>
+  <li>$W_{\text{payload}} = 1.0 + 0.35 \cdot \left( \frac{\text{CargoWeight}}{100\text{ kg}} \right)$</li>
+  <li>$E_{\text{handling}} = P_{\text{idle}} \cdot (12\text{ s} \cdot M_{\text{cargo}})$</li>
+  <li>$E_{\text{docking}} = P_{\text{move}} \cdot \left( \frac{d(\text{drop} \to \text{nearest\_charger})}{v_{\text{cruise}}} \right)$</li>
+</ul>
+<p>$$\text{Projected Battery Frac} = \text{Battery}_{\text{curr}} - \frac{E_{\text{mission}} \cdot (1 + \text{UncertaintyMargin})}{C_{\text{battery\_wh}}}$$</p>
+<blockquote><p><strong>The Invariant:</strong> If $\text{Projected Battery Frac} < 0.15$ ($15\%$ Emergency Reserve), <strong>the robot suppresses its bid entirely.</strong></p></blockquote>
+<hr>
+<h3>Pillar 2: Cargo Physics & Hard Deadlines</h3>
+<ul>
+  <li><strong>Heterogeneous Cargo Types:</strong></li>
+  <li><code>normal</code>: Multiplier $1.0\times$</li>
+  <li><code>fragile</code>: Multiplier $1.1\times$</li>
+  <li><code>heavy</code>: Multiplier $1.4\times$</li>
+  <li><code>hazardous</code>: Multiplier $1.25\times$</li>
+  <li><strong>Service Allowance:</strong> Cargo multiplier scales the 12-second physical loading time.</li>
+  <li><strong>Deterministic Task Urgency:</strong></li>
+</ul>
+<p>Tasks are sorted in auctions by:</p>
+<p>$$\text{Urgency} = \langle -\text{Priority}, \; \text{HasHardDeadline}, \; \text{DeadlineTTL}, \; \text{BidCost}, \; \text{TID} \rangle$$</p>
+<hr>
+<h3>Pillar 3: Sparse Bidding & Candidate Pruning</h3>
+<p>In V3, every idle robot broadcasted bids for every announced task, causing quadratic packet storms ($O(N \cdot M)$).</p>
+<p>In <code>BIOS_PIBT.5</code>:</p>
+<ol>
+  <li><strong>Top-3 Nearest Candidates Only:</strong> For every task, only the 3 closest, idle, energy-feasible AMRs are permitted to bid.</li>
+  <li><strong>Bundle Cap:</strong> An AMR bids on at most its <strong>12 best feasible tasks</strong> per round.</li>
+  <li><strong>Dynamic Admission:</strong> If one of the top-3 candidates becomes busy or fails, the next closest AMR in the live peer table automatically steps in without needing a master coordinator.</li>
+  <li><strong>Impact:</strong></li>
+</ol>
+<ul>
+  <li><strong>$47.20\%$ reduction in auction bids</strong> ($310,596 \to 164,000$).</li>
+  <li><strong>$24.64\%$ reduction in total fleet network messages</strong> ($632,813 \to 476,875$).</li>
+  <li><strong>$0\%$ loss in makespan:</strong> Identical completion time down to the hundredth of a second!</li>
+</ul>
+<hr>
+<h3>Pillar 4: Idle Repositioning & Duplicate Cleanup</h3>
+<ul>
+  <li><strong>Drop Point Clearing:</strong> Upon delivering cargo, an idle robot does not park at the drop cell. It automatically yields to an off-aisle parking dock or vacant buffer cell.</li>
+  <li><strong>Asymmetric Duplicate Cancellation:</strong> Under rare network partitions, two AMRs may both believe they won a task. The gossip protocol detects duplicate claims, forces the higher robot ID to cancel, vacate its current aisle, and enter a 5-second backoff before bidding again.</li>
+</ul>
+<hr>
+<h2>4. Master Parameter & Architectural Difference Matrix</h2>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>Technical Parameter / Feature</th>
+    <th>🛑 <code>stop-and-wait(Competition)</code></th>
+    <th>🏢 <code>central</code></th>
+    <th>🔀 <code>hierarchical</code></th>
+    <th>⚠️ <code>BIOS_1.0.0</code></th>
+    <th>🧩 <code>BIOS_PIBT.1</code></th>
+    <th>🛣️ <code>BIOS_PIBT.2</code></th>
+    <th>📦 <code>BIOS_PIBT.3</code></th>
+    <th>🤖 <code>BIOS_4</code></th>
+    <th>🚀 <code>BIOS_PIBT.5</code> (Production)</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Architectural Model</strong></td>
+      <td>Decentralized (Textbook)</td>
+      <td>Centralized Server</td>
+      <td>Hybrid (Central + P2P)</td>
+      <td>Edge P2P Heuristic</td>
+      <td>Edge P2P Multi-Agent</td>
+      <td>Edge P2P Circulation</td>
+      <td>Fully Decentralized</td>
+      <td>Neuroevolution Edge</td>
+      <td>Fully Decentralized Edge</td>
+    </tr>
+    <tr>
+      <td><strong>Task Allocation Method</strong></td>
+      <td>Static queue / External</td>
+      <td>Central Hungarian ($O(N^3)$)</td>
+      <td>Central Hungarian</td>
+      <td>Static queue</td>
+      <td>Static queue</td>
+      <td>Static queue</td>
+      <td>Bounded Peer Batch Auction</td>
+      <td>Bounded Peer Auction</td>
+      <td><strong>Energy-Feasible Top-3 Sparse Auction</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Route Graph Topology</strong></td>
+      <td>Bidirectional Grid</td>
+      <td>Bidirectional Space-Time</td>
+      <td>Bidirectional</td>
+      <td>Bidirectional Grid</td>
+      <td>Bidirectional 2-Core</td>
+      <td><strong>Directed Circulation (1-way)</strong></td>
+      <td>Directed or 2-Core</td>
+      <td>Directed Circulation</td>
+      <td><strong>Directed Circulation + Directional Waves</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Traffic Arbitration Slot</strong></td>
+      <td>Next-cell LiDAR check</td>
+      <td>Central reservation table</td>
+      <td>Central schedule / P2P</td>
+      <td>Local priority heuristic</td>
+      <td>Replicated PIBT</td>
+      <td>2-Phase Cell Lease</td>
+      <td>2-Phase Cell Lease + Wave</td>
+      <td>549-param PolicyNet</td>
+      <td><strong>2-Phase Lease + Staging + Wave</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Deadlock Prevention</strong></td>
+      <td>None (Halts)</td>
+      <td>Global coordination</td>
+      <td>Global coordination</td>
+      <td>Panic-on-stick</td>
+      <td>Replicated PIBT</td>
+      <td>Strongly Connected Graph</td>
+      <td>Graph + Directional Waves</td>
+      <td>Learned verb selection</td>
+      <td><strong>Topological Graph + Corridor Directional Waves</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Deadlock Resolution</strong></td>
+      <td>None (Permanent)</td>
+      <td>Re-plan globally</td>
+      <td>Re-plan globally</td>
+      <td>Creep adjacent cell</td>
+      <td>Retreat to passing bay</td>
+      <td>None needed (Prevented)</td>
+      <td>None needed (Prevented)</td>
+      <td>Periodic replan valve</td>
+      <td><strong>Deterministic Invariant Repair (Zero retreats)</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Wire Protocol Data</strong></td>
+      <td>Bare telemetry only</td>
+      <td>Server commands</td>
+      <td>Server commands / Heartbeat</td>
+      <td>Heartbeat + Scalar rank</td>
+      <td>Heartbeat + 7-tuple Key</td>
+      <td>Heartbeat + Key + CLAIM</td>
+      <td>Heartbeat + Key + BID/AWARD</td>
+      <td>Heartbeat + Features</td>
+      <td><strong>Heartbeat + Key + BID/AWARD + Energy/Cargo</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Network Overhead</strong></td>
+      <td>Very Low ($\sim 2\text{ msg/s}$)</td>
+      <td>Moderate (Server load)</td>
+      <td>High (Interference)</td>
+      <td>Low ($\sim 5\text{ msg/s}$)</td>
+      <td>Moderate ($\sim 10\text{ msg/s}$)</td>
+      <td>Moderate ($\sim 10\text{ msg/s}$)</td>
+      <td>High ($310\text{k bids/run}$)</td>
+      <td>Low ($\sim 5\text{ msg/s}$)</td>
+      <td><strong>Optimized ($164\text{k bids/run}, -47.2\%$)</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Energy & Battery Model</strong></td>
+      <td>None (Ignored)</td>
+      <td>None (Ignored)</td>
+      <td>None (Ignored)</td>
+      <td>None</td>
+      <td>Battery in priority rank</td>
+      <td>Battery in priority rank</td>
+      <td>Simple battery penalty</td>
+      <td>Battery feature input</td>
+      <td><strong>Full Wh Model: $15\%$ reserve, payload \& dock cost</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Cargo Heterogeneity</strong></td>
+      <td>None (All uniform)</td>
+      <td>None</td>
+      <td>None</td>
+      <td>None</td>
+      <td>None</td>
+      <td>None</td>
+      <td>None</td>
+      <td>None</td>
+      <td><strong>4 types (Normal, Fragile, Heavy, Hazardous)</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Hard Deadline Support</strong></td>
+      <td>No</td>
+      <td>No</td>
+      <td>No</td>
+      <td>No</td>
+      <td>No</td>
+      <td>No</td>
+      <td>No</td>
+      <td>No</td>
+      <td><strong>Yes (Relative TTL urgency ordering)</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Candidate Pruning</strong></td>
+      <td>N/A</td>
+      <td>N/A</td>
+      <td>N/A</td>
+      <td>N/A</td>
+      <td>N/A</td>
+      <td>N/A</td>
+      <td>No (Open broadcast)</td>
+      <td>No</td>
+      <td><strong>Yes (Top-3 nearest feasible AMRs only)</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Physical Safety Authority</strong></td>
+      <td>50 Hz ISO 3691-4 field</td>
+      <td>50 Hz ISO 3691-4 field</td>
+      <td>50 Hz ISO 3691-4 field</td>
+      <td>50 Hz field (compromised)</td>
+      <td>50 Hz ISO 3691-4 field</td>
+      <td>50 Hz ISO 3691-4 field</td>
+      <td>50 Hz ISO 3691-4 field</td>
+      <td>50 Hz ISO 3691-4 field</td>
+      <td><strong>50 Hz ISO 3691-4 field + Velocity Profiling</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Single Point of Failure</strong></td>
+      <td>Zero</td>
+      <td><strong>Critical (Server)</strong></td>
+      <td><strong>Critical (Server)</strong></td>
+      <td>Zero</td>
+      <td>Zero</td>
+      <td>Zero</td>
+      <td>Zero</td>
+      <td>Zero</td>
+      <td><strong>Zero (100% Autonomous Uptime)</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Benchmark Completion</strong></td>
+      <td><strong>0 / 90 (0.0%)</strong></td>
+      <td>90 / 90 (when server up)</td>
+      <td>Unstable (Interference)</td>
+      <td>7 / 48 (14.5%)</td>
+      <td>Partial (Spur jams)</td>
+      <td>90 / 90 (100%)</td>
+      <td>90 / 90 (100%)</td>
+      <td>13 / 48 (27.1%)</td>
+      <td><strong>90 / 90 (100.0%)</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Rack Collision Count</strong></td>
+      <td><strong>0</strong></td>
+      <td><strong>0</strong></td>
+      <td><strong>0</strong></td>
+      <td><strong>15 Contacts</strong></td>
+      <td><strong>0</strong></td>
+      <td><strong>0</strong></td>
+      <td><strong>0</strong></td>
+      <td><strong>0</strong></td>
+      <td><strong>0 Contacts</strong></td>
+    </tr>
+  </tbody>
+</table></div>
+<hr>
+<h2>5. Catalog of Efficiency Enhancements</h2>
+<p>The evolution from <code>stop_and_wait</code> to <code>BIOS_PIBT.5</code> introduced dozens of multi-disciplinary optimizations across four core domains:</p>
+<h3>A. Algorithmic & Graph Optimizations</h3>
+<ol>
+  <li><strong>Elimination of Head-On Edge Swaps via Strongly Connected Graphs:</strong> By converting 2-way warehouse aisles into alternating 1-way circulation loops, head-on conflicts are eliminated mathematically ($A \to B \land B \to A = \emptyset$).</li>
+  <li><strong>Discrete Invariant Restoration ($1.4\text{ m}$ Pitch):</strong> Upscaling cell pitch from $1.0\text{ m}$ to $1.4\text{ m}$ provides sufficient spatial margin for physical $0.70\text{ m}$ AMR footprints and certified standstill safety zones.</li>
+  <li><strong>Discontinuous Route Clamping:</strong> Prevents robots from cutting corners across racking when continuous turns cross quantization boundaries prematurely.</li>
+  <li><strong>Staging Distance Buffer:</strong> Followers stage 1 cell earlier at chokepoint entrances, leaving full braking distance for the departing lead robot.</li>
+</ol>
+<h3>B. Network & Messaging Optimizations</h3>
+<ol>
+  <li><strong>Sparse Bidding & Top-3 Candidate Pruning:</strong> Cuts auction bid messages by $47.20\%$ without affecting task makespan.</li>
+  <li><strong>Task Catalog Gossip & Decentralized Completion Verification:</strong> Broadcasts <code>TASK_DONE</code> and unfinished catalog lists; heals packet loss up to $20\%$ with zero central database.</li>
+  <li><strong>Local Clock Relative TTLs:</strong> Deadlines and leases are transmitted as remaining durations rather than epoch timestamps, eliminating the need for complex NTP clock synchronization across edge Linux boards.</li>
+  <li><strong>Asymmetric Claim Latches:</strong> Latches priority keys during the heartbeat period to prevent two robots from simultaneously deciding they outrank each other.</li>
+</ol>
+<h3>C. Kinematic & Physical Motion Optimizations</h3>
+<ol>
+  <li><strong>Curvature-Aware Deceleration:</strong> AMRs calculate remaining distance to the next 90-degree turn:</li>
+</ol>
+<p>$$v_{\text{profile}} = \sqrt{2 \cdot a_{\max} \cdot d_{\text{rem}} + v_{\text{turn}}^2}$$</p>
+<p>This completely prevents sliding/skidding into shelving racks during turns.</p>
+<ol>
+  <li><strong>In-Place Alignment During Holds:</strong> When an AMR is held, it locks linear drive ($v=0$) but continues turning toward its next waypoint, eliminating heading errors before motion resumes.</li>
+  <li><strong>Clearance-Increasing Creep Primitive:</strong> In tight quarters, recovery motion is permitted only when the instantaneous relative velocity vector strictly increases all neighbor gaps.</li>
+</ol>
+<h3>D. Operational & Fleet Longevity Optimizations</h3>
+<ol>
+  <li><strong>Stranding Prevention via Dynamic Wh Modeling:</strong> By reserving 15% emergency power and accounting for the return journey to a charger, no robot ever dies in active traffic.</li>
+  <li><strong>Payload-Aware Acceleration & Energy Scaling:</strong> Heavy cargo increases motor draw estimates by up to 35%, ensuring energy feasibility under maximum mechanical strain.</li>
+  <li><strong>Drop Station Off-Aisle Vacancy:</strong> AMRs instantly vacate delivery stations upon task completion, preventing finished robots from acting as stationary walls.</li>
+</ol>
+<hr>
+<h2>6. Empirical Verification & Release Evidence</h2>
+<h3>6.1. Acceptance Benchmark Performance (<code>sih_acceptance_overlap</code>)</h3>
+<p>Evaluated across 90 deterministic seeds (4, 6, and 8 robots) against a 1,200-second cutoff:</p>
+<ul>
+  <li><strong><code>stop_and_wait</code>:</strong> <strong>0/90 completed (0%)</strong> — 100% timed out due to aisle deadlock.</li>
+  <li><strong><code>BIOS_PIBT.5</code>:</strong> <strong>90/90 completed (100%)</strong> — All 1,620 tasks delivered.</li>
+  <li><strong>4 Robots:</strong> Median makespan $384.03\text{ s}$ ($\ge 63.64\%$ faster than baseline cutoff).</li>
+  <li><strong>6 Robots:</strong> Median makespan $554.70\text{ s}$ ($\ge 51.17\%$ faster than baseline cutoff).</li>
+  <li><strong>8 Robots:</strong> Median makespan $721.33\text{ s}$ ($\ge 34.16\%$ faster than baseline cutoff).</li>
+  <li><strong>Inter-Robot Contacts:</strong> <strong>Zero (0)</strong> contacts across 88.65 robot-hours.</li>
+</ul>
+<h3>6.2. Energy Stress Benchmark (<code>energy_acceptance</code>, 8 AMRs, 16 Tasks)</h3>
+<p>Paired comparison between <code>BIOS_PIBT.3</code> and <code>BIOS_PIBT.5</code>:</p>
+<ul>
+  <li><strong>Task Completion:</strong> BIOS 3 completed 7/8 seeds; BIOS 5 completed <strong>8/8 seeds (100%)</strong>.</li>
+  <li><strong>Hardest Seed:</strong> BIOS 3 timed out at $1,200\text{ s}$; BIOS 5 finished at <strong>$1,020.64\text{ s}$</strong>.</li>
+  <li><strong>Aggregate Auction Bids:</strong> Decreased from $310,596$ to <strong>$164,000$ ($47.20\%$ reduction)</strong>.</li>
+  <li><strong>Total Network Messages:</strong> Decreased from $632,813$ to <strong>$476,875$ ($24.64\%$ reduction)</strong>.</li>
+</ul>
+<h3>6.3. Fault Injection & Resilience Smoke Tests</h3>
+<ul>
+  <li><strong>5% Uniform Packet Loss:</strong> Completed 16/16 tasks at $528.66\text{ s}$ with 0 collisions.</li>
+  <li><strong>Mid-Run Process Kill (Robot Failure):</strong> Instant lease timeout and task reassignment completed in $46.82\text{ s}$.</li>
+  <li><strong>Network Partition & Heal:</strong> Partitioned clusters operated independently and merged cleanly in $19.38\text{ s}$.</li>
+</ul>
+<hr>
+<h2>7. Conclusion: Why BIOS_PIBT.5 is the Definitive Solution</h2>
+<p><code>BIOS_PIBT.5</code> achieves what neither traditional centralized automation nor naive decentralized heuristics could accomplish:</p>
+<ol>
+  <li><strong>Centralized-grade efficiency</strong> without a centralized point of failure.</li>
+  <li><strong>Guaranteed collision-free safety</strong> governed by an uncompromised 50 Hz local ISO 3691-4 optical barrier.</li>
+  <li><strong>Deadlock-free liveness</strong> through structural graph orientation and 2-phase spatial leases.</li>
+  <li><strong>Hardware and energy viability</strong> through payload-aware forward battery modeling and sparse network bidding.</li>
+</ol>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

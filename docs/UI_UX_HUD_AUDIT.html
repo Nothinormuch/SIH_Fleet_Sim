@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HUD UI/UX audit and responsive contract - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>HUD UI/UX audit and responsive contract</h1>
+<h2>Operator decision hierarchy</h2>
+<p>The canvas now defaults to <strong>Core HUD</strong>: completion, scenario, coordination health,</p>
+<p>camera controls, and optional PiP. Fleet rows, auction events, allocation totals, and</p>
+<p>the final run report remain available in the persistent side panel. This removes</p>
+<p>duplicate floating information from the primary map while preserving it for diagnosis.</p>
+<p><strong>HUD details</strong> is an explicit disclosure for a tactical auction view. Tactical HUD and</p>
+<p>PiP are mutually exclusive because both need the same lower canvas region. Opening one</p>
+<p>closes the other rather than allowing a silent overlap. At stacked/tablet widths the</p>
+<p>tactical view reduces to auction and allocation cards; detailed fleet data remains in</p>
+<p>the scrolling panel.</p>
+<h2>Responsive behavior</h2>
+<ul>
+  <li>Wide desktop: canvas plus 360 px operator panel; PiP opens above, not on top of, the</li>
+</ul>
+<p>legend and playback transport.</p>
+<ul>
+  <li>Laptop: PiP becomes shorter; the core cards stay below the camera toolbar.</li>
+  <li>Tablet and smaller: canvas and operator panel stack, PiP starts closed, and tactical</li>
+</ul>
+<p>mode shows only the two allocation cards that matter to the auction decision.</p>
+<ul>
+  <li>Phone: the toolbar uses compact PiP/HUD labels, hides redundant zoom controls, all</li>
+</ul>
+<p>run controls become one column, and the legend scrolls within its own row.</p>
+<ul>
+  <li>Reduced-motion preference disables decorative spinning and transitions.</li>
+</ul>
+<h2>Accessibility basis</h2>
+<ul>
+  <li>WCAG 2.2 Reflow calls for content to retain information and functionality at a width</li>
+</ul>
+<p>equivalent to 320 CSS pixels, except genuinely two-dimensional content such as maps.</p>
+<ul>
+  <li>WCAG 2.2 Target Size (Minimum) uses 24 by 24 CSS pixels or sufficient spacing. PiP</li>
+</ul>
+<p>tools and the scrub control now provide at least a 24 px target box.</p>
+<ul>
+  <li>WCAG 2.2 Focus Not Obscured requires focused controls not to be hidden by authored</li>
+</ul>
+<p>overlays. Core/tactical disclosure, real layout rows, and mutually exclusive PiP</p>
+<p>prevent those collisions.</p>
+<ul>
+  <li>The WAI-ARIA disclosure pattern uses a button with <code>aria-expanded</code> and optional</li>
+</ul>
+<p><code>aria-controls</code>; the HUD button implements both and works with Enter/Space natively.</p>
+<ul>
+  <li>Keyboard focus uses a high-contrast two-layer outline, while <code>prefers-reduced-motion</code></li>
+</ul>
+<p>is respected.</p>
+<p>Primary references:</p>
+<ul>
+  <li><https://www.w3.org/WAI/WCAG22/Understanding/reflow></li>
+  <li><https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html></li>
+  <li><https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum.html></li>
+  <li><https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/></li>
+  <li><https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Containment/Container_queries></li>
+</ul>
+<h2>Render verification</h2>
+<p>The browser collision audit checks the camera toolbar, legend, transport, PiP, and each</p>
+<p>HUD card for pairwise intersections and viewport overflow. Both Core and Tactical modes</p>
+<p>were exercised at 1440x900, 1280x720, 1024x768, 768x1024, and 390x844. The final matrix</p>
+<p>reported zero intersections and zero viewport overflow at every size. Browser console</p>
+<p>errors and warnings were also empty.</p>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

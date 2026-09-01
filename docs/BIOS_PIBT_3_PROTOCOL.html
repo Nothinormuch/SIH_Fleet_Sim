@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BIOS_PIBT.3: Decentralized Allocation + Traffic Protocol - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>BIOS_PIBT.3: Decentralized Allocation + Traffic Protocol</h1>
+<p><code>BIOS_PIBT.3</code> combines the collision-free traffic foundation of</p>
+<p><code>BIOS_PIBT.2</code> with decentralized, congestion-aware task allocation. The default</p>
+<p>combination is:</p>
+<pre><code class="language-text">route/traffic = BIOS_PIBT.3
+task allocation = auction</code></pre>
+<p>That combination has no fleet manager. The WMS injects task descriptions but does not</p>
+<p>choose a robot, route, priority, cell, or corridor direction. Every award and movement</p>
+<p>decision is computed onboard from peer messages. The dashboard is a passive listener.</p>
+<p>The optional <code>hungarian</code> allocation remains a centralized comparison baseline. It is</p>
+<p>not part of the fully decentralized V3 claim.</p>
+<h2>How V2 and allocation relate</h2>
+<p>V2 and the allocation layer solve different decisions:</p>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>Layer</th>
+    <th>V3 decision</th>
+    <th>Mechanism</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td>Task allocation</td>
+      <td>Which AMR should execute which task?</td>
+      <td>Replicated batch auction and expiring peer award</td>
+    </tr>
+    <tr>
+      <td>Admission</td>
+      <td>How much work may enter a shared resource?</td>
+      <td>Drop-cell capacity and bounded corridor waves</td>
+    </tr>
+    <tr>
+      <td>Route</td>
+      <td>Which legal grid path reaches the target?</td>
+      <td>Local A*; directed circulation where topology permits</td>
+    </tr>
+    <tr>
+      <td>Traffic</td>
+      <td>Who owns the next cell/corridor?</td>
+      <td>V2 cell leases, block leases, frozen priority and PIBT</td>
+    </tr>
+    <tr>
+      <td>Safety</td>
+      <td>May the chassis execute the command now?</td>
+      <td>Independent 50 Hz onboard protective field</td>
+    </tr>
+  </tbody>
+</table></div>
+<p>Allocation never supplies a route. Routing never changes task ownership. A task award</p>
+<p>sets only the pickup/drop goal; the winning AMR computes its own route and negotiates</p>
+<p>every movement with peers.</p>
+<h2>Protocol</h2>
+<h3>1. Replicated task catalog</h3>
+<p>The WMS broadcasts <code>TASK_NEW</code> once. Every V3 robot gossips unfinished catalog entries,</p>
+<p>so a robot that missed the injector packet learns it from peers. On bidirectional maps</p>
+<p>or lossy links, robots also gossip <code>TASK_DONE</code>; one lost completion cannot permanently</p>
+<p>hold a traffic wave or cause a completed job to be reissued.</p>
+<h3>2. Bounded decentralized batch auction</h3>
+<p>An idle AMR locally estimates:</p>
+<pre><code class="language-text">cost = A*(robot -&gt; pickup) + A*(pickup -&gt; drop) + battery penalty</code></pre>
+<p>It broadcasts bids for a bounded set of tasks. After one bid window, peers apply the</p>
+<p>same deterministic ordering. On a directed warehouse graph, replicated greedy matching</p>
+<p>fills several independent jobs in one round. On a bidirectional chokepoint, each task</p>
+<p>has one contract-net winner and no peer cascades it to a second-best robot from a</p>
+<p>slightly different snapshot.</p>
+<p>Only the winning robot creates an authoritative <code>AWARD</code>. It renews that award as an</p>
+<p>expiring lease while executing the task. A silent/crashed winner therefore releases</p>
+<p>work automatically without a coordinator.</p>
+<h3>3. Congestion admission before motion</h3>
+<p>Two finite resources are controlled during allocation:</p>
+<ul>
+  <li>a drop cell admits at most two active jobs;</li>
+  <li>a bidirectional single-file corridor admits an immutable two-task directional wave.</li>
+</ul>
+<p>The corridor batch does not refill when its first task finishes. Both member task IDs</p>
+<p>must finish before peers derive the next direction from the lowest unfinished task.</p>
+<p>Robots already on the pickup side win; an AMR is not sent through the corridor empty</p>
+<p>and immediately back loaded. This prevents two opposing queues and prevents all robots</p>
+<p>from being drained into one bay.</p>
+<h3>4. Topology-specific traffic</h3>
+<p>On rack maps, V3 retains V2's strongly connected one-way circulation graph, two-phase</p>
+<p>destination-cell leases and deterministic merge priority. Head-on edges do not exist.</p>
+<p>On maps that cannot be oriented without losing reachability, V3 uses:</p>
+<ul>
+  <li>directional task waves;</li>
+  <li>an exclusive expiring block lease;</li>
+  <li>a one-cell-early staging check at the corridor mouth;</li>
+  <li>a two-phase destination-cell merge gate;</li>
+  <li>PIBT priority inheritance/backtracking outside the block.</li>
+</ul>
+<p>Normal V3 traffic never executes the legacy reverse/retreat manoeuvre.</p>
+<h3>5. Bounded invariant repair</h3>
+<p>Packet loss can make two AMRs enter different corners of one quantized merge cell</p>
+<p>without physically contacting. If repeated heartbeats reveal this violated invariant,</p>
+<p>the lower unique robot ID freezes ownership for that repair. The other AMR selects an</p>
+<p>adjacent non-corridor cell that maximizes measured separation, exits at recovery speed,</p>
+<p>and replans. The owner holds until the cell is unique again. Dynamic priority cannot</p>
+<p>flip the repair owner mid-turn.</p>
+<p>Idle robots may not park in or enter a bidirectional controlled block. An idle robot</p>
+<p>found inside must move monotonically toward the nearest mouth.</p>
+<h2>Conditional liveness argument</h2>
+<p>No asynchronous system can promise progress during a permanent partition or when a</p>
+<p>failed chassis physically blocks the only route. V3's no-deadlock argument requires:</p>
+<ol>
+  <li>unique robot IDs;</li>
+  <li>eventual delivery of repeated heartbeat, lease and catalog messages;</li>
+  <li>nonfailed robots execute an admitted cell transition in bounded time;</li>
+  <li>directed cycles retain at least one empty cell;</li>
+  <li>bidirectional waves contain a finite number of finite tasks;</li>
+  <li>cell pitch/localization error satisfy the physical clearance budget.</li>
+</ol>
+<p>Under those assumptions, the directed graph has no head-on wait edge and an empty cell</p>
+<p>propagates backward through each queue. A bidirectional block has one direction and one</p>
+<p>lease owner per finite wave; completing the bounded batch forces a phase change rather</p>
+<p>than unbounded same-direction admission. Merge contenders have a total order, leases</p>
+<p>expire, missed catalog state is repeated, and a duplicate-cell state has one immutable</p>
+<p>repair owner. Therefore no protocol wait can remain closed forever under the stated</p>
+<p>assumptions.</p>
+<p>This is a traffic liveness argument, not a mathematical zero-collision claim. Continuous</p>
+<p>safety remains the independent protective layer and finite simulation only measures an</p>
+<p>observed contact rate.</p>
+<h2>Reproducible evidence</h2>
+<pre><code class="language-bash">python -m pytest tests -q
+python benchmark.py --seeds 30 --jobs 8</code></pre>
+<p>The pinned acceptance scenario runs 30 paired seeds for 4, 6 and 8 robots, with three</p>
+<p>alternating-direction tasks per robot and a 1200 s cutoff. Both policies receive the</p>
+<p>same decentralized auction catalog; SHA-256 workload identities make that equality</p>
+<p>machine-checkable.</p>
+<p><code>BIOS_PIBT.3</code> completes 30/30 runs for every fleet. Stop-and-wait completes 0/30 at</p>
+<p>each fleet size. Because the baseline is right-censored, the honest result is a</p>
+<p>conservative lower bound, not an exact speedup. The minimum per-seed bounds are 63.03%</p>
+<p>(4 robots), 45.50% (6) and 32.48% (8), all above the required 20%. Candidate medians</p>
+<p>are 389.38 s, 599.23 s and 758.63 s. All 1,620 candidate tasks complete with zero</p>
+<p>observed robot/robot, robot/human or robot/rack contacts across 93.3722 robot-hours.</p>
+<p>See <a href="SIH_ACCEPTANCE_BENCHMARK.html">&lt;code&gt;SIH_ACCEPTANCE_BENCHMARK.md&lt;/code&gt;</a> for the censoring proof,</p>
+<p>strict pass conditions, bootstrap intervals, provenance and limitations. The release</p>
+<p>gate also requires the current Python regression suite, lint, Python bytecode</p>
+<p>compilation, and frontend JavaScript syntax checks to pass.</p>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>

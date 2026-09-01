@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stop-and-Wait Traffic Policy: Specification, Implementation & Analysis - SIH Fleet Sim Docs</title>
+  <!-- MathJax for rendering formulas like O(N log N) -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-heading: #f0f6fc;
+      --primary: #58a6ff;
+      --primary-hover: #79c0ff;
+      --accent: #238636;
+      --table-header: #21262d;
+      --table-border: #30363d;
+      --table-alt: #161b22;
+      --table-hover: #1c2128;
+      --code-bg: #1f242c;
+      --code-border: #30363d;
+      --tag-bg: #388bfd26;
+      --tag-color: #58a6ff;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --card-border: #d0d7de;
+        --text-main: #24292f;
+        --text-muted: #57606a;
+        --text-heading: #1f2328;
+        --primary: #0969da;
+        --primary-hover: #0550ae;
+        --accent: #1a7f37;
+        --table-header: #f6f8fa;
+        --table-border: #d0d7de;
+        --table-alt: #ffffff;
+        --table-hover: #f3f4f6;
+        --code-bg: #eff1f3;
+        --code-border: #d0d7de;
+        --tag-bg: #ddf4ff;
+        --tag-color: #0969da;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .nav-bar a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-bar a:hover {
+      color: var(--primary-hover);
+      text-decoration: underline;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: var(--tag-bg);
+      color: var(--tag-color);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-heading);
+      margin-top: 32px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    h1 {
+      font-size: 28px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-top: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    h3 { font-size: 18px; }
+    h4 { font-size: 16px; }
+
+    p {
+      margin-bottom: 16px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--table-border);
+    }
+
+    th {
+      background-color: var(--table-header);
+      color: var(--text-heading);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) {
+      background-color: var(--table-alt);
+    }
+
+    tr:hover {
+      background-color: var(--table-hover);
+    }
+
+    /* Code blocks */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 18px 0;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--code-border);
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    /* Lists */
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 28px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 8px 18px;
+      background: var(--table-alt);
+      color: var(--text-muted);
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    hr {
+      height: 1px;
+      background: var(--card-border);
+      border: none;
+      margin: 32px 0;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav-bar">
+      <a href="index.html">← Back to Documentation Hub</a>
+      <span class="badge">SIH Fleet Sim 2026</span>
+    </div>
+    <article>
+<h1>Stop-and-Wait Traffic Policy: Specification, Implementation & Analysis</h1>
+<h2>Executive Summary</h2>
+<p><code>stop_and_wait</code> (<code>POLICY_STOP_WAIT = &quot;stop_and_wait&quot;</code>) is the foundational baseline coordination policy implemented in this autonomous mobile robot (AMR) fleet simulation codebase (<code>SIH_Fleet_Sim/src/amr.py</code>).</p>
+<p>It represents the traditional, textbook multi-robot pathing strategy: <strong>every robot independently follows its static shortest path (computed via $A^*$), continuously inspects its immediate forward path step, halts if that cell is occupied, and resumes once the cell is cleared.</strong></p>
+<p>Within this repository, <code>stop_and_wait</code> serves a vital engineering role: <strong>it is the strict, unrigged baseline required by the Smart India Hackathon (SIH) acceptance criteria</strong> to evaluate whether advanced decentralized coordination policies (such as <code>BIOS_PIBT.5</code>) achieve the mandated $\ge 20\%$ makespan reduction without inter-robot collisions.</p>
+<hr>
+<h2>1. System Architecture & Where Stop-and-Wait Fits</h2>
+<p>The simulator executes a layered multi-rate control architecture (50 Hz / 10 Hz / 1 Hz). <code>stop_and_wait</code> specifically occupies <strong>Layer 1 (Reactive Traffic Loop)</strong>, stripping away all peer negotiation while retaining Layer 0 (Physical Safety) and Layer 2 (Global Routing).</p>
+<pre><code class="language-">+-------------------------------------------------------------------------+
+|                  Layer 2: Global Path &amp; Task Loop (1 Hz)                |
+|  - Task allocation via decentralized energy auction or static WMS queue |
+|  - Standard A* shortest-path graph planner: (start -&gt; goal)             |
++-------------------------------------------------------------------------+
+                                    |
+                                    v [Waypoints: cell_0, cell_1, cell_2, ...]
++-------------------------------------------------------------------------+
+|                  Layer 1: Reactive Traffic Loop (10 Hz)                 |
+|             *** STOP-AND-WAIT POLICY EXECUTES HERE ***                  |
+|  - Reads immediate next cell: nxt = path[pidx]                          |
+|  - Checks LiDAR detections in nxt cell: hold = _traffic_ahead(sensors)  |
+|  - ZERO intent exchange, ZERO priority ranking, ZERO yield maneuvers   |
++-------------------------------------------------------------------------+
+                                    |
+                                    v [hold flag: True / False]
++-------------------------------------------------------------------------+
+|                Kinematic Follower &amp; Pure Pursuit Controller             |
+|  - If hold == True: set linear velocity v = 0.0, allow heading rotation |
+|  - If hold == False: follow acceleration/braking profile toward target  |
++-------------------------------------------------------------------------+
+                                    |
+                                    v [Actuation(v, omega)]
++-------------------------------------------------------------------------+
+|             Layer 0: Independent Physical Safety Loop (50 Hz)           |
+|  - Certified optical/LiDAR protective field (ISO 3691-4 model)          |
+|  - Dynamic speed limit based on closing clearance: v &lt;= sqrt(2*a*gap)   |
+|  - Absolute authority: unconditionally stops chassis if clearance &lt; stop|
++-------------------------------------------------------------------------+</code></pre>
+<hr>
+<h2>2. Core Operational Principles</h2>
+<ol>
+  <li><strong>Faithful, Non-Strawman Implementation:</strong></li>
+</ol>
+<p>The algorithm is implemented as a legitimate textbook system. Rather than halting for walls or shelving (which would be a strawman), it filters sensor detections strictly against navigable cell space.</p>
+<ol>
+  <li><strong>Local Perception Only (Zero Traffic Messaging):</strong></li>
+</ol>
+<p>Robots do <strong>not</strong> broadcast path intents, time reservation windows, or priority keys. They broadcast only basic telemetry heartbeats (required by the live dashboard and benchmark logger).</p>
+<ol>
+  <li><strong>No Deadlock Detection or Resolution:</strong></li>
+</ol>
+<p>Unlike the <code>BIOS_PIBT</code> protocol family, <code>stop_and_wait</code> does <strong>not</strong> assemble wait-for cycle graphs, does <strong>not</strong> elect cycle losers, does <strong>not</strong> execute retreat maneuvers to passing bays, and does <strong>not</strong> permit creeping through standstill safety bubbles.</p>
+<ol>
+  <li><strong>Independent Safety Guarantee:</strong></li>
+</ol>
+<p>Because Layer 0 (50 Hz physical protective stop) operates below the traffic policy, <code>stop_and_wait</code> guarantees physical safety (zero robot-to-robot or robot-to-rack collisions) even when robots are completely deadlocked nose-to-nose.</p>
+<hr>
+<h2>3. The Exact Algorithm Specification</h2>
+<h3>Mathematical Formulation</h3>
+<p>Let the warehouse floor be discretized into a 2D grid graph $G = (V, E)$ with cell spacing $c_m$ (default: $1.4\text{ m}$).</p>
+<p>For a robot $i$ with state at simulation time $t$:</p>
+<ul>
+  <li>Current continuous pose: $\mathbf{p}_i(t) = (x_i(t), y_i(t), \theta_i(t))$</li>
+  <li>Discretized current cell:</li>
+</ul>
+<p>$$C_{\text{curr}} = \left( \left\lfloor \frac{x_i(t)}{c_m} \right\rfloor, \left\lfloor \frac{y_i(t)}{c_m} \right\rfloor \right)$$</p>
+<ul>
+  <li>Planned discrete path:</li>
+</ul>
+<p>$$\Pi_i = [c^{(0)}, c^{(1)}, c^{(2)}, \dots, c^{(K)}], \quad c^{(k)} \in V$$</p>
+<ul>
+  <li>Next target cell index: $k = \text{pidx}_i$</li>
+  <li>Target cell: $C_{\text{next}} = \Pi_i[k]$</li>
+  <li>Local LiDAR detections set:</li>
+</ul>
+<p>$$\mathcal{D}_i = \{ (x_d, y_d, r_d) \mid \text{detected object } d \}$$</p>
+<h4>Step 1: Traffic Detection Predicate</h4>
+<p>$$\text{TrafficAhead}_i(t) = \begin{cases}</p>
+<p>\text{False}, & \text{if } C_{\text{next}} \text{ is None} \\</p>
+<p>\text{True}, & \text{if } \exists d \in \mathcal{D}_i \text{ such that } \left( \left\lfloor \frac{x_d}{c_m} \right\rfloor, \left\lfloor \frac{y_d}{c_m} \right\rfloor \right) = C_{\text{next}} \\</p>
+<p>\text{False}, & \text{otherwise}</p>
+<p>\end{cases}$$</p>
+<h4>Step 2: Traffic Hold Determination</h4>
+<p>$$\text{hold}_i(t) = \text{TrafficAhead}_i(t)$$</p>
+<h4>Step 3: Pure Pursuit Kinematic Velocity Control</h4>
+<p>Let $d_{\text{rem}}$ be the remaining straight-line distance to the end of the current corridor segment, $a_{\max}$ the maximum acceleration, and $v_{\max}$ the cruise speed limit:</p>
+<p>$$v_{\text{profile}} = \min\left(v_{\max}, \sqrt{2 \cdot a_{\max} \cdot d_{\text{rem}} + v_{\text{turn}}^2}\right)$$</p>
+<p>$$v_{\text{cmd}}(t) = \begin{cases}</p>
+<p>0.0, & \text{if } \text{hold}_i(t) = \text{True} \\</p>
+<p>v_{\text{profile}} \cdot \max(0.2, \cos(\Delta\theta)), & \text{if } \text{hold}_i(t) = \text{False} \text{ and } |\Delta\theta| \le 0.35\text{ rad} \\</p>
+<p>0.0, & \text{if } |\Delta\theta| > 0.35\text{ rad (turn-in-place)}</p>
+<p>\end{cases}$$</p>
+<p>$$\omega_{\text{cmd}}(t) = \text{clamp}\left(k_{\omega} \cdot \Delta\theta, -\omega_{\max}, \omega_{\max}\right)$$</p>
+<h4>Step 4: Layer 0 Protective Safety Filter (ISO 3691-4)</h4>
+<p>Given forward cone clearance $g_{\text{cone}}$ and omni-directional distance $g_{\text{omni}}$:</p>
+<p>$$v_{\text{safe}} = \begin{cases}</p>
+<p>0.0, & \text{if } g_{\text{omni}} \le d_{\text{omni\_stop}} \\</p>
+<p>\min\left(v_{\text{cmd}}, \sqrt{2 \cdot a_{\text{brake}} \cdot (g_{\text{cone}} - d_{\text{margin}})}\right), & \text{otherwise}</p>
+<p>\end{cases}$$</p>
+<p>$$v_{\text{final}} = \max(0.0, v_{\text{safe}})$$</p>
+<hr>
+<h2>4. Production Code Implementation in <code>amr.py</code></h2>
+<p>Below are the exact code implementations directly taken from <code>SIH_Fleet_Sim/src/amr.py</code>:</p>
+<h3>4.1 Traffic Ahead Inspection (<code>_traffic_ahead</code>)</h3>
+<pre><code class="language-python">def _traffic_ahead(self, sensors: Sensors) -&gt; bool:
+    &quot;&quot;&quot;Is the next cell occupied? Stop-and-wait&#x27;s entire decision rule.
+
+    This is the textbook formulation, and implementing it faithfully matters: an
+    over-conservative version that halts for anything within two metres would fail
+    so early that beating it would prove nothing. It reads *detections* rather than
+    clearance, so shelving does not stop it - a baseline that halts in front of
+    every wall is a straw man, not a baseline.
+
+    The pathology it does have is the real one: two robots approaching head-on in a
+    single-file aisle each find the other in their next cell, both stop, and neither
+    has any mechanism to break the tie. That deadlock is the honest result, and it
+    is what the traffic layer in the other two policies exists to solve.
+    &quot;&quot;&quot;
+    nxt = self._next_cell()
+    if nxt is None:
+        return False
+    cm = self.cfg.cell_m
+    for det in sensors.detections:
+        if to_cell((det.x, det.y), cm) == nxt:
+            return True
+    return False</code></pre>
+<h3>4.2 Traffic Loop Branch (<code>_traffic_loop</code>)</h3>
+<pre><code class="language-python">def _traffic_loop(self, t: float, sensors: Sensors,
+                  outbox: list[msg.Message]) -&gt; None:
+    &quot;&quot;&quot;Decide whether to enter the next cell. Advisory information only.&quot;&quot;&quot;
+    self._hold = False
+
+    if self.policy == POLICY_STOP_WAIT:
+        # The weak baseline, implemented faithfully rather than as a straw man:
+        # no intent sharing, no priorities, no negotiation. Stop if something is
+        # in the way and resume when it leaves. It is safe and it deadlocks - and
+        # that deadlock is a real, reported result, not a rigged one.
+        self._hold = self._traffic_ahead(sensors)
+        blocker = self._peer_ahead(sensors) if self._hold else None
+        self._track_block(t, self._hold, blocker)
+        return  # &lt;-- Early exit! Bypasses all PIBT, block locks, and cycle breakers</code></pre>
+<h3>4.3 Kinematic Follower (<code>_follow</code>)</h3>
+<pre><code class="language-python">def _follow(self, t: float, sensors: Sensors) -&gt; Actuation:
+    &quot;&quot;&quot;Pure-pursuit-ish waypoint follower. Shared by every policy, on purpose.&quot;&quot;&quot;
+    spec = self.cfg.robot
+    if self._hold:
+        pos = (sensors.pose[0], sensors.pose[1])
+        # A hold forbids translation, not steering. Turning in place allows the robot
+        # to align toward its target while stopped, preventing actuator windup.
+        if self.path and self.pidx &lt; len(self.path):
+            target = cell_center(self.path[self.pidx], self.cfg.cell_m)
+            err = angle_diff(bearing(pos, target), sensors.pose[2])
+            if abs(err) &gt; 0.08:
+                return Actuation(
+                    0.0, clamp(2.2 * err, -spec.omega_max, spec.omega_max))
+        return Actuation(0.0, 0.0)
+
+    # Translation occurs when hold is False ...
+    # (Computes standard waypoint following and smooth corner braking)</code></pre>
+<h3>4.4 Telemetry Heartbeat Broadcast (<code>_broadcast</code>)</h3>
+<pre><code class="language-python">def _broadcast(self, t: float, sensors: Sensors,
+               outbox: list[msg.Message]) -&gt; None:
+    if self.policy in (POLICY_STOP_WAIT, *CENTRAL_POLICIES):
+        # Heartbeats only. The dashboard has to work for every baseline or the
+        # comparison quietly becomes &quot;with telemetry vs without&quot;, and the manager
+        # needs poses to plan. Neither baseline shares *intent* with peers - that
+        # is our mechanism, and lending it to them would flatter our own result.
+        outbox.append(msg.heartbeat(
+            self.rid, self._next_seq(), t, sensors.pose, sensors.cell,
+            sensors.battery_frac, self.mode, self.state,
+            self.task.tid if self.task else None))
+        self._broadcast_auction_lease(t, outbox)
+        self._broadcast_task_catalog(t, outbox)
+        return  # &lt;-- Excludes priority keys, path intent, and spatial claim tokens</code></pre>
+<hr>
+<h2>5. Flowchart: Execution Lifecycle</h2>
+<pre><code class="language-mermaid">flowchart TD
+    Start([Tick Event: step t]) --&gt; Ingest[Ingest Network Inbox &amp; Expire Stale Leases]
+    Ingest --&gt; TaskLoop[Task Allocation Loop: Run Auction / Claim Tasks]
+    TaskLoop --&gt; RouteCheck{Route Loop Due? 1 Hz}
+    RouteCheck -- Yes --&gt; ReplanCheck{Path Empty or Stalled?}
+    ReplanCheck -- Yes --&gt; RunAStar[Recompute A* Shortest Path]
+    ReplanCheck -- No --&gt; TrafficCheck
+    RunAStar --&gt; TrafficCheck
+    RouteCheck -- No --&gt; TrafficCheck
+
+    TrafficCheck{Traffic Loop Due? 10 Hz}
+    TrafficCheck -- Yes --&gt; QueryNxt[Identify Next Cell: nxt = path pidx]
+    QueryNxt --&gt; DetLoop[Inspect Sensor Detections in nxt Cell]
+    DetLoop --&gt; IsOccupied{Obstacle / Peer in nxt?}
+    IsOccupied -- Yes --&gt; SetHold[Set _hold = True&lt;br/&gt;Record Blocker ID&lt;br/&gt;Set State = ST_BLOCKED]
+    IsOccupied -- No --&gt; ClearHold[Set _hold = False&lt;br/&gt;Clear Blocker ID]
+    TrafficCheck -- No --&gt; Follower
+
+    SetHold --&gt; Follower[Kinematic Follower]
+    ClearHold --&gt; Follower
+
+    Follower --&gt; HoldBranch{Is _hold == True?}
+    HoldBranch -- Yes --&gt; StopTrans[Set Linear Velocity v = 0.0&lt;br/&gt;Allow Alignment Turn-in-Place]
+    HoldBranch -- No --&gt; CruiseTrans[Follow Velocity Profile toward Waypoint]
+
+    StopTrans --&gt; Layer0[Layer 0 Protective Safety Filter 50 Hz]
+    CruiseTrans --&gt; Layer0
+
+    Layer0 --&gt; ClearanceCheck{Clearance &lt;= Safety Margin?}
+    ClearanceCheck -- Yes --&gt; EStop[Enforce Emergency Stop: v = 0.0]
+    ClearanceCheck -- No --&gt; CommCheck
+
+    EStop --&gt; CommCheck{Heartbeat Due? 2 Hz}
+    CommCheck -- Yes --&gt; SendHB[Send Telemetry Heartbeat Only&lt;br/&gt;NO Priority Keys, NO Path Intent]
+    CommCheck -- No --&gt; EndTick([Return Actuation, Outbox])
+    SendHB --&gt; EndTick</code></pre>
+<hr>
+<h2>6. Failure Modes & Pathologies (Why Stop-and-Wait Gridlocks)</h2>
+<p><code>stop_and_wait</code> is completely collision-free in practice due to Layer 0, but it inevitably produces <strong>catastrophic fleet gridlock</strong> in realistic warehouse environments:</p>
+<h3>1. Head-On Single-File Aisle Deadlock</h3>
+<pre><code class="language-">Aisle:  [ Cell 1 ] ---&gt; [ Cell 2 ] &lt;--- [ Cell 3 ]
+             Robot A             Robot B
+         (Wants Cell 2)      (Wants Cell 2)</code></pre>
+<ul>
+  <li><strong>Scenario:</strong> Robot A and Robot B are traveling in opposite directions through a single-file corridor.</li>
+  <li><strong>Pathology:</strong> Robot A reaches Cell 1 and sees Robot B entering or occupying Cell 2; Robot A sets <code>_hold = True</code>. Robot B in Cell 3 sees Robot A in Cell 1 (or heading to Cell 2); Robot B sets <code>_hold = True</code>.</li>
+  <li><strong>Result:</strong> Both robots freeze indefinitely. Because neither robot has a mechanism to yield, reverse into a retreat bay, or communicate priority, the state persists until the simulation cutoff.</li>
+</ul>
+<h3>2. Multi-Way Intersection Livelock & Gridlock</h3>
+<pre><code class="language-">             [ Robot D (S) ]
+                   |
+                   v
+[ Robot A (E) ] -&gt; [ X ] &lt;- [ Robot B (W) ]
+                   ^
+                   |
+             [ Robot C (N) ]</code></pre>
+<ul>
+  <li>When four robots arrive simultaneously at a 4-way junction, each robot's next target cell is either the junction cell $[X]$ or a cell immediately occupied by an oncoming neighbor.</li>
+  <li>Without a deterministic total ordering (such as the 7-tuple priority key used in <code>BIOS_PIBT</code>), all robots hold simultaneously.</li>
+</ul>
+<h3>3. Blind Corridor Entry</h3>
+<ul>
+  <li>Because robots do not share intent or reserve directional corridors ahead of time, a robot enters a long 15-cell aisle even when another robot is already 10 cells deep traveling in reverse. They only realize the conflict when their local LiDAR ranges overlap.</li>
+</ul>
+<hr>
+<h2>7. Empirical Benchmark Results (Checked-in Project Data)</h2>
+<p>In the project's rigorous acceptance benchmark (<code>sih_acceptance_overlap</code> scenario, 13-cell chokepoint, 1200 s cutoff), <code>stop_and_wait</code> was benchmarked directly against <code>BIOS_PIBT.5</code> across 90 pinned random seeds (Seeds 0–29):</p>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>Fleet Size</th>
+    <th><code>stop_and_wait</code> Completion</th>
+    <th><code>BIOS_PIBT.5</code> Completion</th>
+    <th>Candidate Median Makespan</th>
+    <th>Measured Min. Speedup Bound</th>
+    <th>Inter-Robot Contacts</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>4 AMRs</strong></td>
+      <td><strong>0 / 30 (0.0%)</strong></td>
+      <td><strong>30 / 30 (100%)</strong></td>
+      <td>384.03 s</td>
+      <td><strong>$\ge$ 63.64%</strong></td>
+      <td><strong>0</strong></td>
+    </tr>
+    <tr>
+      <td><strong>6 AMRs</strong></td>
+      <td><strong>0 / 30 (0.0%)</strong></td>
+      <td><strong>30 / 30 (100%)</strong></td>
+      <td>554.70 s</td>
+      <td><strong>$\ge$ 51.17%</strong></td>
+      <td><strong>0</strong></td>
+    </tr>
+    <tr>
+      <td><strong>8 AMRs</strong></td>
+      <td><strong>0 / 30 (0.0%)</strong></td>
+      <td><strong>30 / 30 (100%)</strong></td>
+      <td>721.33 s</td>
+      <td><strong>$\ge$ 34.16%</strong></td>
+      <td><strong>0</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Total</strong></td>
+      <td><strong>0 / 90 (0.0%)</strong></td>
+      <td><strong>90 / 90 (100%)</strong></td>
+      <td>—</td>
+      <td><strong>Passed Gate ($\ge 20\%$)</strong></td>
+      <td><strong>0</strong></td>
+    </tr>
+  </tbody>
+</table></div>
+<p><em>Note:</em> In 100% of the runs, <code>stop_and_wait</code> reached the maximum 1,200-second cutoff due to head-on deadlock inside the single-file chokepoint, proving conclusively why decentralized negotiation protocols (<code>BIOS_PIBT</code>) are essential.</p>
+<hr>
+<h2>8. Comparative Matrix: <code>stop_and_wait</code> vs. <code>BIOS_PIBT.5</code></h2>
+<div class="table-wrapper"><table>
+  <thead><tr>
+    <th>Architectural Dimension</th>
+    <th>🛑 Traditional <code>stop_and_wait</code></th>
+    <th>🚀 <code>BIOS_PIBT.5</code> (Our Proposed Solution)</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>P2P Wire Protocol</strong></td>
+      <td>Bare heartbeats only (ID, pose, cell)</td>
+      <td>Idempotent heartbeats + 7-tuple priority key + intent window</td>
+    </tr>
+    <tr>
+      <td><strong>Next-Cell Coordination</strong></td>
+      <td>Reactive single-cell LiDAR detection</td>
+      <td>Replicated token lease + 2-phase destination-cell commit gate</td>
+    </tr>
+    <tr>
+      <td><strong>Aisle Chokepoints</strong></td>
+      <td>Enters blindly; halts on contact</td>
+      <td>Directional corridor waves + single-file entrance leases</td>
+    </tr>
+    <tr>
+      <td><strong>Deadlock Handling</strong></td>
+      <td>None (halts indefinitely)</td>
+      <td>Replicated PIBT resolution + deterministic yield/retreat maneuvers</td>
+    </tr>
+    <tr>
+      <td><strong>Safety Barrier</strong></td>
+      <td>50 Hz local ISO 3691-4 optical stop</td>
+      <td>50 Hz local ISO 3691-4 optical stop + clearance-increasing creep</td>
+    </tr>
+    <tr>
+      <td><strong>Benchmark Completion</strong></td>
+      <td><strong>0%</strong> (0/90 completed before 1200 s cutoff)</td>
+      <td><strong>100%</strong> (90/90 completed; 34%–68% makespan reduction)</td>
+    </tr>
+    <tr>
+      <td><strong>Single Point of Failure</strong></td>
+      <td>Zero (fully autonomous on each AMR)</td>
+      <td>Zero (fully autonomous on each AMR)</td>
+    </tr>
+  </tbody>
+</table></div>
+    </article>
+    <footer>
+      <span>Generated for SIH Fleet Sim AMR Platform</span>
+      <a href="index.html">All Documentation</a>
+    </footer>
+  </div>
+</body>
+</html>
