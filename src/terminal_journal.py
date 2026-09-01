@@ -25,6 +25,27 @@ def _canonical(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def _fsync_directory(directory: Path) -> None:
+    """Harden the rename itself, where the platform allows it.
+
+    The snapshot is already fsynced and ``os.replace`` is atomic, so this only buys
+    durability for the *rename* across power loss - and it is a POSIX idiom.  Windows
+    cannot open a directory as a file descriptor at all, so the call raises
+    ``PermissionError`` there; treating that as a failed write would fail every journal
+    write on the demo machine.  Unavailable, not broken.
+    """
+    try:
+        directory_fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(directory_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(directory_fd)
+
+
 class TerminalJournal:
     """Persist only the newest verified terminal generation for each WMS task ID.
 
@@ -119,11 +140,7 @@ class TerminalJournal:
                 os.fsync(handle.fileno())
             os.replace(temporary_name, self.path)
             temporary_name = None
-            directory_fd = os.open(self.path.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            _fsync_directory(self.path.parent)
             self.stats["writes"] += 1
         except (OSError, TerminalJournalError) as exc:
             self.stats["write_failures"] += 1
