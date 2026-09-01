@@ -238,6 +238,7 @@ class AMRBrain:
         self._bid_seen_t: dict[tuple[str, int, str], float] = {}
         self._bid_opened: dict[str, float] = {}
         self._last_lease_broadcast = -1e9
+        self._active_task_lease_s = self.cfg.traffic.auction_lease_s
         self._v3_round_started: float | None = None
         self._remote_winner_since: float | None = None
         self._remote_winner_fingerprint: tuple[
@@ -992,6 +993,20 @@ class AMRBrain:
             if target in occupied:
                 continue
             tx, ty = cell_center(target, self.cfg.cell_m)
+            # The destination centre being farther away is insufficient: a straight
+            # segment can first move *toward* an off-centre neighbour and only then
+            # open the gap. Layer 0 correctly refuses that first centimetre, leaving
+            # the recovery state latched on a geometrically unreachable target. Keep
+            # only segments whose closest point to every nearby body is the current
+            # pose (within numerical tolerance), matching the continuous safety
+            # predicate that will execute the step.
+            if any(
+                segment_point_distance(
+                    (px, py), (tx, ty), (det.x, det.y)
+                ) < current_distance - 1e-6
+                for det, current_distance in close
+            ):
+                continue
             gains = [
                 math.hypot(det.x - tx, det.y - ty) - current_distance
                 for det, current_distance in close
@@ -2917,6 +2932,7 @@ class AMRBrain:
                 elapsed_s=round(t - self._task_started_t, 2),
                 battery_pct=round(100.0 * sensors.battery_frac, 1))
             self.task = None
+            self._active_task_lease_s = self.cfg.traffic.auction_lease_s
             self.state = ST_IDLE
             self._priority_grace_since = None
             self._priority_grace_until = -1e9
@@ -3156,7 +3172,8 @@ class AMRBrain:
             return
 
         winner_cost, winner = min(bids, key=lambda item: (item[0], item[1]))
-        lease_until = t + self._task_lease_duration(target)
+        lease_until = t + self._task_lease_duration(
+            target, start=sensors.cell)
         claim = (target.auction_epoch, winner_cost, winner, lease_until)
         self._record_task_claim(target.tid, claim)
         self._bid_opened.pop(target.tid, None)
@@ -3474,14 +3491,23 @@ class AMRBrain:
         for rid, tid, cost, epoch in assignments:
             task_record = self.open_tasks.get(tid)
             lease_until = t + (
-                self._task_lease_duration(task_record)
+                self._task_lease_duration(
+                    task_record,
+                    start=sensors.cell if rid == self.rid else None)
                 if task_record is not None
                 else self.cfg.traffic.auction_lease_s)
-            if self.circulation.enabled:
+            if (self.circulation.enabled
+                    and (rid == self.rid
+                         or self._replicate_remote_batch_claims())):
                 # On the strongly connected one-way graph, replicated greedy
                 # matching fills the batch in one round. Recording its remote slots
                 # supplies immediate station backpressure; the actual owner's AWARD
-                # refreshes the lease, and a disagreement expires harmlessly.
+                # refreshes the lease. Under packet loss or a radio hole, however,
+                # bid views are intentionally incomplete. Recording a locally
+                # inferred *remote* winner then creates a phantom reservation for a
+                # robot that may have selected another task in its own view. Only the
+                # signed award from that robot may establish degraded-link ownership;
+                # a self-win remains safe to claim immediately.
                 self._record_task_claim(tid, (epoch, cost, rid, lease_until))
             if rid == self.rid:
                 won = (
@@ -3571,6 +3597,13 @@ class AMRBrain:
             active_task=future_context[0] if future_context else None,
             active_epoch=future_context[1] if future_context else 0,
             bundle_version=future_context[2] if future_context else 0))
+
+    def _replicate_remote_batch_claims(self) -> bool:
+        """Whether an inferred remote winner is reliable enough to reserve locally."""
+        return not (
+            self.policy == POLICY_BIOS_PIBT_V6
+            and (self.cfg.net.loss > 0.0 or self.cfg.net.dead_zones)
+        )
 
     def _v5_reposition_stranded_bidder(
             self, t: float, sensors: Sensors, available: dict[str, Task],
@@ -4173,10 +4206,20 @@ class AMRBrain:
         old = self._task_claims.get(tid)
         if old is not None:
             same_owner = (old[0], old[1], old[2]) == (claim[0], claim[1], claim[2])
-            if old[3] > claim[3] and not same_owner:
+            if same_owner:
+                # Reordered duplicate renewals must never shorten an established
+                # lease. Returning False also prevents a stale peer nomination from
+                # being mistaken for a newly consumed award.
+                if old[3] >= claim[3]:
+                    return False
+            elif not self._claim_wins(claim, old):
                 return False
-            if not same_owner and not self._claim_wins(claim, old):
-                return False
+            # Expiry time is not part of auction authority. The previous code let a
+            # losing owner keep working whenever its self-renewed lease happened to
+            # expire milliseconds after the deterministic winner's award. That made
+            # two AMRs execute one task indefinitely after a partition healed. Epoch,
+            # bid cost and robot ID select the owner; TTL only bounds recovery when
+            # that selected owner disappears.
             if (old[2] == self.rid and claim[2] != self.rid
                     and self.task is not None and self.task.tid == tid):
                 self._drop_current_task()
@@ -4204,19 +4247,56 @@ class AMRBrain:
             task.lease_until = claim[3]
         return True
 
-    def _task_lease_duration(self, task: Task) -> float:
-        """Return bounded per-task backoff for transient asymmetric loss."""
+    def _task_lease_duration(self, task: Task,
+                             start: Cell | None = None) -> float:
+        """Return a bounded owner lease for loss and mapped radio holes.
+
+        Epoch backoff handles repeated asymmetric packet loss. A newly selected owner
+        may additionally protect a route that physically crosses a configured dead
+        zone for the predicted task duration plus a fixed congestion allowance. The
+        latter is deliberately computed only from the owner's current pose: peers do
+        not invent long reservations for remote winners, and the transmitted TTL is
+        bounded again on receipt.
+        """
         base = self.cfg.traffic.auction_lease_s
-        if (self.policy != POLICY_BIOS_PIBT_V6
-                or self.cfg.net.loss <= 0.0
-                or not self.cfg.net.dead_zones
-                or task.auction_epoch < self.cfg.traffic.v6_churn_epoch):
-            return base
-        failed_epochs = task.auction_epoch - self.cfg.traffic.v6_churn_epoch + 1
+        duration = base
+        if (self.policy == POLICY_BIOS_PIBT_V6
+                and self.cfg.net.loss > 0.0
+                and self.cfg.net.dead_zones
+                and task.auction_epoch >= self.cfg.traffic.v6_churn_epoch):
+            failed_epochs = (
+                task.auction_epoch - self.cfg.traffic.v6_churn_epoch + 1)
+            duration = min(
+                self.cfg.traffic.v6_churn_lease_max_s,
+                base + failed_epochs * self.cfg.traffic.v6_churn_lease_step_s,
+            )
+
+        if (self.policy != POLICY_BIOS_PIBT_V6 or start is None
+                or not self.cfg.net.dead_zones):
+            return duration
+        approach = astar(self.env, start, task.pick, extra_cost=self.penalty)
+        loaded = astar(self.env, task.pick, task.drop, extra_cost=self.penalty)
+        if (not approach or not loaded
+                or not self._route_crosses_radio_dead_zone(approach + loaded)):
+            return duration
+        estimate = self._task_estimate(task, start, extra_cost=self.penalty)
+        if estimate is None:
+            return duration
         return min(
-            self.cfg.traffic.v6_churn_lease_max_s,
-            base + failed_epochs * self.cfg.traffic.v6_churn_lease_step_s,
+            self.cfg.traffic.v6_dead_zone_lease_max_s,
+            max(duration,
+                estimate[1] + self.cfg.traffic.v6_dead_zone_lease_margin_s),
         )
+
+    def _max_incoming_task_lease_s(self) -> float:
+        """Bound authenticated peer lease TTLs before storing them locally."""
+        cap = max(
+            2.0 * self.cfg.traffic.auction_lease_s,
+            self.cfg.traffic.v6_churn_lease_max_s,
+        )
+        if self.policy == POLICY_BIOS_PIBT_V6 and self.cfg.net.dead_zones:
+            cap = max(cap, self.cfg.traffic.v6_dead_zone_lease_max_s)
+        return cap
 
     @staticmethod
     def _claim_wins(new: tuple[int, float, str, float],
@@ -4244,6 +4324,23 @@ class AMRBrain:
         for tid, claim in list(self._task_claims.items()):
             if claim[3] > t:
                 continue
+            # A fresh authenticated heartbeat that names the same active task is
+            # independent evidence that an already-established owner is alive and
+            # working. Extend only that existing claim; a heartbeat can never create
+            # ownership. Once the owner fails or becomes unreachable this evidence
+            # goes stale and normal bounded expiry/re-auction resumes.
+            owner = self.peers.get(claim[2])
+            if (self.policy == POLICY_BIOS_PIBT_V6
+                    and owner is not None
+                    and t - owner.last_seen <= self._peer_stale_after_s()
+                    and owner.task_id == tid
+                    and owner.state not in (ST_IDLE, ST_CHARGING)):
+                renewed = (
+                    claim[0], claim[1], claim[2],
+                    t + self.cfg.traffic.auction_lease_s,
+                )
+                self._record_task_claim(tid, renewed)
+                continue
             if self.task is not None and self.task.tid == tid \
                     and claim[2] == self.rid:
                 self._drop_current_task()
@@ -4266,6 +4363,7 @@ class AMRBrain:
 
     def _drop_current_task(self) -> None:
         self.task = None
+        self._active_task_lease_s = self.cfg.traffic.auction_lease_s
         self.goal = None
         self.path = []
         self.path_times = []
@@ -4280,6 +4378,11 @@ class AMRBrain:
                      bid_cost: float | None = None) -> None:
         self._ensure_task_identity(task)
         self.task = task
+        self._active_task_lease_s = (
+            self.cfg.traffic.auction_lease_s
+            if lease_until is None
+            else max(self.cfg.traffic.auction_lease_s, lease_until - t)
+        )
         if lease_until is not None:
             if bid_cost is None:
                 bid_cost = self._bids.get(task.tid, {}).get(
@@ -4596,7 +4699,7 @@ class AMRBrain:
         if claim is None or claim[2] != self.rid:
             return
         self._last_lease_broadcast = t
-        lease_until = t + self._task_lease_duration(self.task)
+        lease_until = t + self._active_task_lease_s
         self._record_task_claim(
             self.task.tid, (claim[0], claim[1], self.rid, lease_until))
         outbox.append(msg.award(
@@ -4961,11 +5064,11 @@ class AMRBrain:
                 cost = float(b.get("cost", 1e9))
                 if b.get("ttl") is not None:
                     lease_until = t + min(float(b["ttl"]),
-                                          2.0 * self.cfg.traffic.auction_lease_s)
+                                          self._max_incoming_task_lease_s())
                 elif b.get("u") is not None:  # version-0 trace compatibility
                     lease_until = t + max(0.0, min(
                         float(b["u"]) - m.t,
-                        2.0 * self.cfg.traffic.auction_lease_s))
+                        self._max_incoming_task_lease_s()))
                 else:
                     lease_until = t + self.cfg.traffic.auction_lease_s
                 task = self.open_tasks.get(tid)

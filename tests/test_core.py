@@ -106,6 +106,20 @@ def test_v6_prediction_falls_back_to_v5_routes_in_a_dead_zone():
     assert brain._v6_prediction_costs(0.0, (0, 2)) == {}
 
 
+def test_v6_degraded_auction_never_caches_an_inferred_remote_winner():
+    cfg = replace(
+        DEFAULT,
+        net=replace(DEFAULT.net, loss=0.05,
+                    dead_zones=((10.0, 10.0, 3.0),)),
+    )
+    brain = AMRBrain("A", open_floor(20, 20), cfg,
+                     policy=POLICY_BIOS_PIBT_V6)
+
+    assert not brain._replicate_remote_batch_claims()
+    assert AMRBrain("A", open_floor(20, 20), DEFAULT,
+                    policy=POLICY_BIOS_PIBT_V6)._replicate_remote_batch_claims()
+
+
 def test_v6_charger_selection_avoids_a_fresh_busy_dock():
     env = open_floor(20, 15)
     brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)

@@ -277,7 +277,16 @@ function setViewMode(mode) {
   el('view2dBtn').classList.toggle('active', !is3d);
   el('view3dBtn').setAttribute('aria-pressed', String(is3d));
   el('view2dBtn').setAttribute('aria-pressed', String(!is3d));
-  if (is3d) App.twin.resize();
+  if (is3d) {
+    App.twin.resize();
+  } else if (App.data) {
+    // The diagnostic canvas is display:none while the 3D twin is active, so its
+    // startup resize legitimately measures 0 × 0. Re-measure only after revealing
+    // it and rebuild the cached floor at the real viewport size; drawing the hidden
+    // zero-size cache raises InvalidStateError in Chromium.
+    App.view.resize(App.data.map, App.data.meta.cell_m);
+    App.staticLayer = buildStaticLayer(App.view, App.data.map, App.imgs);
+  }
   if (App.data) draw();
 }
 
@@ -616,7 +625,8 @@ function draw() {
       ctx.rotate(App.view.camRotation);
       ctx.translate(-App.view.cssW / 2, -App.view.cssH / 2);
     }
-    if ((App.cameraMode === 'overview' || App.cameraMode === 'tactical') && App.staticLayer) {
+    if ((App.cameraMode === 'overview' || App.cameraMode === 'tactical')
+        && App.staticLayer?.width > 0 && App.staticLayer?.height > 0) {
       ctx.drawImage(App.staticLayer, 0, 0, App.view.cssW, App.view.cssH);
     } else {
       renderStaticFloor(ctx, App.view, App.data.map, App.imgs);

@@ -235,7 +235,20 @@ class World:
         # centreline. Offset them toward the warehouse boundary so a worker is visibly
         # present without occupying the same geometric lane as a robot.
         offset_x = offset_y = 0.0
-        lane_offset = min(0.95, cm * 0.68)
+        # A marked pedestrian lane must sit outside the AMR's *protective* field,
+        # not merely outside its physical footprint.  The old fixed 0.95 m offset
+        # left only 0.30 m between the two bodies, inside the configured 0.45 m omni
+        # stop field. A worker walking harmlessly beside the logistics lane therefore
+        # safety-stopped every passing AMR for the entire patrol. Keep a measured
+        # reserve beyond the scanner field while retaining enough boundary clearance
+        # for the pedestrian footprint.
+        pedestrian_radius = 0.30
+        required_offset = (
+            self.cfg.robot.radius_m + pedestrian_radius
+            + self.cfg.robot.omni_stop_m + 0.12
+        )
+        boundary_limit = 1.5 * cm - pedestrian_radius - 0.05
+        lane_offset = min(required_offset, boundary_limit)
         if all(cell[1] == 1 for cell in expanded):
             offset_y = -lane_offset
         elif all(cell[1] == self.env.height - 2 for cell in expanded):
@@ -249,7 +262,9 @@ class World:
              (cell[1] + 0.5) * cm + offset_y)
             for cell in expanded
         ]
-        h = HumanState(hid, pts, speed=speed, x=pts[0][0], y=pts[0][1], idx=1 % len(pts))
+        h = HumanState(
+            hid, pts, speed=speed, radius=pedestrian_radius,
+            x=pts[0][0], y=pts[0][1], idx=1 % len(pts))
         self.humans[hid] = h
         return h
 

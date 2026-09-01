@@ -245,6 +245,12 @@ class TrafficSpec:
     v6_churn_epoch: int = 8
     v6_churn_lease_step_s: float = 2.0
     v6_churn_lease_max_s: float = 40.0
+    # A robot can remain legitimately unreachable while its physical route crosses a
+    # mapped radio hole. Size that *owner's* lease from the predicted task duration
+    # plus a congestion allowance, then cap it so a crashed owner is still reclaimed.
+    # Ordinary routes and the non-V6 allocators retain the 20 s lease above.
+    v6_dead_zone_lease_margin_s: float = 60.0
+    v6_dead_zone_lease_max_s: float = 180.0
     v6_catalog_gossip_s: float = 1.0
     v6_bid_refresh_s: float = 0.6
     v6_bid_cache_s: float = 0.8
