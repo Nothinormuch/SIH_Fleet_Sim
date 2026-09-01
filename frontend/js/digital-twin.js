@@ -7,10 +7,10 @@ const PALETTE = {
   amber: 0xf5b843,
   violet: 0xb78cff,
   rose: 0xff6577,
-  navy: 0x071019,
-  floor: 0x111b26,
-  rack: 0x33485b,
-  steel: 0x6f8498,
+  navy: 0x050403,
+  floor: 0x161209,
+  rack: 0x3a3020,
+  steel: 0x8a7a5c,
 };
 
 const ROBOT_COLOURS = [PALETTE.cyan, PALETTE.green, PALETTE.amber, PALETTE.violet,
@@ -29,22 +29,22 @@ function disposeObject(root) {
   });
 }
 
-function makeLabel(text, colour = '#eaf6ff', compact = false) {
+function makeLabel(text, colour = '#b79a5b', compact = false) {
   const canvas = document.createElement('canvas');
   canvas.width = compact ? 256 : 512;
   canvas.height = compact ? 72 : 96;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'rgba(5, 13, 22, .88)';
+  ctx.fillStyle = 'rgba(9, 7, 5, .9)';
   ctx.strokeStyle = colour;
-  ctx.lineWidth = 3;
-  const radius = 16;
+  ctx.lineWidth = 2;
+  const radius = 0;
   ctx.beginPath();
   ctx.roundRect(3, 3, canvas.width - 6, canvas.height - 6, radius);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `700 ${compact ? 30 : 34}px Inter, system-ui, sans-serif`;
+  ctx.fillStyle = '#e8dcbd';
+  ctx.font = `${compact ? 28 : 32}px Georgia, 'Times New Roman', serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
@@ -65,8 +65,8 @@ export class DigitalTwin {
     this.canvas = canvas;
     this.onSelect = onSelect;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x071019);
-    this.scene.fog = new THREE.FogExp2(0x071019, 0.009);
+    this.scene.background = new THREE.Color(0x090705);
+    this.scene.fog = new THREE.FogExp2(0x090705, 0.0085);
     this.camera = new THREE.PerspectiveCamera(43, 1, 0.1, 1000);
     this.camera.position.set(18, 25, 24);
     this.renderer = new THREE.WebGLRenderer({canvas, antialias: true, powerPreference: 'high-performance'});
@@ -75,7 +75,10 @@ export class DigitalTwin {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    // The shell puts a vignette over the whole stage, so the twin has to come out
+    // of the renderer a touch hotter than it used to or the floor edges disappear
+    // into it entirely.
+    this.renderer.toneMappingExposure = 1.18;
 
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
@@ -105,9 +108,9 @@ export class DigitalTwin {
   }
 
   _addLighting() {
-    const hemi = new THREE.HemisphereLight(0xbfe8ff, 0x15202c, 2.2);
+    const hemi = new THREE.HemisphereLight(0xf3e3bd, 0x1a140c, 2.1);
     this.scene.add(hemi);
-    const key = new THREE.DirectionalLight(0xffffff, 3.4);
+    const key = new THREE.DirectionalLight(0xfff3d8, 3.3);
     key.position.set(-18, 34, 16);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -116,7 +119,7 @@ export class DigitalTwin {
     key.shadow.camera.top = 35;
     key.shadow.camera.bottom = -35;
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x35c6f4, 1.2);
+    const rim = new THREE.DirectionalLight(0x5fa8b8, 1.15);
     rim.position.set(22, 14, -22);
     this.scene.add(rim);
   }
@@ -142,13 +145,75 @@ export class DigitalTwin {
     for (const robot of first.robots) this._ensureRobot(robot.id);
     for (const human of first.humans || []) this._ensureHuman(human.id);
     this.resize();
-    const widthM = this.map.width * this.meta.cell_m;
-    const heightM = this.map.height * this.meta.cell_m;
-    const span = Math.max(widthM, heightM);
-    this.camera.position.set(span * .72, span * .82, span * .78);
-    this.controls.target.set(0, 0, 0);
-    this.controls.maxDistance = span * 2.8;
+    this.frameFloor();
+  }
+
+  /* Place the camera and make OrbitControls accept the placement.
+   *
+   * With damping on, OrbitControls keeps a decaying rotation delta and re-applies
+   * it on every update. Assigning camera.position is therefore not enough: the
+   * controls re-derive their spherical coordinates from the new position, add the
+   * leftover delta, and spend the next second dragging the camera off toward
+   * wherever the last gesture was heading - which looks exactly like the reframe
+   * silently failing. Running a single update with damping switched off is what
+   * clears the delta (that is the branch where OrbitControls zeroes it), after
+   * which the placement sticks.
+   */
+  _commitCamera() {
+    const damping = this.controls.enableDamping;
+    this.controls.enableDamping = false;
     this.controls.update();
+    this.controls.enableDamping = damping;
+  }
+
+  /* Put the whole warehouse in the frame, and most of the frame.
+   *
+   * The camera used to sit at a fixed multiple of the map span - numbers tuned
+   * when the 3D view was a panel a third of the page wide. Now that it is the
+   * whole screen those same numbers leave the warehouse sitting in the middle of
+   * a black field like a postage stamp, which is exactly the impression a demo of
+   * a physical system cannot afford to give.
+   *
+   * So solve for it instead of guessing: find the distance at which the floor
+   * fills the frustum on each axis and take the binding one. Two things the
+   * obvious version of this gets wrong, and both were in here - the floor is not
+   * seen square-on, so it is the azimuth-rotated bounding box that has to fit,
+   * not the width; and the depth axis foreshortens by sin(elevation), so fitting
+   * it at full length pushes the camera much further back than it needs to be.
+   */
+  frameFloor(margin = 1.06) {
+    if (!this.map || !this.meta) return;
+    const widthM = this.map.width * this.meta.cell_m;
+    const depthM = this.map.height * this.meta.cell_m;
+
+    // Elevation and azimuth are chosen, not fitted. 45 degrees up is enough to
+    // read the aisles without flattening the racks, and 20 degrees off the short
+    // axis gives depth without turning the floor corner-on - which is the state
+    // the old camera was stuck in, and the reason it needed to sit so far back:
+    // seen from a corner, a 31 x 21 m floor presents its 37 m diagonal.
+    const elevation = Math.PI * 0.25;
+    const azimuth = Math.PI * 0.11;
+    const ca = Math.abs(Math.cos(azimuth));
+    const sa = Math.abs(Math.sin(azimuth));
+    const across = widthM * ca + depthM * sa;   // screen-horizontal footprint
+    const along = widthM * sa + depthM * ca;    // footprint running into the screen
+
+    const vFov = this.camera.fov * Math.PI / 180;
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(0.5, this.camera.aspect));
+    // The depth axis foreshortens by sin(elevation); the racks stand up out of
+    // the floor plane, so allow a few metres of headroom on top of it.
+    const projected = along * Math.sin(elevation) + 3.5;
+    const distance = Math.max((projected / 2) / Math.tan(vFov / 2),
+                              (across / 2) / Math.tan(hFov / 2)) * margin;
+
+    const ground = Math.cos(elevation) * distance;
+    this.camera.position.set(ground * Math.sin(azimuth),
+                             Math.sin(elevation) * distance,
+                             ground * Math.cos(azimuth));
+    this.controls.target.set(0, 0, 0);
+    this.controls.minDistance = Math.max(3.5, distance * 0.1);
+    this.controls.maxDistance = distance * 2.8;
+    this._commitCamera();
   }
 
   resize() {
@@ -156,17 +221,39 @@ export class DigitalTwin {
     const height = Math.max(1, this.canvas.clientHeight);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    // Re-apply the pixel ratio, not just the size. Moving the window to a display
+    // with a different scale factor changes devicePixelRatio without changing the
+    // CSS size, and a renderer still holding the old ratio draws a buffer smaller
+    // than the canvas it is stretched across - which looks like a soft, badly
+    // rendered 3D view and reads as a weak engine.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     this.renderer.setSize(width, height, false);
   }
 
   setCameraMode(mode) {
+    const previous = this.cameraMode;
     this.cameraMode = mode;
     this.controls.enabled = mode === 'overview' || mode === 'tactical';
+    // Coming back to Orbit from a robot-locked camera re-frames the floor. Without
+    // it the free camera reappears wherever the chase cam abandoned it, which
+    // feels like the view broke rather than like it returned.
+    if (mode === 'overview' && previous !== 'overview') this.frameFloor();
     if (mode === 'tactical' && this.map && this.meta) {
-      const span = Math.max(this.map.width, this.map.height) * this.meta.cell_m;
-      this.camera.position.set(span * .08, span * 1.18, span * .48);
+      // Straight down, fitted the same way as Orbit rather than at a fixed
+      // multiple of the span - a tactical view that crops the aisles it exists to
+      // show is worse than no tactical view.
+      const widthM = this.map.width * this.meta.cell_m;
+      const depthM = this.map.height * this.meta.cell_m;
+      const vFov = this.camera.fov * Math.PI / 180;
+      const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(0.5, this.camera.aspect));
+      const height = Math.max((depthM / 2) / Math.tan(vFov / 2),
+                              (widthM / 2) / Math.tan(hFov / 2)) * 1.02;
+      // A few degrees off plumb. Dead vertical flattens the racks into their own
+      // footprints and you lose every cue about which way a robot is facing.
+      this.camera.position.set(0, height, depthM * .14);
       this.controls.target.set(0, 0, 0);
-      this.controls.update();
+      this.controls.maxDistance = height * 2.4;
+      this._commitCamera();
     }
   }
 
@@ -180,7 +267,7 @@ export class DigitalTwin {
     const factor = delta > 0 ? .86 : 1.16;
     direction.multiplyScalar(factor);
     this.camera.position.copy(this.controls.target).add(direction);
-    this.controls.update();
+    this._commitCamera();
   }
 
   _toWorld(xMetres, yMetres, height = 0) {
@@ -206,7 +293,7 @@ export class DigitalTwin {
     this.world.add(floor);
 
     const grid = new THREE.GridHelper(Math.max(widthM, heightM) * 1.05,
-      Math.max(this.map.width, this.map.height), 0x29465e, 0x1a2c3b);
+      Math.max(this.map.width, this.map.height), 0x4b3d2a, 0x231c12);
     grid.position.y = .012;
     grid.material.transparent = true;
     grid.material.opacity = .55;
@@ -255,10 +342,10 @@ export class DigitalTwin {
     this.world.add(uprights, shelves, cartons);
 
     for (const [x, y] of this.map.stations || []) {
-      this.world.add(this._makePad(x, y, 0x3b82f6, 'PICK / DROP'));
+      this.world.add(this._makePad(x, y, 0x5f8fb0, 'PICK / DROP'));
     }
     for (const [x, y] of this.map.docks || []) {
-      this.world.add(this._makePad(x, y, 0x22c55e, 'CHARGE'));
+      this.world.add(this._makePad(x, y, 0x7d9a4e, 'CHARGE'));
     }
 
     for (const zone of this.meta.dead_zones || []) {
@@ -291,7 +378,7 @@ export class DigitalTwin {
 
     const boundary = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(widthM + .8, .2, heightM + .8)),
-      new THREE.LineBasicMaterial({color: 0x41647f, transparent: true, opacity: .8}),
+      new THREE.LineBasicMaterial({color: 0x6d5733, transparent: true, opacity: .8}),
     );
     boundary.position.y = .02;
     this.world.add(boundary);
@@ -364,13 +451,13 @@ export class DigitalTwin {
     group.add(base);
     const top = new THREE.Mesh(
       new THREE.BoxGeometry(.68, .22, .66),
-      new THREE.MeshStandardMaterial({color: 0x10202c, roughness: .28, metalness: .68}),
+      new THREE.MeshStandardMaterial({color: 0x1c1710, roughness: .28, metalness: .68}),
     );
     top.position.y = .43;
     top.castShadow = true;
     top.userData.robotId = id;
     group.add(top);
-    const wheelMaterial = new THREE.MeshStandardMaterial({color: 0x05090d, roughness: .76, metalness: .28});
+    const wheelMaterial = new THREE.MeshStandardMaterial({color: 0x0a0806, roughness: .76, metalness: .28});
     const wheels = [];
     for (const [x, z] of [[-.43, -.25], [.43, -.25], [-.43, .25], [.43, .25]]) {
       const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.105, .105, .09, 18), wheelMaterial);
@@ -383,26 +470,26 @@ export class DigitalTwin {
     }
     const bumper = new THREE.Mesh(
       new THREE.BoxGeometry(.66, .13, .08),
-      new THREE.MeshStandardMaterial({color: 0x182d3b, roughness: .5, metalness: .54}),
+      new THREE.MeshStandardMaterial({color: 0x2a2318, roughness: .5, metalness: .54}),
     );
     bumper.position.set(0, .24, -.49);
     bumper.userData.robotId = id;
     group.add(bumper);
     const sensor = new THREE.Mesh(
       new THREE.BoxGeometry(.48, .08, .09),
-      new THREE.MeshStandardMaterial({color: 0x081019, emissive: colour, emissiveIntensity: .95}),
+      new THREE.MeshStandardMaterial({color: 0x0b0805, emissive: colour, emissiveIntensity: .95}),
     );
     sensor.position.set(0, .47, -.36);
     sensor.userData.robotId = id;
     group.add(sensor);
     const mast = new THREE.Mesh(
       new THREE.CylinderGeometry(.035, .045, .19, 16),
-      new THREE.MeshStandardMaterial({color: 0x7d91a1, roughness: .3, metalness: .78}),
+      new THREE.MeshStandardMaterial({color: 0x8a7c60, roughness: .3, metalness: .78}),
     );
     mast.position.set(0, .62, .08);
     const lidar = new THREE.Mesh(
       new THREE.CylinderGeometry(.13, .13, .085, 24),
-      new THREE.MeshStandardMaterial({color: 0x071019, emissive: colour, emissiveIntensity: .38,
+      new THREE.MeshStandardMaterial({color: 0x0b0805, emissive: colour, emissiveIntensity: .38,
         roughness: .18, metalness: .64}),
     );
     lidar.position.set(0, .75, .08);
@@ -413,7 +500,7 @@ export class DigitalTwin {
     );
     beacon.position.set(.24, .6, .15);
     group.add(mast, lidar, beacon);
-    const deckRailMaterial = new THREE.MeshStandardMaterial({color: 0x8da2b5, roughness: .34, metalness: .78});
+    const deckRailMaterial = new THREE.MeshStandardMaterial({color: 0x9a8a6a, roughness: .34, metalness: .78});
     for (const x of [-.32, .32]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(.035, .07, .56), deckRailMaterial);
       rail.position.set(x, .57, .02);
@@ -455,7 +542,7 @@ export class DigitalTwin {
   _ensureHuman(id) {
     if (this.humans.has(id)) return this.humans.get(id);
     const group = new THREE.Group();
-    const uniform = new THREE.MeshStandardMaterial({color: 0x24384a, roughness: .78});
+    const uniform = new THREE.MeshStandardMaterial({color: 0x2c2418, roughness: .78});
     const vestMaterial = new THREE.MeshStandardMaterial({color: 0xf5b843, roughness: .64});
     const skin = new THREE.MeshStandardMaterial({color: 0xd9a276, roughness: .82});
     const limbs = [];

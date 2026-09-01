@@ -30,7 +30,6 @@ const App = {
   zoomLevel: 2.8,
   pipEnabled: false,
   pipPov: false,
-  hudDetails: false,
   // The BIOS_4 model currently loaded, as {id, meta}. Null means BIOS_4 cannot
   // run - the server refuses it by design, so the Run button says so first.
   model: null,
@@ -95,7 +94,6 @@ async function boot() {
 
   // PiP Viewfinder Controls
   el('camPipToggle').addEventListener('click', togglePip);
-  el('hudDetailsToggle').addEventListener('click', toggleHudDetails);
   el('pipCloseBtn').addEventListener('click', togglePip);
   el('pipPovToggle').addEventListener('click', togglePipPov);
   el('pipFocusMainBtn').addEventListener('click', () => {
@@ -116,22 +114,24 @@ async function boot() {
   // Canvas Click to Focus Robot
   el('floor').addEventListener('click', onCanvasClick);
 
-  // Keyboard Navigation
-  window.addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-    if (e.code === 'Space') {
-      e.preventDefault();
-      togglePlay();
-    } else if (e.code === 'KeyV') {
-      cycleCameraMode();
-    } else if (e.code === 'KeyC') {
-      cycleTargetRobot();
-    } else if (e.code === 'KeyZ') {
-      adjustZoom(-0.4);
-    } else if (e.code === 'KeyX') {
-      adjustZoom(0.4);
-    }
-  });
+  // The keyboard lives in shell.js, which owns every shortcut on the page and
+  // knows whether the menu is open or a field has focus. It reaches the
+  // simulation only through this surface, so the interface can be reworked
+  // without touching playback.
+  window.BIOS = {
+    // Read-only handles on the running app. Nothing in the shell writes through
+    // them; they exist so the twin and the loaded run can be inspected from a
+    // console without instrumenting the module every time.
+    app: App,
+    togglePlay,
+    cycleCameraMode,
+    setCameraMode,
+    cycleTargetRobot,
+    adjustZoom,
+    togglePresentationMode,
+    toggleFullscreen,
+    step,
+  };
 
   window.addEventListener('resize', () => {
     App.twin.resize();
@@ -167,12 +167,18 @@ function updatePolicyProfile() {
 function renderScenarioGallery(showcase) {
   const gallery = el('scenarioGallery');
   const accents = {cyan: '#35c6f4', amber: '#f5b843', violet: '#b78cff', rose: '#ff6577', lime: '#a3e635'};
+  // Index, then a single stacked column of copy. The old three-column card put
+  // the fleet size in its own track, which stole enough width from the title that
+  // "Human Interaction" and "Grand Challenge" both wrapped mid-name.
   gallery.innerHTML = showcase.map((item, index) => `
     <button class="scenario-card ${index === 0 ? 'active' : ''}" data-scenario="${escapeHtml(item.id)}"
       style="--card-accent:${accents[item.accent] || accents.cyan}">
       <span class="scenario-index">0${index + 1}</span>
-      <span class="scenario-copy"><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.eyebrow)}</small></span>
-      <span class="scenario-meta">${item.robots} AMRs${item.humans ? ' · ' + item.humans + ' people' : ''}</span>
+      <span class="scenario-copy">
+        <b>${escapeHtml(item.title)}</b>
+        <small>${escapeHtml(item.eyebrow)}</small>
+        <span class="scenario-meta">${item.robots} AMRs${item.humans ? ' · ' + item.humans + ' people' : ''} · ${item.duration}s</span>
+      </span>
     </button>`).join('');
   gallery.querySelectorAll('.scenario-card').forEach(card => {
     card.addEventListener('click', () => selectScenarioProfile(card.dataset.scenario));
@@ -188,8 +194,10 @@ function selectScenarioProfile(id, announce = true) {
   el('seed').value = profile.seed;
   el('duration').value = profile.duration;
   el('activeScenarioTitle').textContent = profile.title;
-  el('activeScenarioEyebrow').textContent = profile.eyebrow.toUpperCase();
+  el('activeScenarioEyebrow').textContent = profile.eyebrow;
   el('activeScenarioDescription').textContent = profile.description;
+  const deployTitle = el('deployTitle');
+  if (deployTitle) deployTitle.textContent = profile.title;
   document.querySelectorAll('.scenario-card').forEach(card => {
     card.classList.toggle('active', card.dataset.scenario === id);
   });
@@ -219,7 +227,12 @@ function fill(select, values, preferred) {
 /* ------------------------------------------------------------------ camera modes */
 
 function setCameraMode(mode, redraw = true) {
+  // Presentation mode re-asserts its camera on every frame, so announcing the
+  // mode unconditionally would put a word in the middle of the screen forever.
+  // Only an actual change is worth telling anyone about.
+  const changed = App.cameraMode !== mode;
   App.cameraMode = mode;
+  if (changed) window.Shell?.cameraToast(mode);
   el('camModeOverview').classList.toggle('active', mode === 'overview');
   el('camModeTactical').classList.toggle('active', mode === 'tactical');
   el('camModeFollow').classList.toggle('active', mode === 'follow');
@@ -286,6 +299,14 @@ function setViewMode(mode) {
   el('view3dBtn').setAttribute('aria-pressed', String(is3d));
   el('view2dBtn').setAttribute('aria-pressed', String(!is3d));
   if (is3d) App.twin.resize();
+  // The diagnostic canvas is display:none until this moment, so every earlier
+  // attempt to size it measured a zero-width box and clamped the backing store to
+  // one pixel. It has to be measured after it is visible, or the 2D fallback is a
+  // single stretched pixel - which is what it had quietly become.
+  if (!is3d && App.data) {
+    App.view.resize(App.data.map, App.data.meta.cell_m);
+    App.staticLayer = buildStaticLayer(App.view, App.data.map, App.imgs);
+  }
   if (App.data) draw();
 }
 
@@ -299,6 +320,10 @@ function togglePresentationMode() {
   document.body.classList.toggle('jury-mode', App.presentationMode);
   el('juryOverlay').setAttribute('aria-hidden', String(!App.presentationMode));
   el('presentationBtn').classList.toggle('active', App.presentationMode);
+  el('presentationBtn').textContent = App.presentationMode ? 'Exit' : 'Enter';
+  // Jury mode is entered from inside the menu, so the first thing it has to do
+  // is get the menu out of the way.
+  if (App.presentationMode) window.Shell?.closeMenu();
   if (App.presentationMode) {
     setViewMode('3d');
     if (!App.playing && App.data) togglePlay();
@@ -312,44 +337,27 @@ function togglePresentationMode() {
 }
 
 function togglePip() {
-  if (!App.pipEnabled && App.hudDetails) setHudDetails(false);
   App.pipEnabled = !App.pipEnabled;
   syncOverlayState();
   if (App.pipEnabled) draw();
 }
 
-function toggleHudDetails() {
-  setHudDetails(!App.hudDetails);
-}
-
-function setHudDetails(enabled) {
-  App.hudDetails = enabled;
-  // Tactical cards and PiP compete for the same safe canvas region. Make the modes
-  // mutually exclusive instead of letting one silently cover the other.
-  if (enabled) App.pipEnabled = false;
-  syncOverlayState();
-}
-
+/* The old HUD kept a second, denser set of overlay cards behind a toggle. The
+   HUD it belonged to is gone - the readouts those cards duplicated now live in
+   the command menu, where there is room to read them - so the toggle went with
+   it rather than staying on as a button that changes nothing. */
 function syncOverlayState() {
   const stage = document.querySelector('.twin-stage');
-  const hud = el('hud');
   const pip = el('pipContainer');
   const pipButton = el('camPipToggle');
-  const hudButton = el('hudDetailsToggle');
-  if (stage) {
-    stage.classList.toggle('pip-open', App.pipEnabled);
-    stage.classList.toggle('hud-details-open', App.hudDetails);
-  }
-  if (hud) hud.classList.toggle('hud-details', App.hudDetails);
+  if (stage) stage.classList.toggle('pip-open', App.pipEnabled);
+  // The HUD is a sibling of the stage now, not a child, so the corner clusters
+  // that have to move out of the viewfinder's way key off the body instead.
+  document.body.classList.toggle('pip-open', App.pipEnabled);
   if (pip) pip.classList.toggle('hidden', !App.pipEnabled);
   if (pipButton) {
     pipButton.classList.toggle('active', App.pipEnabled);
     pipButton.setAttribute('aria-pressed', String(App.pipEnabled));
-  }
-  if (hudButton) {
-    hudButton.classList.toggle('active', App.hudDetails);
-    hudButton.setAttribute('aria-expanded', String(App.hudDetails));
-    hudButton.textContent = App.hudDetails ? 'Core HUD' : 'HUD details';
   }
 }
 
@@ -462,6 +470,7 @@ async function run() {
     el('scrub').value = 0;
     el('clockEnd').textContent = (n ? payload.frames[n - 1].t : 0).toFixed(1);
 
+    window.Shell?.clearVerdict();
     renderSummary(payload.summary, payload.meta);
     renderCollectiveIntelligence(payload.frames[0]);
     setStatus(`${n} frames · ${payload.meta.robots} AMRs · seed ${payload.meta.seed} · energy gate active`);
@@ -499,6 +508,10 @@ function setStatus(text, cls) {
 function syncPolicyUI() {
   const isBios4 = el('policy').value === 'BIOS_4';
   el('bios4').hidden = !isBios4;
+  // A hidden block leaves a blank frame in the System tab, which reads as broken
+  // rather than as inapplicable. Say which it is.
+  const idle = el('bios4Idle');
+  if (idle) idle.hidden = isBios4;
   // A run button that is enabled and then fails is worse than one that explains
   // itself: BIOS_4 without a model is refused by the server by design.
   el('runBtn').disabled = isBios4 && !App.model;
@@ -709,8 +722,37 @@ function togglePlay() {
   if (!App.data || !App.data.frames.length) return;
   App.playing = !App.playing;
   setPlaybackState(App.playing);
-  if (App.playing && App.simTime >= endTime()) App.simTime = 0;
+  if (App.playing && App.simTime >= endTime()) {
+    App.simTime = 0;
+    window.Shell?.clearVerdict();
+  }
   App.lastRaf = performance.now();
+}
+
+/* Arrow-key stepping. Frame-accurate rather than time-accurate on purpose: when
+   someone is picking apart a near-miss they want the next telemetry sample, not
+   a tenth of a second of interpolation. */
+function step(direction) {
+  if (!App.data || !App.data.frames.length) return;
+  App.playing = false;
+  setPlaybackState(false);
+  const [, , , idx] = bracket(App.simTime);
+  App.simTime = frameTime(idx + direction);
+  draw();
+}
+
+/* The run verdict. Deliberately restricted to the end of playback - a full-screen
+   line that fires for every event stops being read at all. */
+function announceVerdict() {
+  const s = App.data?.summary;
+  if (!s) return;
+  const contacts = Number(s.contacts_robot_robot || 0) + Number(s.contacts_robot_human || 0)
+    + Number(s.contacts_robot_rack || 0);
+  const detail = `${contacts} contact${contacts === 1 ? '' : 's'} · `
+    + `${Number(s.min_separation_m || 0).toFixed(2)} m closest separation · `
+    + `${Number(s.tasks_completed || 0)}/${Number(s.tasks_announced || 0)} tasks`;
+  if (s.completed_all) window.Shell?.verdict('Workload complete', detail, 'complete');
+  else window.Shell?.verdict('Evidence window ended', detail, 'window');
 }
 
 const endTime = () => {
@@ -734,6 +776,7 @@ function tick(now) {
     App.simTime = endTime();
     App.playing = false;
     setPlaybackState(false);
+    announceVerdict();
   }
   draw();
 }
@@ -1065,11 +1108,12 @@ function updateManagerDot(frame) {
   const text = el('mgrText');
   const routePolicy = App.data.meta.policy;
   const allocation = App.data.meta.allocation_policy;
-  if (allocation === 'auction') {
+  if (allocation === 'auction' || allocation === 'auction_bundle') {
     dot.className = 'dot ' + (frame.manager_alive ? 'up' : 'p2p');
+    const kind = allocation === 'auction_bundle' ? 'bundled peer auction' : 'peer auction';
     text.textContent = frame.manager_alive
-      ? 'peer auction · route manager reachable'
-      : 'WMS injector · peer auction';
+      ? `${kind} · route manager reachable`
+      : `WMS injector · ${kind}`;
     return;
   }
   if (allocation === 'hungarian') {
@@ -1189,15 +1233,20 @@ function renderAuctionPanel(frame) {
     if (counts[event.type] !== undefined) counts[event.type]++;
   }
   const renewals = events.filter(e => e.type === 'AW').length - counts.AW;
-  summary.innerHTML = allocation === 'auction'
+  // "Done" is read from the simulation's own published counter, never re-derived
+  // from the event feed or by summing per-robot totals. Three places on this
+  // screen quote a completion count and a judge will read all three; they have to
+  // agree, and the only way to guarantee that is for there to be one number.
+  const done = Number.isFinite(frame.tasks_completed) ? frame.tasks_completed : counts.TD;
+  summary.innerHTML = allocation === 'auction' || allocation === 'auction_bundle'
     ? `<span class="auction-proof">WMS announces only</span>
        <span>${counts.TN} tasks · ${counts.BD} bids · ${counts.AW} awards ·
-       ${renewals} lease renewals · ${counts.TD} done</span>`
+       ${renewals} lease renewals · ${done} done</span>`
     : allocation === 'hungarian'
     ? `<span class="auction-proof">WMS -> Hungarian manager</span>
-       <span>${counts.TN} announced · ${counts.AW} assignments · ${counts.TD} done</span>`
+       <span>${counts.TN} announced · ${counts.AW} assignments · ${done} done</span>`
     : `<span>pre-assigned workload</span>
-       <span>${counts.TD} done</span>`;
+       <span>${done} done</span>`;
 
   if (!visibleEvents.length) {
     log.innerHTML = '<p class="muted">No task-allocation messages yet.</p>';

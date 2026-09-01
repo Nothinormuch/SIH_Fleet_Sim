@@ -118,9 +118,10 @@ src/
 backend/
   server.py        stdlib HTTP server: serves the frontend, runs sims on request
 frontend/
-  index.html       professional digital-twin control-room shell
-  css/digital-twin.css responsive desktop, jury and mobile presentation layer
-  css/style.css    palette shared with the generated asset set
+  index.html       three layers: the world, the always-on HUD, the summoned menu
+  css/bios.css     the whole interface system - tokens, HUD, menu, overlays
+  js/shell.js      menu state machine, keyboard, camera toast, run verdict
+  js/hud.js        the three vitals, the event rail, the mission bar
   js/digital-twin.js Three.js warehouse, AMRs, humans, paths, leases and mesh links
   js/environment.js  asset loading, world->screen transform, static warehouse layer
   js/amr.js        robots, status halos, payload, the human worker

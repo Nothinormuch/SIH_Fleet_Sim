@@ -3,163 +3,393 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#071019">
+  <meta name="theme-color" content="#050403">
   <meta name="description" content="BIOS 6.0 predictive decentralized warehouse AMR digital twin">
   <title>BIOS 6.0 · Predictive AMR Digital Twin</title>
-  <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/hud.css">
-  <link rel="stylesheet" href="/css/digital-twin.css">
+  <link rel="stylesheet" href="/css/bios.css">
 </head>
-<body class="bios-app">
-  <header class="command-bar">
-    <div class="product-mark" aria-label="BIOS 6.0 Digital Twin">
-      <div class="mark-orbit"><span></span></div>
-      <div><strong>BIOS <em>6.0</em></strong><small>PREDICTIVE COLLECTIVE INTELLIGENCE</small></div>
-    </div>
-    <div class="mission-state">
-      <span class="live-pulse"></span>
-      <div><small>COORDINATION STATUS</small><span id="linkState"><i class="dot" id="mgrDot"></i><b id="mgrText">initialising edge peers</b></span></div>
-    </div>
-    <nav class="command-actions" aria-label="Digital twin controls">
-      <div class="view-switch" role="group" aria-label="View mode">
-        <button id="view3dBtn" class="active" aria-pressed="true">3D Twin</button>
-        <button id="view2dBtn" aria-pressed="false">2D Diagnostic</button>
-      </div>
-      <button id="presentationBtn" class="jury-button"><span>◆</span> Jury Mode</button>
-      <button id="fullscreenBtn" class="icon-button" title="Fullscreen" aria-label="Enter fullscreen">⛶</button>
-    </nav>
-  </header>
+<!--
+  Three layers, and nothing lives outside them.
 
-  <main class="digital-workspace">
-    <div class="twin-column">
-      <section class="twin-stage" aria-label="Warehouse digital twin">
-      <canvas id="twinCanvas" aria-label="Interactive three-dimensional warehouse"></canvas>
-      <canvas id="floor" class="is-hidden" aria-label="Two-dimensional warehouse diagnostic view"></canvas>
-      <div id="hud" class="hud-root" aria-hidden="true"></div>
-      <div class="stage-vignette" aria-hidden="true"></div>
-      <div class="stage-title">
-        <span id="activeScenarioEyebrow">ENERGY-AWARE ALLOCATION</span>
-        <h1 id="activeScenarioTitle">Open Floor</h1>
-        <p id="activeScenarioDescription">Identical robots independently evaluate battery, cargo, path and charger return.</p>
-      </div>
-      <div class="proof-strip">
-        <span><i class="proof-dot energy"></i>15% reserve protected</span>
-        <span><i class="proof-dot peer"></i>WMS announces only</span>
-        <span id="predictiveProof"><i class="proof-dot predictive"></i>short-horizon prediction</span>
-        <span id="humanProof" hidden><i class="proof-dot human"></i><b id="humanProofText">0 workers</b></span>
-        <span><i class="proof-dot evidence"></i>simulation evidence</span>
-      </div>
-      </section>
+    #world    the warehouse, full-bleed, never cropped by a panel
+    #hud      always on, corners only, no control that needs reading
+    #menu     summoned with Tab or Esc; five categories, list left, detail right
 
-      <section class="operations-dock" aria-label="Simulation controls and selected robot telemetry">
-        <div class="dock-label"><span>OPERATIONS DOCK</span><small>Controls and telemetry stay outside the warehouse view</small></div>
-      <div class="camera-console">
-        <span class="console-label">CAMERA</span>
+  The rule that keeps it honest: if something is not glanceable it does not belong
+  in the HUD, and if it is not one of five categories it is not a category — it is
+  a detail inside one. Everything the old dashboard showed is still here; it is
+  just no longer all here at once.
+-->
+<body class="bios">
+
+  <!-- ==================================================== TIER 1 · THE WORLD -->
+  <div id="world" class="twin-stage">
+    <canvas id="twinCanvas" aria-label="Interactive three-dimensional warehouse"></canvas>
+    <canvas id="floor" class="is-hidden" aria-label="Two-dimensional warehouse diagnostic view"></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+  </div>
+
+  <!-- ====================================================== TIER 2 · THE HUD -->
+  <div id="hud" aria-label="Fleet heads-up display">
+
+    <!-- vitals: what the fleet achieved, what it has left, how safe it stayed -->
+    <div class="vitals">
+      <div class="vital tasks" id="vitalTasks">
+        <div class="vital-head"><b>Workload</b><span id="vitalTasksVal">0 / 0</span></div>
+        <div class="vital-track"><i class="vital-ghost" id="vitalTasksGhost"></i><i class="vital-fill" id="vitalTasksFill"></i></div>
+      </div>
+      <div class="vital charge" id="vitalCharge">
+        <div class="vital-head"><b>Fleet charge</b><span id="vitalChargeVal">—</span></div>
+        <div class="vital-track"><i class="vital-ghost" id="vitalChargeGhost"></i><i class="vital-fill" id="vitalChargeFill"></i></div>
+      </div>
+      <div class="vital margin" id="vitalMargin">
+        <div class="vital-head"><b>Safety margin</b><span id="vitalMarginVal">—</span></div>
+        <div class="vital-track"><i class="vital-ghost" id="vitalMarginGhost"></i><i class="vital-fill" id="vitalMarginFill"></i></div>
+      </div>
+    </div>
+
+    <!-- coordination state, top right -->
+    <div class="link-state">
+      <div class="link-mark">BIOS&nbsp;<em>6.0</em></div>
+      <span id="linkState"><i class="dot" id="mgrDot"></i><b id="mgrText">initialising edge peers</b></span>
+      <div class="proof-pips">
+        <span><i class="energy"></i>15% reserve held</span>
+        <span id="predictiveProof"><i class="predictive"></i>prediction on</span>
+        <span id="humanProof" hidden><i class="human"></i><b id="humanProofText">0 workers</b></span>
+        <span><i class="evidence"></i>simulation evidence</span>
+      </div>
+    </div>
+
+    <!-- transport, top centre -->
+    <div class="transport">
+      <div class="transport-row">
+        <button id="playBtn" class="play-control" title="Play" aria-label="Play simulation"><span class="play-icon">▶</span></button>
+        <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="Simulation timeline">
+        <span class="clock"><b id="clockNow">0.0</b>s <i>/</i> <span id="clockEnd">0.0</span>s</span>
+        <select id="speed" class="speed-select" aria-label="Playback speed">
+          <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+          <option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
+        </select>
+      </div>
+      <span id="playStateLabel" class="play-state-label">Play</span>
+    </div>
+
+    <!-- event rail, left middle. Filled by hud.js; lines arrive and fade. -->
+    <div class="messages" id="messages" aria-live="polite"></div>
+
+    <!-- perspective cluster, bottom left -->
+    <div class="perspective">
+      <div class="persp-modes" role="group" aria-label="Camera perspective">
         <button id="camModeOverview" class="cam-btn active">Orbit</button>
         <button id="camModeTactical" class="cam-btn">Tactical</button>
-        <button id="camModeFollow" class="cam-btn">Follow</button>
-        <button id="camModePov" class="cam-btn">Robot POV</button>
-        <span class="console-divider"></span>
+        <button id="camModeFollow" class="cam-btn">Chase</button>
+        <button id="camModePov" class="cam-btn">POV</button>
+      </div>
+      <div class="persp-target">
         <select id="camTargetSelect" class="cam-select" aria-label="Focus robot"><option value="">Select AMR</option></select>
         <button id="camZoomOut" class="cam-btn-icon" aria-label="Zoom out">−</button>
         <span id="camZoomVal" class="cam-val">2.8×</span>
         <button id="camZoomIn" class="cam-btn-icon" aria-label="Zoom in">+</button>
-        <button id="camPipToggle" class="cam-btn ghost-control" hidden>PiP</button>
-        <button id="hudDetailsToggle" class="cam-btn ghost-control" aria-controls="hud" aria-expanded="false" hidden>HUD</button>
       </div>
-      <div class="robot-inspector" id="robotInspector" aria-live="polite">
-        <div class="inspector-empty"><span class="target-glyph">⌖</span><strong>Select an AMR</strong><small>Click a robot to inspect its battery, task and decentralized state.</small></div>
-      </div>
-      <div class="event-ribbon">
-        <div class="transport">
-          <button id="playBtn" class="play-control" title="Play" aria-label="Play simulation"><span class="play-icon">▶</span></button>
-          <span id="playStateLabel" class="play-state-label">Play</span>
-          <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="Simulation timeline">
-          <span class="clock"><b id="clockNow">0.0</b>s <i>/</i> <span id="clockEnd">0.0</span>s</span>
-          <select id="speed" aria-label="Playback speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
-        </div>
-        <div id="eventSpotlight" class="event-spotlight"><span>READY</span><strong>Launch a scenario to enter the BIOS control loop.</strong></div>
-      </div>
-        <div id="pipContainer" class="pip-container hidden" aria-hidden="true">
-          <div class="pip-header"><div class="pip-title"><span class="pip-rec-dot"></span><span id="pipRobotLabel">AMR01 · LIVE FEED</span></div><div class="pip-actions"><button id="pipFocusMainBtn" class="pip-tool-btn">Focus</button><button id="pipPovToggle" class="pip-tool-btn">POV</button><button id="pipCloseBtn" class="pip-tool-btn" aria-label="Close">×</button></div></div>
-          <div class="pip-view-wrap"><canvas id="pipCanvas" width="300" height="190"></canvas></div>
-          <div class="pip-telemetry"><div class="pip-stat"><span>SPD</span><strong id="pipSpeed">0.00 m/s</strong></div><div class="pip-stat"><span>HDG</span><strong id="pipHeading">0° N</strong></div><div class="pip-stat"><span>BAT</span><strong id="pipBatt">100%</strong></div><div class="pip-stat"><span>STATE</span><strong id="pipState">IDLE</strong></div></div>
-        </div>
-      </section>
     </div>
 
-    <aside class="mission-rail">
-      <section class="rail-section scenario-section">
-        <div class="section-heading"><div><small>DEMO LIBRARY</small><h2>Five jury scenarios</h2></div><span class="energy-default">ENERGY ON</span></div>
-        <div id="scenarioGallery" class="scenario-gallery"></div>
-        <select id="scenario" hidden aria-hidden="true"></select>
-      </section>
-      <section class="rail-section run-section">
-        <div class="section-heading compact"><div><small>RUN PROFILE</small><h2>Mission controls</h2></div></div>
-        <div class="control-grid">
-          <label><span>Route intelligence</span><select id="policy"></select></label>
-          <label><span>Task allocation</span><select id="allocationPolicy"></select></label>
-          <label><span>AMRs</span><input type="number" id="robots" value="4" min="2" max="100"></label>
-          <label><span>Seed</span><input type="number" id="seed" value="4" min="0"></label>
-          <label><span>Duration</span><input type="number" id="duration" value="180" min="10" max="900" step="10"></label>
-        </div>
-        <button id="runBtn" class="launch-button"><span class="launch-beam"></span><b>Launch digital twin</b><small id="launchProfile">BIOS 6.0 · auction · predictive edge</small></button>
-        <p class="status" id="status">Preparing the warehouse…</p>
+    <!-- the mission bar, bottom centre -->
+    <div class="mission">
+      <div class="mission-name" id="activeScenarioTitle">Open Floor</div>
+      <div class="mission-track"><i class="mission-fill" id="missionFill"></i></div>
+      <div class="mission-sub" id="eventSpotlight"><span>Ready</span><strong>Launch a scenario to enter the BIOS control loop.</strong></div>
+    </div>
 
-        <!-- Only meaningful for BIOS_4, so it is hidden until BIOS_4 is selected. A
-             model picker permanently on screen next to the other policies, none of
-             which can use one, is an invitation to wonder which of them it applies
-             to. main.js wires every control below unconditionally in boot(), so this
-             block must exist in the markup even while it is hidden. -->
-        <div id="bios4" class="bios4" hidden>
-          <div class="bios4-row">
-            <button id="trainBtn">Train model</button>
-            <button id="uploadBtn">Upload model</button>
-            <input type="file" id="modelFile" accept="application/json,.json" hidden>
+    <!-- live viewfinder -->
+    <div id="pipContainer" class="pip hidden" aria-hidden="true">
+      <div class="pip-header">
+        <div class="pip-title"><span class="pip-rec-dot"></span><span id="pipRobotLabel">AMR01 · LIVE FEED</span></div>
+        <div class="pip-actions">
+          <button id="pipFocusMainBtn" class="pip-tool-btn">Focus</button>
+          <button id="pipPovToggle" class="pip-tool-btn">POV</button>
+          <button id="pipCloseBtn" class="pip-tool-btn" aria-label="Close">×</button>
+        </div>
+      </div>
+      <div class="pip-view-wrap"><canvas id="pipCanvas" width="300" height="190"></canvas></div>
+      <div class="pip-telemetry">
+        <div class="pip-stat"><span>Spd</span><strong id="pipSpeed">0.00 m/s</strong></div>
+        <div class="pip-stat"><span>Hdg</span><strong id="pipHeading">0° N</strong></div>
+        <div class="pip-stat"><span>Bat</span><strong id="pipBatt">100%</strong></div>
+        <div class="pip-stat"><span>State</span><strong id="pipState">IDLE</strong></div>
+      </div>
+    </div>
+
+    <!-- the only thing that tells a first-time viewer the menu exists -->
+    <button class="menu-prompt" id="openMenuBtn"><kbd>Tab</kbd> Command menu</button>
+  </div>
+
+  <!-- ===================================================== TIER 3 · THE MENU -->
+  <div id="menu" aria-hidden="true">
+    <div class="menu-bar">
+      <div class="menu-mark">
+        <b>BIOS <em>6.0</em></b>
+        <small>Predictive collective intelligence</small>
+      </div>
+      <nav class="tabs" role="tablist" aria-label="Command menu">
+        <button class="tab active" data-tab="deployment" role="tab"><kbd>1</kbd><i>◈</i><span>Deployment</span></button>
+        <button class="tab" data-tab="fleet" role="tab"><kbd>2</kbd><i>❖</i><span>Fleet</span></button>
+        <button class="tab" data-tab="coordination" role="tab"><kbd>3</kbd><i>⟡</i><span>Coordination</span></button>
+        <button class="tab" data-tab="evidence" role="tab"><kbd>4</kbd><i>▤</i><span>Evidence</span></button>
+        <button class="tab" data-tab="system" role="tab"><kbd>5</kbd><i>⚙</i><span>System</span></button>
+      </nav>
+      <button class="menu-close" id="closeMenuBtn"><kbd>Esc</kbd> Return to floor</button>
+    </div>
+
+    <div class="menu-body">
+
+      <!-- ------------------------------------------------------- DEPLOYMENT -->
+      <section class="panel split active" data-panel="deployment" role="tabpanel">
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">Demo library</span>
+            <h2>Choose the floor</h2>
           </div>
-          <div class="bios4-row bios4-params">
-            <label>pop<input type="number" id="population" value="24" min="4" max="64"></label>
-            <label>gens<input type="number" id="generations" value="30" min="1" max="200"></label>
+          <div class="scroller">
+            <div id="scenarioGallery" class="scenario-gallery"></div>
+            <select id="scenario" hidden aria-hidden="true"></select>
           </div>
-          <div id="trainProgress" hidden>
-            <div class="bios4-bar"><div id="trainBar"></div></div>
-            <!-- Best fitness per generation. A number that only goes up tells you
-                 nothing about whether the search is working; the shape does. -->
-            <canvas id="trainChart" width="280" height="56"></canvas>
-            <p class="status" id="trainStatus"></p>
-            <button id="cancelBtn" class="ghost" hidden>Cancel</button>
+        </div>
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow" id="activeScenarioEyebrow">Energy-aware allocation</span>
+            <h2 id="deployTitle">Run profile</h2>
+            <p id="activeScenarioDescription">Identical robots independently evaluate battery, cargo, path and charger return.</p>
           </div>
-          <p class="status" id="modelStatus">No model loaded.</p>
+          <div class="scroller">
+            <div class="frame">
+              <h3>Mission parameters</h3>
+              <div class="field-grid">
+                <label class="field span-3"><span>Route intelligence</span><select id="policy"></select></label>
+                <label class="field span-3"><span>Task allocation</span><select id="allocationPolicy"></select></label>
+                <label class="field"><span>AMRs</span><input type="number" id="robots" value="4" min="2" max="100"></label>
+                <label class="field"><span>Seed</span><input type="number" id="seed" value="4" min="0"></label>
+                <label class="field"><span>Duration (s)</span><input type="number" id="duration" value="180" min="10" max="900" step="10"></label>
+              </div>
+              <button id="runBtn" class="launch">
+                <span class="launch-beam"></span>
+                <b>Launch</b>
+                <small id="launchProfile">BIOS 6.0 · auction · predictive edge</small>
+              </button>
+              <p class="status" id="status">Preparing the warehouse…</p>
+            </div>
+          </div>
         </div>
       </section>
-      <details id="bios6Intelligence" class="rail-section bios6-section" open>
-        <summary><span><small>BIOS 6.0</small><b>Collective intelligence</b></span><i>⌄</i></summary>
-        <div class="bios6-mode"><span class="collective-pulse"></span><div><b id="collectiveMode">PREDICTIVE EDGE</b><small>Soft forecasts · proven safety fallback</small></div></div>
-        <div id="collectiveMetrics" class="collective-metrics"><p class="muted">Run BIOS_PIBT.6 to inspect measured intelligence.</p></div>
-        <div class="thought-heading"><span>DECISION TRACE</span><small>machine-derived · not generated narration</small></div>
-        <div id="thoughtStream" class="thought-stream"><p class="muted">Robot decisions will appear during playback.</p></div>
-      </details>
-      <details class="rail-section intelligence-section">
-        <summary><span><small>LIVE INTELLIGENCE</small><b>Fleet and auction</b></span><i>⌄</i></summary>
-        <div id="auctionSummary" class="auction-summary"></div>
-        <div id="fleet" class="fleet"></div>
-        <div id="auctionLog" class="auction-log"><p class="muted">Allocation events will appear here.</p></div>
-      </details>
-      <details class="rail-section results-section">
-        <summary><span><small>RUN EVIDENCE</small><b>Measured outcome</b></span><i>⌄</i></summary>
-        <div id="summary" class="summary"><p class="muted">No run yet.</p></div>
-      </details>
-    </aside>
-  </main>
+
+      <!-- ------------------------------------------------------------ FLEET -->
+      <section class="panel split" data-panel="fleet" role="tabpanel">
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">Edge agents</span>
+            <h2>Fleet roster</h2>
+          </div>
+          <div class="scroller"><div id="fleet" class="fleet"></div></div>
+        </div>
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">Selected agent</span>
+            <h2>Local state</h2>
+            <p>Every value here was computed on the robot itself. Nothing on this pane came from a central planner.</p>
+          </div>
+          <div class="scroller">
+            <div class="frame" id="robotInspector" aria-live="polite">
+              <div class="inspector-empty">
+                <span class="target-glyph">⌖</span>
+                <strong>Select an AMR</strong>
+                <small>Pick a robot on the left, or click one in the warehouse, to inspect its battery, task and decentralized state.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------- COORDINATION -->
+      <section class="panel split wide" data-panel="coordination" role="tabpanel">
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">Task allocation</span>
+            <h2>The auction</h2>
+          </div>
+          <div class="scroller">
+            <div id="auctionSummary" class="auction-summary"></div>
+            <div id="auctionLog" class="auction-log"><p class="muted">Allocation events will appear here.</p></div>
+          </div>
+        </div>
+        <div class="col" id="bios6Intelligence">
+          <div class="col-head">
+            <span class="eyebrow">BIOS 6.0</span>
+            <h2>Collective intelligence</h2>
+          </div>
+          <div class="scroller">
+            <div class="frame">
+              <div class="bios6-mode">
+                <span class="collective-pulse"></span>
+                <div><b id="collectiveMode">Predictive edge</b><small>Soft forecasts · proven safety fallback</small></div>
+              </div>
+              <div id="collectiveMetrics" class="collective-metrics"><p class="muted">Run BIOS_PIBT.6 to inspect measured intelligence.</p></div>
+            </div>
+            <div class="frame">
+              <div class="thought-heading"><span>Decision trace</span><small>machine-derived · not generated narration</small></div>
+              <div id="thoughtStream" class="thought-stream"><p class="muted">Robot decisions will appear during playback.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------------- EVIDENCE -->
+      <section class="panel split" data-panel="evidence" role="tabpanel">
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">What this run proves</span>
+            <h2>Reading the evidence</h2>
+          </div>
+          <div class="scroller">
+            <div class="frame">
+              <h3>Contacts</h3>
+              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">A contact is any tick where two bodies came closer than their combined radii. Zero is the only passing score, and it is measured, not asserted.</p>
+            </div>
+            <div class="frame">
+              <h3>Closest separation</h3>
+              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">The single tightest gap observed all run. It is the number that shows the safety field did work rather than got lucky.</p>
+            </div>
+            <div class="frame">
+              <h3>Suppressed traffic</h3>
+              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">Messages BIOS 6 decided not to send. Bandwidth is the cost of decentralization, so the count of packets avoided is the cost we removed.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">Run evidence</span>
+            <h2>Measured outcome</h2>
+          </div>
+          <div class="scroller">
+            <div class="frame summary" id="summary"><p class="muted">No run yet.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------------- SYSTEM -->
+      <section class="panel split" data-panel="system" role="tabpanel">
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">Display</span>
+            <h2>System</h2>
+          </div>
+          <div class="scroller">
+            <div class="frame">
+              <h3>Presentation</h3>
+              <div class="sys-group">
+                <div class="sys-row">
+                  <div><b>Render mode</b><small>The diagnostic view is the flat 2D floor; it stays available as a fallback.</small></div>
+                  <div class="seg">
+                    <button id="view3dBtn" class="active" aria-pressed="true">3D twin</button>
+                    <button id="view2dBtn" aria-pressed="false">2D diag</button>
+                  </div>
+                </div>
+                <div class="sys-row">
+                  <div><b>Jury mode</b><small>Hides operator controls, drives the camera on a narrated loop.</small></div>
+                  <button id="presentationBtn" class="ghost-btn">Enter</button>
+                </div>
+                <div class="sys-row">
+                  <div><b>Fullscreen</b><small>Also bound to F11.</small></div>
+                  <button id="fullscreenBtn" class="ghost-btn">Toggle</button>
+                </div>
+                <div class="sys-row">
+                  <div><b>Live viewfinder</b><small>A second camera pinned to the selected AMR.</small></div>
+                  <button id="camPipToggle" class="ghost-btn">Toggle</button>
+                </div>
+              </div>
+            </div>
+            <div class="frame">
+              <h3>Controls</h3>
+              <div class="keys">
+                <div><kbd>Tab</kbd><span>Open / close menu</span></div>
+                <div><kbd>Esc</kbd><span>Return to floor</span></div>
+                <div><kbd>1–5</kbd><span>Jump to category</span></div>
+                <div><kbd>Q / E</kbd><span>Previous / next category</span></div>
+                <div><kbd>Space</kbd><span>Play / pause</span></div>
+                <div><kbd>F5</kbd><span>Cycle perspective</span></div>
+                <div><kbd>C</kbd><span>Next AMR</span></div>
+                <div><kbd>Z / X</kbd><span>Zoom out / in</span></div>
+                <div><kbd>F1</kbd><span>Hide the HUD</span></div>
+                <div><kbd>J</kbd><span>Jury mode</span></div>
+                <div><kbd>F11</kbd><span>Fullscreen</span></div>
+                <div><kbd>← →</kbd><span>Step the timeline</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">BIOS 4 · learned policy</span>
+            <h2>Training</h2>
+            <p>Only BIOS_4 takes a model. This pane stays inert until BIOS_4 is the selected route intelligence — a model picker sitting next to ten policies that cannot use one is an invitation to wonder which of them it applies to.</p>
+          </div>
+          <div class="scroller">
+            <div class="frame">
+              <div id="bios4" class="bios4" hidden>
+                <div class="bios4-row">
+                  <button id="trainBtn">Train model</button>
+                  <button id="uploadBtn">Upload model</button>
+                  <input type="file" id="modelFile" accept="application/json,.json" hidden>
+                </div>
+                <div class="bios4-row bios4-params">
+                  <label>Population<input type="number" id="population" value="24" min="4" max="64"></label>
+                  <label>Generations<input type="number" id="generations" value="30" min="1" max="200"></label>
+                </div>
+                <div id="trainProgress" hidden>
+                  <div class="bios4-bar"><div id="trainBar"></div></div>
+                  <!-- Best fitness per generation. A number that only goes up tells you
+                       nothing about whether the search is working; the shape does. -->
+                  <canvas id="trainChart" width="280" height="56"></canvas>
+                  <p class="status" id="trainStatus"></p>
+                  <button id="cancelBtn" class="ghost-btn" hidden>Cancel</button>
+                </div>
+                <p class="status" id="modelStatus">No model loaded.</p>
+              </div>
+              <p class="muted" id="bios4Idle">Select BIOS_4 under Deployment → Route intelligence to enable training.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ================================================ ceremonial + narrative -->
+
+  <!-- Fires on run completion and on nothing else. The scarcity is the point. -->
+  <div class="verdict" id="verdict" aria-hidden="true">
+    <div class="verdict-copy">
+      <div class="verdict-rule"></div>
+      <b id="verdictText">Workload complete</b>
+      <small id="verdictSub">0 contacts · 0.00 m closest separation</small>
+      <div class="verdict-rule"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" aria-hidden="true"><b id="toastText">Orbit</b><small id="toastSub">Perspective</small></div>
 
   <div id="juryOverlay" class="jury-overlay" aria-hidden="true">
-    <div class="jury-copy"><small>BIOS JURY MODE</small><strong id="juryHeadline">The warehouse is thinking locally.</strong><p id="juryNarration">Every robot sees the same task, but only an eligible robot is allowed to bid.</p></div>
+    <div class="jury-copy">
+      <small>BIOS jury mode</small>
+      <strong id="juryHeadline">The warehouse is thinking locally.</strong>
+      <p id="juryNarration">Every robot sees the same task, but only an eligible robot is allowed to bid.</p>
+    </div>
     <button id="exitJuryBtn">Exit presentation</button>
   </div>
+
   <script src="/js/environment.js"></script>
   <script src="/js/amr.js"></script>
   <script src="/js/hud.js"></script>
   <script src="/js/network.js"></script>
+  <script src="/js/shell.js"></script>
   <script type="module" src="/js/main.js"></script>
 </body>
 </html>
