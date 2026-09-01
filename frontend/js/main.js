@@ -410,6 +410,7 @@ async function run() {
   setPlaybackState(false);
   setStatus(`Simulating ${el('duration').value}s of ${el('scenario').value}…`, 'busy');
 
+  console.log('DEBUG run called request=', JSON.stringify(request));
   try {
     const res = await fetch('/api/run', {
       method: 'POST',
@@ -1212,46 +1213,41 @@ function updateSummaryProgress(frame) {
 function refreshCustomGallery() {
   const gallery = el('customGallery');
   if (!gallery) return;
-  fetch('/api/scenarios/custom')
+  fetch('/api/scenarios')
     .then(r => r.json())
-    .catch(() => ({ scenarios: [] }))
-    .then(data => {
-      // Fallback: server doesn't have /api/scenarios/custom GET; use /api/scenarios
-      fetch('/api/scenarios')
-        .then(r => r.json())
-        .then(s => {
-          const custom = (s.showcase || []).filter(item => item.id && item.id.startsWith('custom_'));
-          // Push custom scenarios into App.showcase so selectScenarioProfile works
-          custom.forEach(c => {
-            if (!App.showcase.find(i => i.id === c.id)) App.showcase.push(c);
+    .catch(() => ({ showcase: [] }))
+    .then(s => {
+      const custom = (s.showcase || []).filter(item => item.id && item.id.startsWith('custom_'));
+      custom.forEach(c => {
+        if (!App.showcase.find(i => i.id === c.id)) App.showcase.push(c);
+      });
+      if (!custom.length) {
+        gallery.innerHTML = '<p class="muted">No custom scenarios saved yet.</p>';
+      } else {
+        const accents = {cyan:'#35c6f4', amber:'#f5b843', violet:'#b78cff', rose:'#ff6577', lime:'#a3e635'};
+        gallery.innerHTML = custom.map(item => `
+          <button class="scenario-card" data-scenario="${escapeHtml(item.id)}"
+            style="--card-accent:${accents[item.accent]||accents.lime}">
+            <span class="scenario-index">◆</span>
+            <span class="scenario-copy"><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.eyebrow)}</small></span>
+            <span class="scenario-meta">${item.robots||0} AMRs · ${item.seed||0}</span>
+          </button>`).join('');
+        gallery.querySelectorAll('.scenario-card').forEach(card => {
+          card.addEventListener('click', () => {
+            el('scenario').value = card.dataset.scenario;
+            selectScenarioProfile(card.dataset.scenario);
+            const item = custom.find(i => i.id === card.dataset.scenario);
+            if (item) {
+              el('robots').value = item.robots || 4;
+              el('seed').value = item.seed || 0;
+              el('duration').value = item.duration || 300;
+            }
           });
-          if (!custom.length) gallery.innerHTML = '<p class="muted">No custom scenarios saved yet.</p>';
-          else {
-            const accents = {cyan:'#35c6f4', amber:'#f5b843', violet:'#b78cff', rose:'#ff6577', lime:'#a3e635'};
-            gallery.innerHTML = custom.map(item => `
-              <button class="scenario-card" data-scenario="${escapeHtml(item.id)}"
-                style="--card-accent:${accents[item.accent]||accents.lime}">
-                <span class="scenario-index">◆</span>
-                <span class="scenario-copy"><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.eyebrow)}</small></span>
-                <span class="scenario-meta">${item.robots||0} AMRs · ${item.seed||0}</span>
-              </button>`).join('');
-            gallery.querySelectorAll('.scenario-card').forEach(card => {
-              card.addEventListener('click', () => {
-                el('scenario').value = card.dataset.scenario;
-                selectScenarioProfile(card.dataset.scenario);
-                // Also set controls from saved data if available
-                const item = custom.find(i => i.id === card.dataset.scenario);
-                if (item) {
-                  el('robots').value = item.robots || 4;
-                  el('seed').value = item.seed || 0;
-                  el('duration').value = item.duration || 300;
-                }
-              });
-            });
-          }
         });
+      }
     });
 }
+
 
 function initBuilder() {
   const gridCanvas = el('builderGrid');
