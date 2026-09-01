@@ -7,10 +7,10 @@ const PALETTE = {
   amber: 0xf5b843,
   violet: 0xb78cff,
   rose: 0xff6577,
-  navy: 0x050403,
-  floor: 0x161209,
-  rack: 0x3a3020,
-  steel: 0x8a7a5c,
+  navy: 0x071019,
+  floor: 0x111b26,
+  rack: 0x33485b,
+  steel: 0x6f8498,
 };
 
 const ROBOT_COLOURS = [PALETTE.cyan, PALETTE.green, PALETTE.amber, PALETTE.violet,
@@ -29,13 +29,13 @@ function disposeObject(root) {
   });
 }
 
-function makeLabel(text, colour = '#b79a5b', compact = false) {
+function makeLabel(text, colour = '#59cbf6', compact = false) {
   const canvas = document.createElement('canvas');
   canvas.width = compact ? 256 : 512;
   canvas.height = compact ? 72 : 96;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'rgba(9, 7, 5, .9)';
+  ctx.fillStyle = 'rgba(7, 18, 27, .92)';
   ctx.strokeStyle = colour;
   ctx.lineWidth = 2;
   const radius = 0;
@@ -43,7 +43,7 @@ function makeLabel(text, colour = '#b79a5b', compact = false) {
   ctx.roundRect(3, 3, canvas.width - 6, canvas.height - 6, radius);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = '#e8dcbd';
+  ctx.fillStyle = '#eaf6ff';
   ctx.font = `${compact ? 28 : 32}px Georgia, 'Times New Roman', serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -65,8 +65,8 @@ export class DigitalTwin {
     this.canvas = canvas;
     this.onSelect = onSelect;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x090705);
-    this.scene.fog = new THREE.FogExp2(0x090705, 0.0085);
+    this.scene.background = new THREE.Color(0x071019);
+    this.scene.fog = new THREE.FogExp2(0x071019, 0.0085);
     this.camera = new THREE.PerspectiveCamera(43, 1, 0.1, 1000);
     this.camera.position.set(18, 25, 24);
     this.renderer = new THREE.WebGLRenderer({canvas, antialias: true, powerPreference: 'high-performance'});
@@ -75,10 +75,9 @@ export class DigitalTwin {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    // The shell puts a vignette over the whole stage, so the twin has to come out
-    // of the renderer a touch hotter than it used to or the floor edges disappear
-    // into it entirely.
-    this.renderer.toneMappingExposure = 1.18;
+    // A little hotter than the pre-rework 1.05: the shell lays a vignette over the
+    // whole stage now, and at the old exposure the floor edges sank into it.
+    this.renderer.toneMappingExposure = 1.12;
 
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
@@ -108,9 +107,9 @@ export class DigitalTwin {
   }
 
   _addLighting() {
-    const hemi = new THREE.HemisphereLight(0xf3e3bd, 0x1a140c, 2.1);
+    const hemi = new THREE.HemisphereLight(0xbfe8ff, 0x15202c, 2.2);
     this.scene.add(hemi);
-    const key = new THREE.DirectionalLight(0xfff3d8, 3.3);
+    const key = new THREE.DirectionalLight(0xffffff, 3.4);
     key.position.set(-18, 34, 16);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -119,7 +118,7 @@ export class DigitalTwin {
     key.shadow.camera.top = 35;
     key.shadow.camera.bottom = -35;
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x5fa8b8, 1.15);
+    const rim = new THREE.DirectionalLight(0x35c6f4, 1.2);
     rim.position.set(22, 14, -22);
     this.scene.add(rim);
   }
@@ -293,7 +292,7 @@ export class DigitalTwin {
     this.world.add(floor);
 
     const grid = new THREE.GridHelper(Math.max(widthM, heightM) * 1.05,
-      Math.max(this.map.width, this.map.height), 0x4b3d2a, 0x231c12);
+      Math.max(this.map.width, this.map.height), 0x29465e, 0x1a2c3b);
     grid.position.y = .012;
     grid.material.transparent = true;
     grid.material.opacity = .55;
@@ -342,10 +341,10 @@ export class DigitalTwin {
     this.world.add(uprights, shelves, cartons);
 
     for (const [x, y] of this.map.stations || []) {
-      this.world.add(this._makePad(x, y, 0x5f8fb0, 'PICK / DROP'));
+      this.world.add(this._makePad(x, y, 0x3b82f6, 'PICK / DROP'));
     }
     for (const [x, y] of this.map.docks || []) {
-      this.world.add(this._makePad(x, y, 0x7d9a4e, 'CHARGE'));
+      this.world.add(this._makePad(x, y, 0x22c55e, 'CHARGE'));
     }
 
     for (const zone of this.meta.dead_zones || []) {
@@ -378,7 +377,7 @@ export class DigitalTwin {
 
     const boundary = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(widthM + .8, .2, heightM + .8)),
-      new THREE.LineBasicMaterial({color: 0x6d5733, transparent: true, opacity: .8}),
+      new THREE.LineBasicMaterial({color: 0x41647f, transparent: true, opacity: .8}),
     );
     boundary.position.y = .02;
     this.world.add(boundary);
@@ -451,13 +450,13 @@ export class DigitalTwin {
     group.add(base);
     const top = new THREE.Mesh(
       new THREE.BoxGeometry(.68, .22, .66),
-      new THREE.MeshStandardMaterial({color: 0x1c1710, roughness: .28, metalness: .68}),
+      new THREE.MeshStandardMaterial({color: 0x10202c, roughness: .28, metalness: .68}),
     );
     top.position.y = .43;
     top.castShadow = true;
     top.userData.robotId = id;
     group.add(top);
-    const wheelMaterial = new THREE.MeshStandardMaterial({color: 0x0a0806, roughness: .76, metalness: .28});
+    const wheelMaterial = new THREE.MeshStandardMaterial({color: 0x05090d, roughness: .76, metalness: .28});
     const wheels = [];
     for (const [x, z] of [[-.43, -.25], [.43, -.25], [-.43, .25], [.43, .25]]) {
       const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.105, .105, .09, 18), wheelMaterial);
@@ -470,26 +469,26 @@ export class DigitalTwin {
     }
     const bumper = new THREE.Mesh(
       new THREE.BoxGeometry(.66, .13, .08),
-      new THREE.MeshStandardMaterial({color: 0x2a2318, roughness: .5, metalness: .54}),
+      new THREE.MeshStandardMaterial({color: 0x182d3b, roughness: .5, metalness: .54}),
     );
     bumper.position.set(0, .24, -.49);
     bumper.userData.robotId = id;
     group.add(bumper);
     const sensor = new THREE.Mesh(
       new THREE.BoxGeometry(.48, .08, .09),
-      new THREE.MeshStandardMaterial({color: 0x0b0805, emissive: colour, emissiveIntensity: .95}),
+      new THREE.MeshStandardMaterial({color: 0x081019, emissive: colour, emissiveIntensity: .95}),
     );
     sensor.position.set(0, .47, -.36);
     sensor.userData.robotId = id;
     group.add(sensor);
     const mast = new THREE.Mesh(
       new THREE.CylinderGeometry(.035, .045, .19, 16),
-      new THREE.MeshStandardMaterial({color: 0x8a7c60, roughness: .3, metalness: .78}),
+      new THREE.MeshStandardMaterial({color: 0x7d91a1, roughness: .3, metalness: .78}),
     );
     mast.position.set(0, .62, .08);
     const lidar = new THREE.Mesh(
       new THREE.CylinderGeometry(.13, .13, .085, 24),
-      new THREE.MeshStandardMaterial({color: 0x0b0805, emissive: colour, emissiveIntensity: .38,
+      new THREE.MeshStandardMaterial({color: 0x071019, emissive: colour, emissiveIntensity: .38,
         roughness: .18, metalness: .64}),
     );
     lidar.position.set(0, .75, .08);
@@ -500,7 +499,7 @@ export class DigitalTwin {
     );
     beacon.position.set(.24, .6, .15);
     group.add(mast, lidar, beacon);
-    const deckRailMaterial = new THREE.MeshStandardMaterial({color: 0x9a8a6a, roughness: .34, metalness: .78});
+    const deckRailMaterial = new THREE.MeshStandardMaterial({color: 0x8da2b5, roughness: .34, metalness: .78});
     for (const x of [-.32, .32]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(.035, .07, .56), deckRailMaterial);
       rail.position.set(x, .57, .02);
@@ -542,7 +541,7 @@ export class DigitalTwin {
   _ensureHuman(id) {
     if (this.humans.has(id)) return this.humans.get(id);
     const group = new THREE.Group();
-    const uniform = new THREE.MeshStandardMaterial({color: 0x2c2418, roughness: .78});
+    const uniform = new THREE.MeshStandardMaterial({color: 0x24384a, roughness: .78});
     const vestMaterial = new THREE.MeshStandardMaterial({color: 0xf5b843, roughness: .64});
     const skin = new THREE.MeshStandardMaterial({color: 0xd9a276, roughness: .82});
     const limbs = [];
