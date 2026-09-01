@@ -410,7 +410,7 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         custom_starts_raw = extra.get("_custom_starts", [])
         custom_duration = extra.get("_custom_duration")
         custom_seed = extra.get("_custom_seed", seed)
-        starts = [Cell(s[0], s[1]) for s in custom_starts_raw]
+        starts = [(s[0], s[1]) for s in custom_starts_raw]
         if custom_env is None:
             raise ValueError(f"custom scenario {scenario} missing environment data")
         sc = Scenario(

@@ -181,19 +181,15 @@ function renderScenarioGallery(showcase) {
 }
 
 function selectScenarioProfile(id, announce = true) {
+  // Don't touch the hidden select; the card click handler manages it directly.
+  // Just apply styling and status message when profile is found.
   const profile = App.showcase.find(item => item.id === id);
-  if (!profile) return;
-  el('scenario').value = profile.id;
-  el('robots').value = profile.robots;
-  el('seed').value = profile.seed;
-  el('duration').value = profile.duration;
-  el('activeScenarioTitle').textContent = profile.title;
-  el('activeScenarioEyebrow').textContent = profile.eyebrow.toUpperCase();
-  el('activeScenarioDescription').textContent = profile.description;
   document.querySelectorAll('.scenario-card').forEach(card => {
     card.classList.toggle('active', card.dataset.scenario === id);
   });
-  if (announce) setStatus(`${profile.title} selected · energy-aware auction is active.`);
+  if (profile && announce) {
+    setStatus(`${profile.title} selected · energy-aware auction is active.`);
+  }
 }
 
 function fill(select, values, preferred) {
@@ -394,8 +390,13 @@ function onCanvasClick(e) {
 /* ------------------------------------------------------------------ running */
 
 async function run() {
+  const scenarioVal = el('scenario').value;
+  if (!scenarioVal) {
+    setStatus('No scenario selected — pick one from the gallery first.', 'err');
+    return;
+  }
   const request = {
-    scenario: el('scenario').value,
+    scenario: scenarioVal,
     policy: el('policy').value,
     allocation_policy: el('allocationPolicy').value,
     robots: Number(el('robots').value),
@@ -1234,14 +1235,40 @@ function refreshCustomGallery() {
           </button>`).join('');
         gallery.querySelectorAll('.scenario-card').forEach(card => {
           card.addEventListener('click', () => {
-            el('scenario').value = card.dataset.scenario;
-            selectScenarioProfile(card.dataset.scenario);
-            const item = custom.find(i => i.id === card.dataset.scenario);
-            if (item) {
-              el('robots').value = item.robots || 4;
-              el('seed').value = item.seed || 0;
-              el('duration').value = item.duration || 300;
+            const sid = card.dataset.scenario;
+            console.log('DEBUG custom card click sid=', sid);
+            // Ensure the item is in App.showcase before selecting profile
+            const item = (App.showcase || []).find(i => i.id === sid);
+            if (!item && typeof custom !== 'undefined') {
+              const fromCustom = custom.find(i => i.id === sid);
+              if (fromCustom) {
+                App.showcase.push(fromCustom);
+              }
             }
+            // Always keep hidden select in sync; inject option if missing so value sticks
+            const scenarioSelect = el('scenario');
+            scenarioSelect.value = sid;
+            if (!scenarioSelect.querySelector(`option[value="${CSS.escape ? CSS.escape(sid) : sid.replace(/(["\\])/g, '\\$1')}"]`)) {
+              const opt = document.createElement('option');
+              opt.value = sid;
+              opt.textContent = sid.replace(/_/g, ' ');
+              scenarioSelect.appendChild(opt);
+            }
+            scenarioSelect.value = sid;
+            const selectedItem = (App.showcase || []).find(i => i.id === sid)
+                              || (typeof custom !== 'undefined' ? custom.find(i => i.id === sid) : null);
+            if (selectedItem) {
+              App.showcase = App.showcase || [];
+              if (!App.showcase.find(i => i.id === sid)) App.showcase.push(selectedItem);
+              el('robots').value = selectedItem.robots || 4;
+              el('seed').value = selectedItem.seed || 0;
+              el('duration').value = selectedItem.duration || 300;
+              el('activeScenarioTitle').textContent = selectedItem.title || sid;
+              el('activeScenarioEyebrow').textContent = (selectedItem.eyebrow || 'Custom').toUpperCase();
+              el('activeScenarioDescription').textContent = selectedItem.description || '';
+            }
+            // Try profile selection for active card styling, but don't let it clear value
+            selectScenarioProfile(sid);
           });
         });
       }
