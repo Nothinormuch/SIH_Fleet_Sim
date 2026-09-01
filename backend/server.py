@@ -507,6 +507,7 @@ class Handler(BaseHTTPRequestHandler):
             request["_custom_seed"] = int(request.get("seed", custom.get("seed", 0)))
         with _SIM_LOCK:
             result = run_for_dashboard(policy_model=model, **request)
+        self._json(200, result)
 
     def _api_train_start(self) -> None:
         try:
