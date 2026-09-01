@@ -15,6 +15,7 @@ python backend/server.py                       # http://127.0.0.1:8000
 python edge_demo.py --robots 3 --duration 5    # real processes + signed UDP
 python fault_campaign.py --seeds 30 --jobs 8  # loss, partition, crash recovery
 python benchmark.py --seeds 30 --jobs 8        # strict SIH acceptance gate
+python auction_v2_campaign.py --seeds 30 --jobs 8  # Auction V2 release gate
 ```
 
 The simulation core and the benchmark have **no third-party dependencies** — stdlib
@@ -22,7 +23,8 @@ only, so a robot node drops onto a bare Raspberry Pi image with no build step.
 
 ## Decentralized priority algorithm
 
-The default policy is `BIOS_PIBT.6` with peer `auction` allocation. It combines V5's
+The default route policy is `BIOS_PIBT.6`; the frozen peer allocator is `auction`, and
+the released Auction V2 allocator is selectable as `auction_bundle`. BIOS 6 combines V5's
 battery-aware priority/deadline cargo allocation with event-triggered communication,
 bounded predictive hints and measured recovery escalation. Every AMR broadcasts a
 frozen lexicographic priority plus its next-cell intent. On grid-like rack maps it
@@ -166,13 +168,25 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
 | `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Retained decentralized comparison policy. |
 | `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, payload/cargo factors, priority/deadline ordering, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Frozen decentralized release baseline. |
-| `BIOS_PIBT.6` | V5 plus event-triggered traffic, decaying peer congestion experience, soft anonymous-moving-object forecasts, charger contention avoidance, load-aware idle clearing, churn recovery and decision traces. | Default fully decentralized route + allocation policy. |
+| `BIOS_PIBT.6` | V5 plus event-triggered traffic, decaying peer congestion experience, soft anonymous-moving-object forecasts, charger contention avoidance, load-aware idle clearing, churn recovery and decision traces. | Default fully decentralized route policy; supports frozen Auction and released Auction V2 allocation. |
 
 Task ownership is selected independently of the route policy. `auction` lets peers
 broadcast bids and converge on deterministic leased awards; this is the fully
 decentralized V3 mode. `hungarian` lets the optional fleet manager minimise the
 robot-to-task cost matrix and exists only as a comparison baseline. Keeping allocation
 and traffic separate makes their performance effects measurable rather than conflated.
+
+`auction_bundle` is the released BIOS 6 Auction V2 control. It keeps the WMS announcement-
+only, permits at most one version-bound future reservation per working robot, revalidates
+energy, deadline, ownership, and path feasibility before promotion, and falls back to
+idle-only auction behavior under loss, dead zones, incomplete peer views, or invalid
+ownership. Completion facts are generation-bound, authenticated, persisted atomically at
+the edge, and cannot resurrect a completed generation after a retry or restart.
+
+```bash
+python main.py --scenario showcase_open_floor --policy BIOS_PIBT.6 \
+  --allocation-policy auction_bundle --robots 5 --seed 0
+```
 
 The BIOS 5 energy and cargo model is specified in
 [`docs/BIOS_PIBT_5_ENERGY_AUCTION.md`](docs/BIOS_PIBT_5_ENERGY_AUCTION.md). Its refined
@@ -214,6 +228,23 @@ cross the line — training and reporting on the same seed turns the headline in
 memorisation score. Result and caveats: `docs/FINDINGS.md`.
 
 ## Status — read this before quoting any number
+
+BIOS 6 Auction V2 passes its checked-in deterministic release campaign: **210/210 runs**
+and **1,680/1,680 tasks** across 30 open-burst seeds, four packet-loss levels (0%, 5%,
+10%, 20%), partition healing, and crashed-winner reassignment. The campaign observes
+zero robot/robot, robot/human, and robot/rack contacts, zero detected deadlocks, zero hard-
+deadline misses, and zero rejected completion proofs. Semantic results match under
+`PYTHONHASHSEED` 0, 1, and 42. This is finite simulation evidence, not universal
+completion, physical safety certification, or Byzantine security.
+
+Against untouched BIOS 6 commit `a7753c6` on the identical 30-seed, 5-robot, 15-task
+open-burst campaign, ordinary `auction` completes 438/450 tasks and 25/30 runs; Auction V2
+completes 450/450 and 30/30. On the 25 seeds where both finish, the median paired makespan
+delta is -14.6 s. Auction V2 sends 19.69% fewer messages, 8.89% fewer bytes, and records
+15.30% fewer nonproductive wait ticks, while sending 31.68% more bid messages to evaluate
+bounded future work. See
+[`docs/BIOS6_AUCTION_V2_RELEASE.md`](docs/BIOS6_AUCTION_V2_RELEASE.md) and the checked-in
+JSON evidence for the exact gates and limitations.
 
 The strict SIH acceptance benchmark now passes all 90 paired seeds across 4-, 6- and
 8-robot fleets. `BIOS_PIBT.5` completes 30/30 runs at every fleet size; stop-and-wait

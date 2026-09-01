@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "comparison_scope": "identical deterministic 30-seed open-burst task campaign",
+  "scenario": "showcase_open_floor",
+  "seeds": [0, 29],
+  "robots": 5,
+  "tasks_per_robot": 3,
+  "tasks_per_run": 15,
+  "fixed_cutoff_s": 240.0,
+  "baseline": {
+    "commit": "a7753c6a2e4c72c665c7abaceb6a0e4d55bf270d",
+    "policy": "BIOS_PIBT.6",
+    "allocation_policy": "auction",
+    "completed_runs": 25,
+    "runs": 30,
+    "tasks_completed": 438,
+    "tasks_announced": 450,
+    "messages_sent": 299539,
+    "bytes_sent": 53400825,
+    "auction_bids_sent": 3756,
+    "nonproductive_wait_ticks": 184193,
+    "contacts_robot_robot": 0,
+    "contacts_robot_human": 0,
+    "contacts_robot_rack": 0,
+    "deadlocks_detected": 0
+  },
+  "candidate": {
+    "policy": "BIOS_PIBT.6",
+    "allocation_policy": "auction_bundle",
+    "acceptance_artifact": "artifacts/benchmarks/bios6-auction-v2-acceptance.json",
+    "completed_runs": 30,
+    "runs": 30,
+    "tasks_completed": 450,
+    "tasks_announced": 450,
+    "messages_sent": 240575,
+    "bytes_sent": 48655616,
+    "auction_bids_sent": 4946,
+    "nonproductive_wait_ticks": 156018,
+    "contacts_robot_robot": 0,
+    "contacts_robot_human": 0,
+    "contacts_robot_rack": 0,
+    "deadlocks_detected": 0,
+    "deadline_misses": 0,
+    "rejected_task_completions": 0
+  },
+  "paired_completed_seed_comparison": {
+    "common_seed_count": 25,
+    "baseline_median_makespan_s": 199.9,
+    "candidate_median_makespan_s": 195.6,
+    "median_paired_delta_s": -14.6,
+    "mean_paired_percent_change": -3.2198
+  },
+  "relative_changes_percent": {
+    "completed_run_rate_percentage_points": 16.6667,
+    "task_completion_rate_percentage_points": 2.6667,
+    "messages_sent": -19.685,
+    "bytes_sent": -8.886,
+    "auction_bids_sent": 31.683,
+    "nonproductive_wait_ticks": -15.296
+  },
+  "claim_limit": "finite simulation evidence; not universal completion, physical safety certification, or Byzantine security"
+}

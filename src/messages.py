@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .geometry import Cell
+from .task_protocol import (CompletionCertificate, task_descriptor_hash,
+                            valid_sha256)
 
 # ---------------------------------------------------------------- message types
 
@@ -58,6 +60,7 @@ MAX_INTENT_CELLS = 64
 MAX_PLAN_CELLS = 1024
 MAX_EXPERIENCE_RECORDS = 8
 MAX_RELATIVE_TIME_S = 86_400.0
+MAX_AUCTION_EPOCH = 2 ** 31 - 1
 CARGO_TYPES = ("normal", "fragile", "heavy", "hazardous")
 _ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
@@ -107,6 +110,32 @@ def _key_bytes(secret: bytes | str) -> bytes:
 def _canonical(d: dict) -> bytes:
     return json.dumps(d, sort_keys=True, separators=(",", ":"),
                       allow_nan=False).encode("utf-8")
+
+
+def delivery_identity_body(message: Message) -> dict[str, Any]:
+    """Return the semantic body used by the seeded loss/latency model.
+
+    Generation-bound task evidence extends the wire representation, but it must not
+    accidentally give the new allocator an easier or harder pseudo-random radio trace.
+    Removing only the additive identity/certificate fields makes a protocol-upgraded
+    packet draw the same simulated loss as its legacy semantic equivalent.  The actual
+    encoded datagram, byte count, authentication tag, and MTU check remain unchanged.
+    """
+    body = dict(message.body)
+    if message.type == TASK_NEW:
+        for key in ("g", "dh", "dd"):
+            body.pop(key, None)
+    elif message.type in (BID, AWARD):
+        for key in ("g", "dh"):
+            body.pop(key, None)
+    elif message.type == TASK_DONE and body.get("cv") is not None:
+        for key in ("cv", "g", "dh", "oph", "finished", "nonce", "result"):
+            body.pop(key, None)
+        # A direct legacy completion contained only task and epoch.  A relayed legacy
+        # completion also contained owner and relay, so preserve those two in that case.
+        if not body.get("relay", False):
+            body.pop("owner", None)
+    return body
 
 
 def encode(msg: Message, secret: bytes | str | None = None,
@@ -281,36 +310,83 @@ def _validate_dict(d: dict) -> str | None:
         ttl = body.get("ttl")
         due = body.get("due")
         legacy_deadline = body.get("dl")
+        generation = body.get("g", 0)
+        descriptor_hash = body.get("dh")
+        descriptor_deadline = body.get("dd")
         if (not _task_id(body.get("task")) or not _cell(body.get("pk"))
                 or not _cell(body.get("dp"))
                 or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)
+                or not _integer(generation, 0, 2 ** 31 - 1)
                 or body.get("ct", "normal") not in CARGO_TYPES
                 or not _number(body.get("cw", 0.0), 0.0, 1_000_000.0)
                 or not _integer(body.get("pr", 1), 1, 100)
+                or (descriptor_hash is not None and not valid_sha256(descriptor_hash))
+                or (descriptor_deadline is not None
+                    and not _relative_time(descriptor_deadline))
                 or (ttl is not None and not _relative_time(ttl))
                 or (due is not None and not _relative_time(due))
                 or (legacy_deadline is not None
                     and not _number(legacy_deadline, 0.0, 1e15))):
             return "invalid_task"
+        if descriptor_hash is not None and descriptor_hash != task_descriptor_hash(
+                str(body["task"]), int(generation), body["pk"], body["dp"],
+                str(body.get("ct", "normal")), float(body.get("cw", 0.0)),
+                int(body.get("pr", 1)),
+                None if descriptor_deadline is None else float(descriptor_deadline)):
+            return "invalid_task_descriptor_hash"
     elif typ == BID:
+        future = bool(body.get("future", False))
+        generation = body.get("g")
+        descriptor_hash = body.get("dh")
         if (not _task_id(body.get("task"))
                 or not _number(body.get("cost"), 0.0, 1e12)
-                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)):
+                or not _integer(body.get("e", 0), 0, MAX_AUCTION_EPOCH)
+                or ((generation is None) != (descriptor_hash is None))
+                or (generation is not None
+                    and not _integer(generation, 0, MAX_AUCTION_EPOCH))
+                or (descriptor_hash is not None
+                    and not valid_sha256(descriptor_hash))
+                or (future and (
+                    not _task_id(body.get("active"))
+                    or not _integer(body.get("ae", 0), 0, MAX_AUCTION_EPOCH)
+                    or not _integer(body.get("bv", 0), 0, MAX_AUCTION_EPOCH)))):
             return "invalid_bid"
     elif typ == AWARD:
+        future = bool(body.get("future", False))
+        generation = body.get("g")
+        descriptor_hash = body.get("dh")
         if (not _task_id(body.get("task"))
                 or not _number(body.get("cost"), 0.0, 1e12)
-                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)
+                or not _integer(body.get("e", 0), 0, MAX_AUCTION_EPOCH)
+                or ((generation is None) != (descriptor_hash is None))
+                or (generation is not None
+                    and not _integer(generation, 0, MAX_AUCTION_EPOCH))
+                or (descriptor_hash is not None
+                    and not valid_sha256(descriptor_hash))
                 or not _identifier(body.get("dst"), optional=True)
                 or not _identifier(body.get("winner"), optional=True)
+                or (future and (
+                    not _task_id(body.get("active"))
+                    or not _integer(body.get("ae", 0), 0, MAX_AUCTION_EPOCH)
+                    or not _integer(body.get("bv", 0), 0, MAX_AUCTION_EPOCH)))
                 or (body.get("ttl") is not None
                     and not _relative_time(body.get("ttl")))
                 or (body.get("u") is not None
                     and not _number(body.get("u"), 0.0, 1e15))):
             return "invalid_award"
     elif typ == TASK_DONE:
-        if (not _task_id(body.get("task"))
-                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)):
+        relay = body.get("relay", False)
+        if body.get("cv") is not None:
+            certificate = CompletionCertificate.from_mapping(body)
+            if (certificate is None or not isinstance(relay, bool)
+                    or (relay and certificate.owner == d["src"])
+                    or (not relay and certificate.owner != d["src"])):
+                return "invalid_completion_certificate"
+        elif (not _task_id(body.get("task"))
+              or not _integer(body.get("e", 0), 0, MAX_AUCTION_EPOCH)
+              or not _identifier(body.get("owner"), optional=True)
+              or not isinstance(relay, bool)
+              or (relay and not _identifier(body.get("owner")))):
             return "invalid_task_done"
     elif typ in (CLAIM, RELEASE):
         if body.get("b"):
@@ -400,12 +476,20 @@ def heartbeat(src: str, seq: int, t: float, pose: tuple[float, float, float],
 def task_new(src: str, seq: int, t: float, task_id: str, pick: Cell,
              drop: Cell, epoch: int = 0, bid_until: float | None = None,
              cargo_type: str = "normal", cargo_weight: float = 0.0,
-             priority: int = 1, deadline: float | None = None) -> Message:
+             priority: int = 1, deadline: float | None = None,
+             generation: int = 0, descriptor_hash: str | None = None,
+             descriptor_deadline_s: float | None = None) -> Message:
+    immutable_hash = descriptor_hash or task_descriptor_hash(
+        task_id, generation, pick, drop, cargo_type, cargo_weight,
+        priority, descriptor_deadline_s,
+    )
     body = {
         "task": task_id, "pk": list(pick), "dp": list(drop),
         "e": int(epoch), "ct": cargo_type, "cw": float(cargo_weight),
-        "pr": int(priority),
+        "pr": int(priority), "g": int(generation), "dh": immutable_hash,
     }
+    if descriptor_deadline_s is not None:
+        body["dd"] = round(float(descriptor_deadline_s), 6)
     if bid_until is not None:
         body["ttl"] = round(max(0.0, bid_until - t), 3)
     if deadline is not None:
@@ -473,19 +557,35 @@ def yield_to(src: str, seq: int, t: float, cell: Cell, winner: str) -> Message:
 
 
 def bid(src: str, seq: int, t: float, task_id: str, cost: float,
-        epoch: int = 0) -> Message:
-    return Message(BID, src, seq, t, {
+        epoch: int = 0, *, generation: int | None = None,
+        descriptor_hash: str | None = None, active_task: str | None = None,
+        active_epoch: int = 0, bundle_version: int = 0) -> Message:
+    body: dict[str, Any] = {
         "task": task_id, "cost": round(cost, 3), "e": int(epoch),
-    })
+    }
+    if descriptor_hash is not None:
+        body.update({"g": int(generation or 0), "dh": descriptor_hash})
+    if active_task is not None:
+        body.update({
+            "future": True,
+            "active": active_task,
+            "ae": int(active_epoch),
+            "bv": int(bundle_version),
+        })
+    return Message(BID, src, seq, t, body)
 
 
 def award(src: str, seq: int, t: float, task_id: str, cost: float,
           dst: str | None = None, epoch: int = 0,
           lease_until: float | None = None,
-          winner: str | None = None) -> Message:
+          winner: str | None = None, *, generation: int | None = None,
+          descriptor_hash: str | None = None, active_task: str | None = None,
+          active_epoch: int = 0, bundle_version: int = 0) -> Message:
     body: dict[str, Any] = {
         "task": task_id, "cost": round(cost, 3), "e": int(epoch),
     }
+    if descriptor_hash is not None:
+        body.update({"g": int(generation or 0), "dh": descriptor_hash})
     if dst is not None:
         body["dst"] = dst
         body["winner"] = dst
@@ -493,14 +593,30 @@ def award(src: str, seq: int, t: float, task_id: str, cost: float,
         body["winner"] = winner
     if lease_until is not None:
         body["ttl"] = round(max(0.0, lease_until - t), 3)
+    if active_task is not None:
+        body.update({
+            "future": True,
+            "active": active_task,
+            "ae": int(active_epoch),
+            "bv": int(bundle_version),
+        })
     return Message(AWARD, src, seq, t, body)
 
 
 def task_done(src: str, seq: int, t: float, task_id: str,
-              epoch: int = 0) -> Message:
-    return Message(TASK_DONE, src, seq, t, {
-        "task": task_id, "e": int(epoch),
-    })
+              epoch: int = 0, owner: str | None = None,
+              certificate: CompletionCertificate | None = None) -> Message:
+    body: dict[str, Any] = (
+        certificate.to_mapping() if certificate is not None else
+        {"task": task_id, "e": int(epoch)}
+    )
+    if certificate is not None:
+        owner = certificate.owner
+    if owner is not None:
+        body["owner"] = owner
+        if owner != src:
+            body["relay"] = True
+    return Message(TASK_DONE, src, seq, t, body)
 
 
 def mgr_beacon(src: str, seq: int, t: float, epoch: int) -> Message:

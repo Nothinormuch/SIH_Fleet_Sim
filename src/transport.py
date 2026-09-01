@@ -34,6 +34,7 @@ import math
 import random
 import secrets
 import socket
+import time
 from itertools import count
 
 from . import messages as msg
@@ -164,7 +165,8 @@ class SimNetwork:
             # on their content and send time; sequence is deliberately excluded because
             # event-triggered policies allocate fewer preceding sequence numbers.
             identity = json.dumps(
-                [self.seed, src, dst, message.type, round(float(t), 6), message.body],
+                [self.seed, src, dst, message.type, round(float(t), 6),
+                 msg.delivery_identity_body(message)],
                 sort_keys=True, separators=(",", ":"), allow_nan=False,
             ).encode("utf-8")
             digest = hashlib.blake2b(identity, digest_size=16).digest()
@@ -219,6 +221,9 @@ class UdpMulticastTransport:
                 raise ValueError("shared_key must contain at least 16 bytes")
         self.session_id = session_id or secrets.token_hex(8)
         self._replay: dict[tuple[str, str], ReplayWindow] = {}
+        self._replay_seen: dict[tuple[str, str], float] = {}
+        self._replay_max_sessions = 1024
+        self._replay_session_ttl_s = 3600.0
         self.stats = {"sent": 0, "recv": 0, "bytes_sent": 0, "bytes_recv": 0,
                       "malformed": 0, "send_failed": 0, "replayed": 0,
                       "auth_failed": 0, "oversized": 0}
@@ -274,12 +279,31 @@ class UdpMulticastTransport:
                     self.stats["oversized"] += 1
                 continue
             session = m.sid or "legacy"
-            window = self._replay.setdefault((m.src, session), ReplayWindow())
+            replay_key = (m.src, session)
+            window = self._replay_window(replay_key, time.monotonic())
             if not window.accept(m.seq):
                 self.stats["replayed"] += 1
                 continue
             out.append(m)
         return out
+
+    def _replay_window(self, replay_key: tuple[str, str], now: float) -> ReplayWindow:
+        """Return a replay window while bounding attacker-controlled session state."""
+        if replay_key not in self._replay:
+            stale = [
+                key for key, seen in self._replay_seen.items()
+                if now - seen > self._replay_session_ttl_s
+            ]
+            for key in stale:
+                self._replay.pop(key, None)
+                self._replay_seen.pop(key, None)
+            if len(self._replay) >= self._replay_max_sessions:
+                oldest = min(self._replay_seen, key=self._replay_seen.get)
+                self._replay.pop(oldest, None)
+                self._replay_seen.pop(oldest, None)
+            self._replay[replay_key] = ReplayWindow()
+        self._replay_seen[replay_key] = now
+        return self._replay[replay_key]
 
     def close(self) -> None:
         try:

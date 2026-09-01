@@ -197,6 +197,47 @@ def test_v5_priority_keeps_urgent_task_inside_bounded_bid_bundle():
     assert "URGENT" in bid_tasks
 
 
+def test_v5_hard_deadline_outranks_soft_priority_in_bounded_bid_bundle():
+    """Soft business priority must not starve still-feasible hard-deadline work."""
+    env = open_floor(30, 10)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR01", (1, 2))
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    brain.open_tasks = {
+        f"HIGH{i:02d}": Task(
+            f"HIGH{i:02d}", (2 + i, 2), (20, 2), priority=3)
+        for i in range(DEFAULT.traffic.energy_bid_bundle)
+    }
+    brain.open_tasks["DEADLINE"] = Task(
+        "DEADLINE", (2, 3), (20, 3), priority=1, deadline=120.0)
+    outbox = []
+
+    brain._run_v3_batch_auction(0.0, world.sense("AMR01"), outbox)
+
+    bid_tasks = {message.body["task"] for message in outbox}
+    assert len(outbox) == DEFAULT.traffic.energy_bid_bundle
+    assert "DEADLINE" in bid_tasks
+
+
+def test_v5_drop_admission_uses_bounded_drain_capacity_after_half_complete():
+    env = open_floor(30, 10)
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V5,
+                     allocation_policy=ALLOCATION_AUCTION)
+    brain.open_tasks = {
+        f"T{i}": Task(f"T{i}", (2, 2), (20, 2)) for i in range(4)
+    }
+
+    assert brain._auction_drop_capacity() == DEFAULT.traffic.auction_drop_capacity
+
+    brain.open_tasks.pop("T0")
+    brain.open_tasks.pop("T1")
+    brain.completed_tasks.update(("T0", "T1"))
+
+    assert (brain._auction_drop_capacity()
+            == DEFAULT.traffic.auction_drop_drain_capacity)
+
+
 def test_v5_working_robot_cannot_enter_another_auction():
     env = open_floor(10, 10)
     world = World(env, DEFAULT, seed=0)
@@ -303,6 +344,26 @@ def test_v3_peer_catalog_gossips_a_missed_task_without_a_manager():
     assert outbox[0].body["e"] == 2
 
 
+def test_v6_reliable_task_catalog_stops_after_recovery_grace():
+    brain = AMRBrain(
+        "AMR01", open_floor(6, 6), DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    brain.open_tasks["T1"] = Task("T1", (1, 1), (4, 4))
+    brain._known_peer_ids.add("AMR02")
+    brain.peers["AMR02"] = Peer("AMR02", last_seen=1.0)
+    initial_outbox = []
+    settled_outbox = []
+
+    brain._broadcast_task_catalog(1.0, initial_outbox)
+    brain.peers["AMR02"].last_seen = 4.0
+    brain._broadcast_task_catalog(4.0, settled_outbox)
+
+    assert len(initial_outbox) == 1
+    assert settled_outbox == []
+
+
 def test_v3_peer_catalog_repeats_completion_records():
     brain = AMRBrain(
         "AMR01", open_floor(6, 6), DEFAULT,
@@ -351,6 +412,26 @@ def test_v6_completion_gossip_stays_quiet_on_healthy_circulation_but_heals_dead_
     assert len(degraded_outbox) == 1
     assert degraded_outbox[0].type == TASK_DONE
     assert degraded_outbox[0].body["task"] == "T1"
+
+
+def test_v6_reliable_open_floor_completion_gossip_stops_after_recovery_grace():
+    brain = AMRBrain(
+        "AMR01", open_floor(6, 6), DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    brain.completed_tasks.add("T1")
+    brain._known_peer_ids.add("AMR02")
+    brain.peers["AMR02"] = Peer("AMR02", last_seen=1.0)
+    initial_outbox = []
+    settled_outbox = []
+
+    brain._broadcast_completion_catalog(1.0, initial_outbox)
+    brain.peers["AMR02"].last_seen = 4.0
+    brain._broadcast_completion_catalog(4.0, settled_outbox)
+
+    assert len(initial_outbox) == 1
+    assert settled_outbox == []
 
 
 def test_v6_identifies_parking_routes_through_a_radio_dead_zone():

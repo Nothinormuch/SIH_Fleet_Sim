@@ -29,7 +29,7 @@ class RobotSpec:
     # which is exactly the deadlock a fixed 1.8 m cone produced here.
     reaction_s: float = 0.10        # sense-to-brake latency allowance
     safety_margin_m: float = 0.15   # standstill clearance the robot never gives up
-    omni_stop_m: float = 0.30       # 360 deg guard: stop if anything is this close
+    omni_stop_m: float = 0.45       # 360 deg guard with relative-motion reserve
     safety_cone_rad: float = 1.05   # +/- 60 deg: unexpected objects (people, peers)
     static_cone_rad: float = 0.35   # +/- 20 deg: mapped shelving directly in the path
     v_turn: float = 0.20            # speed carried through a 90 deg direction change
@@ -173,11 +173,19 @@ class TrafficSpec:
     # robot can close the same auction without an auctioneer choosing the winner.
     auction_bid_window_s: float = 0.6
     auction_lease_s: float = 20.0
+    auction_unknown_bid_cache_max: int = 128
+    auction_unknown_bid_cache_ttl_s: float = 2.0
     # V3 bids on a bounded bundle instead of serialising one auction per task. One
     # active task per physical drop cell is deliberate admission control: it keeps
     # service-station queues out of the circulation lanes.
     auction_batch_bids: int = 12
     auction_drop_capacity: int = 2
+    # Once half of the replicated workload is terminal, permit one additional
+    # in-flight reservation per drop to drain the long tail. This is workload-state
+    # driven (not timeout driven): the conservative cap shapes the congested launch,
+    # while the bounded drain cap keeps an idle robot useful late in the wave.
+    auction_drop_drain_capacity: int = 3
+    auction_drop_drain_completed_fraction: float = 0.5
     # At most this many live jobs may reserve the same direction through a
     # bidirectional single-file block.  The phase flips only after those jobs finish,
     # which avoids injecting two opposing queues into a corridor that cannot pass.
@@ -186,6 +194,11 @@ class TrafficSpec:
     # eventually learned from a peer; the WMS is not required to coordinate retries.
     task_gossip_period_s: float = 1.0
     completion_gossip_period_s: float = 1.0
+    # WMS repeats are only a bootstrap anti-entropy backstop; peers gossip the catalog
+    # every second after any robot hears it. A four-second injector repeat preserves
+    # loss recovery without making larger authenticated task descriptors dominate the
+    # radio. The first announcement remains immediate at t=0.
+    wms_announcement_period_s: float = 4.0
     # BIOS 5 energy-feasible auction. Energy is a hard admission constraint; these
     # values are declared here so experiments cannot quietly tune them per seed.
     energy_reserve_frac: float = 0.15
@@ -255,6 +268,21 @@ class TrafficSpec:
     # No robot owns a global charger schedule; stale information simply disappears.
     v6_charger_busy_penalty: float = 8.0
     v6_charger_intent_penalty: float = 3.0
+
+    # Released BIOS 6 Auction V2 enhancement. The ordinary ``auction`` policy remains
+    # the untouched idle-only comparison; ``auction_bundle`` may reserve exactly one
+    # future task and must revalidate it before promotion.
+    # The future completion estimate is expressed in equivalent traversal cells so it
+    # remains directly comparable with the existing idle-robot bid.
+    bundle_future_lease_s: float = 20.0
+    bundle_revalidate_s: float = 1.0
+    bundle_network_recovery_s: float = 1.0
+    bundle_bid_retry_s: float = 2.0
+    bundle_reassignment_threshold: float = 0.10
+    bundle_deadline_risk_weight: float = 2.0
+    bundle_reserve_risk_weight: float = 1.0
+    bundle_energy_weight: float = 4.0
+    bundle_epoch_max_advance: int = 1024
 
 
 @dataclass(frozen=True)

@@ -22,12 +22,14 @@ import socket
 import statistics
 import time
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Protocol
 
 from .amr import AMRBrain, POLICY_BIOS_PIBT_V6, Task
 from .scenarios import SCENARIOS
 from .settings import DEFAULT, Config
 from .task_allocation import ALLOCATION_AUCTION, ALLOCATION_PREASSIGNED
+from .terminal_journal import TerminalJournal, TerminalJournalError
 from .transport import DEFAULT_GROUP, DEFAULT_PORT, UdpMulticastTransport
 from .world import Actuation, Detection, Sensors
 
@@ -90,10 +92,14 @@ class EdgeRuntime:
     """One brain plus one real peer transport; safe to drive from any hardware I/O."""
 
     def __init__(self, brain: AMRBrain, transport: PeerTransport,
-                 cfg: Config = DEFAULT) -> None:
+                 cfg: Config = DEFAULT,
+                 terminal_journal: TerminalJournal | None = None) -> None:
         self.brain = brain
         self.transport = transport
         self.cfg = cfg
+        self.terminal_journal = terminal_journal
+        self._persisted_terminal_records = brain.export_terminal_records()
+        self._pending_terminal_records: list[dict] | None = None
         self.metrics = EdgeMetrics()
 
     def tick(self, local_t: float, sensors: Sensors) -> Actuation:
@@ -103,11 +109,23 @@ class EdgeRuntime:
         actuation, outbox = self.brain.step(local_t, local_sensors, inbox)
         for message in outbox:
             self.transport.send(message)
+        records = self.brain.export_terminal_records()
+        if records != self._persisted_terminal_records:
+            self._pending_terminal_records = records
         self.metrics.record_loop(
             time.perf_counter() - started,
             1.0 / self.cfg.rates.safety_hz,
         )
         return actuation
+
+    def flush_terminal_records(self) -> None:
+        """Persist terminal state after the current actuation has already been sent."""
+        if self.terminal_journal is None or self._pending_terminal_records is None:
+            return
+        records = self._pending_terminal_records
+        self.terminal_journal.sync(records)
+        self._persisted_terminal_records = records
+        self._pending_terminal_records = None
 
     def report(self) -> dict:
         return {
@@ -118,10 +136,16 @@ class EdgeRuntime:
             "state": self.brain.state,
             "task": self.brain.task.tid if self.brain.task else None,
             "completed_tasks": sorted(self.brain.completed_tasks),
+            "terminal_journal": (
+                dict(self.terminal_journal.stats)
+                if self.terminal_journal is not None else None),
         }
 
     def close(self) -> None:
-        self.transport.close()
+        try:
+            self.flush_terminal_records()
+        finally:
+            self.transport.close()
 
 
 class UdpJsonHardwareIO:
@@ -242,9 +266,10 @@ def sensors_from_dict(data: object) -> Sensors:
 def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareIO,
                   cfg: Config = DEFAULT, duration_s: float | None = None,
                   sensor_timeout_s: float = 0.25,
-                  clock_offset_s: float = 0.0) -> dict:
+                  clock_offset_s: float = 0.0,
+                  terminal_journal: TerminalJournal | None = None) -> dict:
     """Run the real-time 50 Hz loop until interrupted or ``duration_s`` elapses."""
-    runtime = EdgeRuntime(brain, transport, cfg)
+    runtime = EdgeRuntime(brain, transport, cfg, terminal_journal)
     stop_requested = False
 
     def request_stop(_signum, _frame) -> None:
@@ -271,6 +296,10 @@ def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareI
             else:
                 actuation = runtime.tick(local_t, sensors)
             hardware.write_actuation(actuation, local_t)
+            # Atomic disk persistence is deliberately after the actuation write: a
+            # slow filesystem may delay the next coordination tick, but never the
+            # protective command already selected for this sensor frame.
+            runtime.flush_terminal_records()
             next_tick += period
             time.sleep(max(0.0, next_tick - time.monotonic()))
     finally:
@@ -306,6 +335,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--psk-env", default="SIH_FLEET_PSK")
     parser.add_argument("--allow-unauthenticated", action="store_true")
     parser.add_argument("--report", help="write the final JSON report to this path")
+    parser.add_argument(
+        "--terminal-journal",
+        help=("completion journal path; default: platform user-state directory "
+              "under sih-fleet-priority"),
+    )
     return parser
 
 
@@ -315,9 +349,24 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--robot-index must be within the configured fleet")
     scenario = SCENARIOS[args.scenario](n_robots=args.robots, seed=args.seed)
     start = scenario.starts[args.robot_index]
+    if args.terminal_journal:
+        journal_path = Path(args.terminal_journal)
+    else:
+        state_root = Path(os.environ.get(
+            "XDG_STATE_HOME", Path.home() / ".local" / "state"))
+        journal_path = (
+            state_root / "sih-fleet-priority" /
+            f"{args.robot_id}-terminal.json")
+    terminal_journal = TerminalJournal(journal_path)
+    try:
+        terminal_records = terminal_journal.load()
+    except TerminalJournalError as exc:
+        raise SystemExit(
+            f"refusing to start with an invalid terminal journal: {exc}") from exc
     brain = AMRBrain(
         args.robot_id, scenario.env, DEFAULT, policy=args.policy, home=start,
         allocation_policy=args.allocation_policy,
+        terminal_records=terminal_records,
     )
     if args.allocation_policy == ALLOCATION_PREASSIGNED:
         brain.queue = [Task(**task.__dict__)
@@ -339,10 +388,10 @@ def main(argv: list[str] | None = None) -> int:
     report = run_edge_node(
         brain, transport, hardware, duration_s=args.duration,
         clock_offset_s=args.clock_offset,
+        terminal_journal=terminal_journal,
     )
     encoded = json.dumps(report, indent=2, sort_keys=True)
     if args.report:
-        from pathlib import Path
         Path(args.report).write_text(encoded + "\n", encoding="utf-8")
     print(encoded)
     return 0
