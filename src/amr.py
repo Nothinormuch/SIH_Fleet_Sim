@@ -61,7 +61,9 @@ from .world import Actuation, Sensors
 # ---------------------------------------------------------------------- constants
 
 POLICY_STOP_WAIT = "stop_and_wait"
+POLICY_STOP_WAIT_COMPETITION = "stop_and_wait_competition"
 POLICY_CENTRAL = "central"
+POLICY_PRIORITIZED_SPACE_TIME = "prioritized_space_time_astar"
 POLICY_HIERARCHICAL = "hierarchical"
 POLICY_BIOS = "BIOS_1.0.0"
 POLICY_BIOS_PIBT = "BIOS_PIBT.1"
@@ -79,8 +81,9 @@ V3_AUCTION_POLICIES = (POLICY_BIOS_PIBT_V3, *ENERGY_AUCTION_POLICIES)
 DIRECTED_POLICIES = (POLICY_BIOS_PIBT_V2, *V3_AUCTION_POLICIES)
 PIBT_POLICIES = (POLICY_BIOS_PIBT, *DIRECTED_POLICIES)
 DECENTRAL_POLICIES = (POLICY_BIOS, POLICY_DECENTRALIZED, *PIBT_POLICIES, POLICY_BIOS4)
-CENTRAL_POLICIES = (POLICY_CENTRAL,)
-POLICIES = (POLICY_STOP_WAIT, POLICY_CENTRAL, POLICY_HIERARCHICAL,
+STOP_WAIT_POLICIES = (POLICY_STOP_WAIT, POLICY_STOP_WAIT_COMPETITION)
+CENTRAL_POLICIES = (POLICY_CENTRAL, POLICY_PRIORITIZED_SPACE_TIME)
+POLICIES = (*STOP_WAIT_POLICIES, *CENTRAL_POLICIES, POLICY_HIERARCHICAL,
             POLICY_BIOS, POLICY_DECENTRALIZED, *PIBT_POLICIES, POLICY_BIOS4)
 
 MODE_CENTRAL = "CENTRAL_OK"
@@ -242,6 +245,7 @@ class AMRBrain:
         self._bid_seen_t: dict[tuple[str, int, str], float] = {}
         self._bid_opened: dict[str, float] = {}
         self._last_lease_broadcast = -1e9
+        self._active_task_lease_s = self.cfg.traffic.auction_lease_s
         self._v3_round_started: float | None = None
         self._remote_winner_since: float | None = None
         self._remote_winner_fingerprint: tuple[
@@ -368,6 +372,13 @@ class AMRBrain:
         self._mgr_seen = -1e9
         self._seq = 0
         self._hold = False
+        # The competition baseline remains non-cooperative stop-and-wait, but avoids
+        # burning A* cycles while a temporary obstruction is still present.  A local
+        # detour is attempted only after the same next cell remains blocked for the
+        # configured persistence interval; no peer intent, priority or lease is used.
+        self._stop_wait_blocked_since: float | None = None
+        self._stop_wait_blocked_cell: Cell | None = None
+        self._stop_wait_persistent_replan_t = -1e9
 
         # Everything the report quotes about this agent, measured not asserted.
         self.stats = {
@@ -878,11 +889,25 @@ class AMRBrain:
         # allowed to argue with it.
         if sensors.clearance_omni_m <= spec.omni_stop_m:
             self.stats["safety_stops"] += 1
-            creeping = (self.policy in (POLICY_BIOS, POLICY_BIOS4, *PIBT_POLICIES)
-                        and sensors.t < self._creep_until
-                        and act.v > 0.0)
+            timed_creep = (
+                self.policy in (POLICY_BIOS, POLICY_BIOS4, *PIBT_POLICIES)
+                and sensors.t < self._creep_until
+                and act.v > 0.0
+            )
+            # A chassis can finish braking slightly off-centre and leave an adjacent
+            # robot inside the conservative omni field. Permanently forbidding even a
+            # motion that increases every observed gap turns the safety envelope into
+            # a liveness trap. V3+ may creep only when instantaneous relative motion
+            # is separating from every close object; humans and anonymous obstacles
+            # are evaluated by the same geometric predicate as peers.
+            separating_creep = (
+                self.policy in V3_AUCTION_POLICIES
+                and act.v > 0.0
+                and self._escape_motion_increases_clearance(sensors, act)
+            )
+            creeping = timed_creep or separating_creep
             if (creeping and self.policy in V3_AUCTION_POLICIES
-                    and not self._escape_motion_increases_clearance(sensors, act)):
+                    and not separating_creep):
                 # A verified escape cell is not enough: while turning off-centre the
                 # first centimetres of an otherwise valid move can still arc toward a
                 # neighbouring chassis. V3 permits recovery motion only when the
@@ -898,7 +923,7 @@ class AMRBrain:
                 v_allowed = self._speed_limit_from_traffic(sensors)
                 if v_allowed <= 0.02:
                     return Actuation(v=0.0, omega=act.omega, safety_stop=True)
-                v = min(act.v, 0.20, v_allowed)
+                v = min(act.v, 0.12 if separating_creep else 0.20, v_allowed)
                 return Actuation(v=v, omega=act.omega, safety_stop=False)
             return Actuation(v=0.0, omega=act.omega * 0.3, safety_stop=True)
 
@@ -930,13 +955,14 @@ class AMRBrain:
 
     def _escape_motion_increases_clearance(self, sensors: Sensors,
                                            act: Actuation) -> bool:
-        """True only when a recovery translation separates from every close object."""
+        """True when recovery closes no close gap and opens at least one of them."""
         if act.v <= 0.0:
             return False
         vx = act.v * math.cos(sensors.pose[2])
         vy = act.v * math.sin(sensors.pose[2])
         px, py, _ = sensors.pose
         checked = False
+        improves = False
         for det in sensors.detections:
             dx, dy = det.x - px, det.y - py
             centre_distance = math.hypot(dx, dy)
@@ -951,7 +977,116 @@ class AMRBrain:
                                + (det.vy - vy) * uy)
             if separation_rate < -1e-6:
                 return False
-        return checked
+            if separation_rate > 1e-6:
+                improves = True
+        return checked and improves
+
+    def _v6_clearance_unstick(self, t: float, sensors: Sensors) -> bool:
+        """Take one bounded, lidar-verified clearance step out of a dense cluster.
+
+        Directed circulation prevents head-on aisle traffic, but it cannot create
+        physical room when several chassis brake off-centre at the same junction.  A
+        repeated retry of the same legal route then remains safe yet never translates.
+        BIOS 6 may temporarily step into one adjacent free cell after Layer 0 has
+        refused motion for a full deadlock interval.  The candidate must be unowned,
+        absent from fresh peer intent and farther from *every* close lidar return at
+        its centre.  Layer 0 independently revalidates the commanded velocity on every
+        control tick, so this method cannot authorize motion toward a peer, person or
+        anonymous obstacle.
+        """
+        if self.policy != POLICY_BIOS_PIBT_V6:
+            return False
+
+        px, py, _ = sensors.pose
+        close = []
+        for det in sensors.detections:
+            current_distance = math.hypot(det.x - px, det.y - py)
+            if current_distance < 1e-9:
+                return False
+            gap = current_distance - self.cfg.robot.radius_m - det.r
+            if gap <= self.cfg.robot.omni_stop_m + 0.05:
+                close.append((det, current_distance))
+        if not close:
+            return False
+
+        here = sensors.cell
+        occupied = {
+            peer.cell for peer in self.peers.values()
+            if sensors.t - peer.last_seen <= self._peer_stale_after_s()
+        }
+        for peer in self.peers.values():
+            if sensors.t - peer.last_seen <= self._peer_stale_after_s():
+                occupied.update(peer.intent[:2])
+
+        candidates: list[tuple[int, float, int, Cell]] = []
+        for target in self.env.neighbors(here):
+            if target in occupied:
+                continue
+            tx, ty = cell_center(target, self.cfg.cell_m)
+            # The destination centre being farther away is insufficient: a straight
+            # segment can first move *toward* an off-centre neighbour and only then
+            # open the gap. Layer 0 correctly refuses that first centimetre, leaving
+            # the recovery state latched on a geometrically unreachable target. Keep
+            # only segments whose closest point to every nearby body is the current
+            # pose (within numerical tolerance), matching the continuous safety
+            # predicate that will execute the step.
+            if any(
+                segment_point_distance(
+                    (px, py), (tx, ty), (det.x, det.y)
+                ) < current_distance - 1e-6
+                for det, current_distance in close
+            ):
+                continue
+            gains = [
+                math.hypot(det.x - tx, det.y - ty) - current_distance
+                for det, current_distance in close
+            ]
+            # A grid step may initially be tangent to one footprint, but its cell
+            # centre must provide material extra clearance from every close return.
+            if any(gain <= 0.02 for gain in gains):
+                continue
+            circulation_penalty = int(
+                self.circulation.enabled
+                and not self.circulation.allows(self.env, here, target)
+            )
+            goal_distance = (manhattan(target, self.goal)
+                             if self.goal is not None else 0)
+            candidates.append((circulation_penalty, -min(gains), goal_distance,
+                               target))
+
+        if not candidates:
+            return False
+        target = min(candidates)[3]
+
+        self._hold = False
+        self.blocked_since = None
+        self.blocked_on = None
+        self._stall_since = None
+        self.retreat_target = target
+        self._retreat_for = None
+        self._retreat_block_cid = None
+        self._retreat_origin = here
+        self._retreat_contested = self._next_cell()
+        self._retreat_since = t
+        self.state = ST_RETREAT
+        self.path = [here, target]
+        self.path_times = []
+        self.pidx = 1
+        # This escape is intentionally planned from the measured off-centre pose.
+        # The normal follower first re-centres before an adjacent transition, which
+        # would reproduce the very motion Layer 0 has been refusing in this cluster.
+        # The selected target is an open neighbour and safety still validates the
+        # direct segment continuously, so bypass only that one centring waypoint.
+        self._cell_repair_target = target
+        self.stats["retreats"] += 1
+        self._creep_until = t + 6.0
+        self._record_decision(
+            t, "CLEARANCE_UNSTICK",
+            "Selected a free cell that increases clearance from every close object",
+            from_cell=list(here), target_cell=list(target),
+            minimum_clearance_gain_m=round(-min(candidates)[1], 3),
+            close_objects=len(close))
+        return True
 
     # ================================================================== Layer 1
 
@@ -988,6 +1123,25 @@ class AMRBrain:
             self._hold = self._traffic_ahead(sensors)
             blocker = self._peer_ahead(sensors) if self._hold else None
             self._track_block(t, self._hold, blocker)
+            return
+
+        if self.policy == POLICY_STOP_WAIT_COMPETITION:
+            # Stronger but still non-cooperative baseline: the decision remains
+            # strictly "is my next cell occupied?".  Event-driven waiting and a
+            # persistent-block detour improve computation/liveness without borrowing
+            # BIOS priority inheritance, intent messages, leases or reservations.
+            was_holding = self._hold
+            self._hold = self._traffic_ahead_competition(sensors)
+            nxt = self._next_cell()
+            if self._hold:
+                if not was_holding or self._stop_wait_blocked_cell != nxt:
+                    self._stop_wait_blocked_since = t
+                    self._stop_wait_blocked_cell = nxt
+                self._track_block(t, True, self._peer_ahead(sensors))
+            else:
+                self._stop_wait_blocked_since = None
+                self._stop_wait_blocked_cell = None
+                self._track_block(t, False, None)
             return
 
         if (self.policy in V3_AUCTION_POLICIES
@@ -1082,6 +1236,8 @@ class AMRBrain:
         if (loser_to is None and stalled
                 and self.policy in DIRECTED_POLICIES
                 and self.circulation.enabled):
+            if self._v6_clearance_unstick(t, sensors):
+                return
             self._creep_until = max(self._creep_until, t + 6.0)
             self._stall_since = None
             stalled = False
@@ -1244,6 +1400,21 @@ class AMRBrain:
             if to_cell((det.x, det.y), cm) == nxt:
                 return True
         return False
+
+    def _traffic_ahead_competition(self, sensors: Sensors) -> bool:
+        """Equivalent next-cell test with allocation-free bounding-box checks."""
+        nxt = self._next_cell()
+        if nxt is None or not sensors.detections:
+            return False
+        cm = self.cfg.cell_m
+        x_min = nxt[0] * cm
+        y_min = nxt[1] * cm
+        x_max = x_min + cm
+        y_max = y_min + cm
+        return any(
+            x_min <= detection.x < x_max and y_min <= detection.y < y_max
+            for detection in sensors.detections
+        )
 
     def _schedule_holds(self, t: float) -> bool:
         """True while a central schedule says this cell is not ours yet.
@@ -2404,6 +2575,32 @@ class AMRBrain:
         if self.goal is None:
             return
 
+        if self.policy == POLICY_STOP_WAIT_COMPETITION:
+            if not self.path or self.pidx >= len(self.path):
+                self._replan(t, sensors.cell)
+                return
+            if self._hold:
+                waited = (0.0 if self._stop_wait_blocked_since is None else
+                          t - self._stop_wait_blocked_since)
+                retry_age = t - self._stop_wait_persistent_replan_t
+                if (waited >= self.cfg.traffic.stop_wait_persistent_s
+                        and retry_age >= self.cfg.traffic.stop_wait_replan_period_s):
+                    self._stop_wait_persistent_replan_t = t
+                    nxt = self._next_cell()
+                    if nxt is not None:
+                        self.penalty[nxt] = (
+                            self.penalty.get(nxt, 0.0)
+                            + self.cfg.traffic.replan_penalty
+                        )
+                    self._replan(t, sensors.cell, reuse_identical=True)
+                return
+            stuck = t - self._last_progress_t
+            if stuck > self.cfg.traffic.livelock_progress_s:
+                self.penalty.clear()
+                self._last_progress_t = t
+                self._replan(t, sensors.cell)
+            return
+
         # Ask for a coordinated route on EVERY tick the manager is reachable, not only
         # when the local plan has run out. Requesting it lazily meant the robot spent
         # most of its time on a local shortest path with no schedule attached, fell
@@ -2425,7 +2622,8 @@ class AMRBrain:
             self._last_progress_t = t
             self._replan(t, sensors.cell)
 
-    def _replan(self, t: float, start: Cell) -> None:
+    def _replan(self, t: float, start: Cell,
+                reuse_identical: bool = False) -> None:
         if self.goal is None:
             return
         t0 = time.perf_counter()
@@ -2490,6 +2688,14 @@ class AMRBrain:
         self.stats["plan_calls"] += 1
         self.stats["plan_cpu_max_s"] = max(self.stats["plan_cpu_max_s"], cpu)
         self.stats["local_plans"] += 1
+        if reuse_identical and path:
+            search_start = max(0, self.pidx - 1)
+            try:
+                old_start = self.path.index(start, search_start)
+            except ValueError:
+                old_start = -1
+            if old_start >= 0 and self.path[old_start:] == path:
+                return
         self.stats["replans"] += 1
         self.epoch += 1
         self.path = path
@@ -2872,6 +3078,7 @@ class AMRBrain:
                 elapsed_s=round(t - self._task_started_t, 2),
                 battery_pct=round(100.0 * sensors.battery_frac, 1))
             self.task = None
+            self._active_task_lease_s = self.cfg.traffic.auction_lease_s
             self.state = ST_IDLE
             self._priority_grace_since = None
             self._priority_grace_until = -1e9
@@ -3111,7 +3318,8 @@ class AMRBrain:
             return
 
         winner_cost, winner = min(bids, key=lambda item: (item[0], item[1]))
-        lease_until = t + self._task_lease_duration(target)
+        lease_until = t + self._task_lease_duration(
+            target, start=sensors.cell)
         claim = (target.auction_epoch, winner_cost, winner, lease_until)
         self._record_task_claim(target.tid, claim)
         self._bid_opened.pop(target.tid, None)
@@ -3429,14 +3637,23 @@ class AMRBrain:
         for rid, tid, cost, epoch in assignments:
             task_record = self.open_tasks.get(tid)
             lease_until = t + (
-                self._task_lease_duration(task_record)
+                self._task_lease_duration(
+                    task_record,
+                    start=sensors.cell if rid == self.rid else None)
                 if task_record is not None
                 else self.cfg.traffic.auction_lease_s)
-            if self.circulation.enabled:
+            if (self.circulation.enabled
+                    and (rid == self.rid
+                         or self._replicate_remote_batch_claims())):
                 # On the strongly connected one-way graph, replicated greedy
                 # matching fills the batch in one round. Recording its remote slots
                 # supplies immediate station backpressure; the actual owner's AWARD
-                # refreshes the lease, and a disagreement expires harmlessly.
+                # refreshes the lease. Under packet loss or a radio hole, however,
+                # bid views are intentionally incomplete. Recording a locally
+                # inferred *remote* winner then creates a phantom reservation for a
+                # robot that may have selected another task in its own view. Only the
+                # signed award from that robot may establish degraded-link ownership;
+                # a self-win remains safe to claim immediately.
                 self._record_task_claim(tid, (epoch, cost, rid, lease_until))
             if rid == self.rid:
                 won = (
@@ -3526,6 +3743,13 @@ class AMRBrain:
             active_task=future_context[0] if future_context else None,
             active_epoch=future_context[1] if future_context else 0,
             bundle_version=future_context[2] if future_context else 0))
+
+    def _replicate_remote_batch_claims(self) -> bool:
+        """Whether an inferred remote winner is reliable enough to reserve locally."""
+        return not (
+            self.policy == POLICY_BIOS_PIBT_V6
+            and (self.cfg.net.loss > 0.0 or self.cfg.net.dead_zones)
+        )
 
     def _v5_reposition_stranded_bidder(
             self, t: float, sensors: Sensors, available: dict[str, Task],
@@ -4128,10 +4352,20 @@ class AMRBrain:
         old = self._task_claims.get(tid)
         if old is not None:
             same_owner = (old[0], old[1], old[2]) == (claim[0], claim[1], claim[2])
-            if old[3] > claim[3] and not same_owner:
+            if same_owner:
+                # Reordered duplicate renewals must never shorten an established
+                # lease. Returning False also prevents a stale peer nomination from
+                # being mistaken for a newly consumed award.
+                if old[3] >= claim[3]:
+                    return False
+            elif not self._claim_wins(claim, old):
                 return False
-            if not same_owner and not self._claim_wins(claim, old):
-                return False
+            # Expiry time is not part of auction authority. The previous code let a
+            # losing owner keep working whenever its self-renewed lease happened to
+            # expire milliseconds after the deterministic winner's award. That made
+            # two AMRs execute one task indefinitely after a partition healed. Epoch,
+            # bid cost and robot ID select the owner; TTL only bounds recovery when
+            # that selected owner disappears.
             if (old[2] == self.rid and claim[2] != self.rid
                     and self.task is not None and self.task.tid == tid):
                 self._drop_current_task()
@@ -4159,19 +4393,56 @@ class AMRBrain:
             task.lease_until = claim[3]
         return True
 
-    def _task_lease_duration(self, task: Task) -> float:
-        """Return bounded per-task backoff for transient asymmetric loss."""
+    def _task_lease_duration(self, task: Task,
+                             start: Cell | None = None) -> float:
+        """Return a bounded owner lease for loss and mapped radio holes.
+
+        Epoch backoff handles repeated asymmetric packet loss. A newly selected owner
+        may additionally protect a route that physically crosses a configured dead
+        zone for the predicted task duration plus a fixed congestion allowance. The
+        latter is deliberately computed only from the owner's current pose: peers do
+        not invent long reservations for remote winners, and the transmitted TTL is
+        bounded again on receipt.
+        """
         base = self.cfg.traffic.auction_lease_s
-        if (self.policy != POLICY_BIOS_PIBT_V6
-                or self.cfg.net.loss <= 0.0
-                or not self.cfg.net.dead_zones
-                or task.auction_epoch < self.cfg.traffic.v6_churn_epoch):
-            return base
-        failed_epochs = task.auction_epoch - self.cfg.traffic.v6_churn_epoch + 1
+        duration = base
+        if (self.policy == POLICY_BIOS_PIBT_V6
+                and self.cfg.net.loss > 0.0
+                and self.cfg.net.dead_zones
+                and task.auction_epoch >= self.cfg.traffic.v6_churn_epoch):
+            failed_epochs = (
+                task.auction_epoch - self.cfg.traffic.v6_churn_epoch + 1)
+            duration = min(
+                self.cfg.traffic.v6_churn_lease_max_s,
+                base + failed_epochs * self.cfg.traffic.v6_churn_lease_step_s,
+            )
+
+        if (self.policy != POLICY_BIOS_PIBT_V6 or start is None
+                or not self.cfg.net.dead_zones):
+            return duration
+        approach = astar(self.env, start, task.pick, extra_cost=self.penalty)
+        loaded = astar(self.env, task.pick, task.drop, extra_cost=self.penalty)
+        if (not approach or not loaded
+                or not self._route_crosses_radio_dead_zone(approach + loaded)):
+            return duration
+        estimate = self._task_estimate(task, start, extra_cost=self.penalty)
+        if estimate is None:
+            return duration
         return min(
-            self.cfg.traffic.v6_churn_lease_max_s,
-            base + failed_epochs * self.cfg.traffic.v6_churn_lease_step_s,
+            self.cfg.traffic.v6_dead_zone_lease_max_s,
+            max(duration,
+                estimate[1] + self.cfg.traffic.v6_dead_zone_lease_margin_s),
         )
+
+    def _max_incoming_task_lease_s(self) -> float:
+        """Bound authenticated peer lease TTLs before storing them locally."""
+        cap = max(
+            2.0 * self.cfg.traffic.auction_lease_s,
+            self.cfg.traffic.v6_churn_lease_max_s,
+        )
+        if self.policy == POLICY_BIOS_PIBT_V6 and self.cfg.net.dead_zones:
+            cap = max(cap, self.cfg.traffic.v6_dead_zone_lease_max_s)
+        return cap
 
     @staticmethod
     def _claim_wins(new: tuple[int, float, str, float],
@@ -4199,6 +4470,23 @@ class AMRBrain:
         for tid, claim in list(self._task_claims.items()):
             if claim[3] > t:
                 continue
+            # A fresh authenticated heartbeat that names the same active task is
+            # independent evidence that an already-established owner is alive and
+            # working. Extend only that existing claim; a heartbeat can never create
+            # ownership. Once the owner fails or becomes unreachable this evidence
+            # goes stale and normal bounded expiry/re-auction resumes.
+            owner = self.peers.get(claim[2])
+            if (self.policy == POLICY_BIOS_PIBT_V6
+                    and owner is not None
+                    and t - owner.last_seen <= self._peer_stale_after_s()
+                    and owner.task_id == tid
+                    and owner.state not in (ST_IDLE, ST_CHARGING)):
+                renewed = (
+                    claim[0], claim[1], claim[2],
+                    t + self.cfg.traffic.auction_lease_s,
+                )
+                self._record_task_claim(tid, renewed)
+                continue
             if self.task is not None and self.task.tid == tid \
                     and claim[2] == self.rid:
                 self._drop_current_task()
@@ -4221,6 +4509,7 @@ class AMRBrain:
 
     def _drop_current_task(self) -> None:
         self.task = None
+        self._active_task_lease_s = self.cfg.traffic.auction_lease_s
         self.goal = None
         self.path = []
         self.path_times = []
@@ -4235,6 +4524,11 @@ class AMRBrain:
                      bid_cost: float | None = None) -> None:
         self._ensure_task_identity(task)
         self.task = task
+        self._active_task_lease_s = (
+            self.cfg.traffic.auction_lease_s
+            if lease_until is None
+            else max(self.cfg.traffic.auction_lease_s, lease_until - t)
+        )
         if lease_until is not None:
             if bid_cost is None:
                 bid_cost = self._bids.get(task.tid, {}).get(
@@ -4463,7 +4757,7 @@ class AMRBrain:
 
     def _broadcast(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
-        if self.policy in (POLICY_STOP_WAIT, *CENTRAL_POLICIES):
+        if self.policy in (*STOP_WAIT_POLICIES, *CENTRAL_POLICIES):
             # Heartbeats only. The dashboard has to work for every baseline or the
             # comparison quietly becomes "with telemetry vs without", and the manager
             # needs poses to plan. Neither baseline shares *intent* with peers - that
@@ -4551,7 +4845,7 @@ class AMRBrain:
         if claim is None or claim[2] != self.rid:
             return
         self._last_lease_broadcast = t
-        lease_until = t + self._task_lease_duration(self.task)
+        lease_until = t + self._active_task_lease_s
         self._record_task_claim(
             self.task.tid, (claim[0], claim[1], self.rid, lease_until))
         outbox.append(msg.award(
@@ -4916,11 +5210,11 @@ class AMRBrain:
                 cost = float(b.get("cost", 1e9))
                 if b.get("ttl") is not None:
                     lease_until = t + min(float(b["ttl"]),
-                                          2.0 * self.cfg.traffic.auction_lease_s)
+                                          self._max_incoming_task_lease_s())
                 elif b.get("u") is not None:  # version-0 trace compatibility
                     lease_until = t + max(0.0, min(
                         float(b["u"]) - m.t,
-                        2.0 * self.cfg.traffic.auction_lease_s))
+                        self._max_incoming_task_lease_s()))
                 else:
                     lease_until = t + self.cfg.traffic.auction_lease_s
                 task = self.open_tasks.get(tid)

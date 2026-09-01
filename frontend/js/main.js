@@ -70,7 +70,7 @@ async function boot() {
     App.showcase = showcase || [];
     fill(el('scenario'), scenarios, OPENING_SCENARIO);
     fill(el('policy'), policies, 'BIOS_PIBT.6');
-    fill(el('allocationPolicy'), allocation_policies, 'auction');
+    fill(el('allocationPolicy'), allocation_policies, 'auction_bundle');
     renderScenarioGallery(App.showcase);
     updatePolicyProfile();
   } catch (e) {
@@ -228,8 +228,10 @@ function fill(select, values, preferred) {
     'BIOS_PIBT.6': 'BIOS 6.0 · Predictive',
     'BIOS_PIBT.5': 'BIOS 5.0 · Energy-aware',
     'BIOS_PIBT.3': 'BIOS 3.0 · Priority traffic',
-    'stop_and_wait': 'Stop-and-wait baseline',
+    'stop_and_wait': 'Stop-and-wait · basic',
+    'stop_and_wait_competition': 'Stop-and-wait · competition',
     'central': 'Central route baseline',
+    'prioritized_space_time_astar': 'Prioritized space-time A* · central',
     'hierarchical': 'Hierarchical baseline',
     'decentralized': 'Peer intent baseline',
   };
@@ -317,12 +319,13 @@ function setViewMode(mode) {
   el('view2dBtn').classList.toggle('active', !is3d);
   el('view3dBtn').setAttribute('aria-pressed', String(is3d));
   el('view2dBtn').setAttribute('aria-pressed', String(!is3d));
-  if (is3d) App.twin.resize();
-  // The diagnostic canvas is display:none until this moment, so every earlier
-  // attempt to size it measured a zero-width box and clamped the backing store to
-  // one pixel. It has to be measured after it is visible, or the 2D fallback is a
-  // single stretched pixel - which is what it had quietly become.
-  if (!is3d && App.data) {
+  if (is3d) {
+    App.twin.resize();
+  } else if (App.data) {
+    // The diagnostic canvas is display:none while the 3D twin is active, so its
+    // startup resize legitimately measures 0 × 0. Re-measure only after revealing
+    // it and rebuild the cached floor at the real viewport size; drawing the hidden
+    // zero-size cache raises InvalidStateError in Chromium.
     App.view.resize(App.data.map, App.data.meta.cell_m);
     App.staticLayer = buildStaticLayer(App.view, App.data.map, App.imgs);
   }
@@ -894,7 +897,8 @@ function draw() {
       ctx.rotate(App.view.camRotation);
       ctx.translate(-App.view.cssW / 2, -App.view.cssH / 2);
     }
-    if ((App.cameraMode === 'overview' || App.cameraMode === 'tactical') && App.staticLayer) {
+    if ((App.cameraMode === 'overview' || App.cameraMode === 'tactical')
+        && App.staticLayer?.width > 0 && App.staticLayer?.height > 0) {
       ctx.drawImage(App.staticLayer, 0, 0, App.view.cssW, App.view.cssH);
     } else {
       renderStaticFloor(ctx, App.view, App.data.map, App.imgs);
@@ -1142,11 +1146,14 @@ function updateManagerDot(frame) {
       : 'Hungarian task allocator DOWN';
     return;
   }
-  if (routePolicy === 'stop_and_wait' || routePolicy === 'BIOS_1.0.0') {
+  if (routePolicy === 'stop_and_wait'
+      || routePolicy === 'stop_and_wait_competition'
+      || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot';
     text.textContent = routePolicy === 'BIOS_1.0.0'
       ? 'no fleet manager · peer traffic'
-      : 'no fleet manager (baseline)';
+      : `no fleet manager · ${routePolicy === 'stop_and_wait_competition'
+        ? 'competition stop-and-wait' : 'basic stop-and-wait'}`;
     return;
   }
   if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'

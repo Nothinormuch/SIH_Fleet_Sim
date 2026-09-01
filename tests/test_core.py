@@ -29,8 +29,8 @@ from src.messages import (MGR_BEACON, PLAN_RSP, award, bid, decode,
 from src.metrics import poisson_rate_ci
 from src.planner import Reservations, astar, prioritized_plan
 from src.settings import DEFAULT
-from src.task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
-                                 ALLOCATION_PREASSIGNED)
+from src.task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
+                                 ALLOCATION_HUNGARIAN, ALLOCATION_PREASSIGNED)
 from src.transport import ReplayWindow, SimNetwork
 from src.world import Actuation, Detection, Sensors, World
 
@@ -104,6 +104,20 @@ def test_v6_prediction_falls_back_to_v5_routes_in_a_dead_zone():
     brain._predicted_cell_cost[(2, 2)] = (5.0, 10.0, "moving-obstacle")
 
     assert brain._v6_prediction_costs(0.0, (0, 2)) == {}
+
+
+def test_v6_degraded_auction_never_caches_an_inferred_remote_winner():
+    cfg = replace(
+        DEFAULT,
+        net=replace(DEFAULT.net, loss=0.05,
+                    dead_zones=((10.0, 10.0, 3.0),)),
+    )
+    brain = AMRBrain("A", open_floor(20, 20), cfg,
+                     policy=POLICY_BIOS_PIBT_V6)
+
+    assert not brain._replicate_remote_batch_claims()
+    assert AMRBrain("A", open_floor(20, 20), DEFAULT,
+                    policy=POLICY_BIOS_PIBT_V6)._replicate_remote_batch_claims()
 
 
 def test_v6_charger_selection_avoids_a_fresh_busy_dock():
@@ -195,6 +209,51 @@ def test_v3_recovery_motion_must_increase_close_peer_clearance():
     away = Sensors(**{**sensors.__dict__, "pose": (2.5, 2.5, math.pi)})
     assert brain._escape_motion_increases_clearance(
         away, Actuation(v=0.2, omega=0.0))
+
+
+def test_v6_can_creep_out_of_omni_field_only_while_separating():
+    env = open_floor(10, 10)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    peer = Detection(x=3.54, y=2.5, r=0.35, range_m=1.04)
+    base = Sensors(
+        t=1.0, pose=(2.5, 2.5, 0.0), v=0.0, omega=0.0,
+        battery_frac=1.0, cell=(1, 1), clearance_m=0.34,
+        clearance_omni_m=0.34, detections=(peer,),
+    )
+
+    toward = brain._safety(base, Actuation(v=0.2, omega=0.0))
+    away_sensors = Sensors(**{**base.__dict__, "pose": (2.5, 2.5, math.pi)})
+    away = brain._safety(away_sensors, Actuation(v=0.2, omega=0.0))
+
+    assert toward.v == 0.0 and toward.safety_stop
+    assert 0.0 < away.v <= 0.12 and not away.safety_stop
+
+
+def test_v6_cluster_unstick_selects_only_a_free_clearance_cell():
+    env = open_floor(10, 10)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    here = (4, 4)
+    px, py = cell_center(here, DEFAULT.cell_m)
+    brain._last_cell = here
+    brain.goal = (8, 4)
+    brain.path = [here, (5, 4)]
+    brain.pidx = 1
+    brain.peers["B"] = Peer("B", cell=(5, 4), last_seen=1.0,
+                             intent=[(5, 4)])
+    close_east = Detection(x=px + 1.03, y=py, r=0.35, range_m=1.03)
+    close_south = Detection(x=px, y=py - 1.03, r=0.35, range_m=1.03)
+    sensors = Sensors(
+        t=1.0, pose=(px, py, 0.0), v=0.0, omega=0.0,
+        battery_frac=1.0, cell=here, clearance_m=0.33,
+        clearance_omni_m=0.33, detections=[close_east, close_south],
+    )
+
+    assert brain._v6_clearance_unstick(1.0, sensors)
+    assert brain.retreat_target in {(3, 4), (4, 5)}
+    assert brain.retreat_target != (5, 4)
+    assert brain.path == [here, brain.retreat_target]
+    assert brain.state == "retreat"
+    assert brain.decision_log[-1]["code"] == "CLEARANCE_UNSTICK"
 
 
 def test_task_protocol_carries_epoch_deadline_and_lease():
@@ -311,7 +370,7 @@ def test_decentralized_dashboard_run_has_no_fleet_manager():
     payload = run_for_dashboard("dense_aisles", POLICY_DECENTRALIZED,
                                 robots=2, seed=0, duration=1.0)
     assert payload["meta"]["policy"] == POLICY_DECENTRALIZED
-    assert payload["meta"]["allocation_policy"] == ALLOCATION_AUCTION
+    assert payload["meta"]["allocation_policy"] == ALLOCATION_AUCTION_BUNDLE
     assert not any(frame["manager_alive"] for frame in payload["frames"])
     events = [event for frame in payload["frames"]
               for event in frame.get("auction_events", [])]

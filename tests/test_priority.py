@@ -6,7 +6,7 @@ from dataclasses import replace
 from src.amr import (AMRBrain, CELL_ZONE_BASE, POLICIES, POLICY_BIOS_PIBT,
                      POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
                      POLICY_BIOS_PIBT_V5, POLICY_BIOS_PIBT_V6, Peer,
-                     ST_IDLE, Task)
+                     ST_IDLE, ST_TO_PICK, Task)
 from src.environment import (FREE, Warehouse, chokepoint_warehouse,
                              classic_warehouse, open_floor)
 from src.messages import (BID, TASK_DONE, TASK_NEW, award, block_claim, decode,
@@ -491,6 +491,118 @@ def test_v6_transient_loss_task_lease_backoff_is_per_task_and_bounded():
     )
     assert deterministic._task_lease_duration(severe) \
         == DEFAULT.traffic.auction_lease_s
+
+
+def test_v6_dead_zone_route_gets_predicted_but_bounded_owner_lease():
+    cfg = replace(
+        DEFAULT,
+        net=replace(DEFAULT.net, dead_zones=((5.5, 1.5, 1.25),)),
+    )
+    brain = AMRBrain(
+        "AMR01", open_floor(10, 4), cfg,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    crossing = Task("CROSSING", (1, 1), (8, 1))
+    clear = Task("CLEAR", (1, 3), (3, 3))
+
+    crossing_lease = brain._task_lease_duration(crossing, start=(0, 1))
+
+    assert DEFAULT.traffic.auction_lease_s < crossing_lease \
+        <= DEFAULT.traffic.v6_dead_zone_lease_max_s
+    assert brain._task_lease_duration(clear, start=(0, 3)) \
+        == DEFAULT.traffic.auction_lease_s
+
+
+def test_v6_fresh_owner_heartbeat_extends_only_an_existing_claim():
+    brain = AMRBrain(
+        "AMR01", open_floor(8, 4), DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    task = Task("T1", (1, 1), (7, 1))
+    brain.open_tasks[task.tid] = task
+    brain._record_task_claim(task.tid, (0, 3.0, "AMR02", 1.0))
+    brain.peers["AMR02"] = Peer(
+        "AMR02", state=ST_TO_PICK, task_id=task.tid, last_seen=2.0)
+
+    brain._expire_task_claims(2.0)
+
+    assert brain._task_claims[task.tid][2] == "AMR02"
+    assert brain._task_claims[task.tid][3] == 2.0 + DEFAULT.traffic.auction_lease_s
+
+    # Silence still releases the owner and advances the decentralized auction.
+    brain._expire_task_claims(30.0)
+    assert task.tid not in brain._task_claims
+    assert task.auction_epoch == 1
+
+
+def test_better_auction_claim_beats_a_losers_slightly_longer_lease():
+    brain = AMRBrain(
+        "AMR02", open_floor(8, 4), DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    task = Task("T1", (1, 1), (7, 1))
+    brain.open_tasks[task.tid] = task
+    brain.task = task
+    brain.state = ST_TO_PICK
+    assert brain._record_task_claim(
+        task.tid, (0, 43.354, "AMR02", 937.615))
+
+    recorded = brain._record_task_claim(
+        task.tid, (0, 42.354, "AMR03", 935.721))
+
+    assert recorded
+    assert brain._task_claims[task.tid][2] == "AMR03"
+    assert brain.task is None
+    assert brain.state == ST_IDLE
+
+
+def test_reordered_same_owner_renewal_never_shortens_lease():
+    brain = AMRBrain("AMR01", open_floor(8, 4), DEFAULT)
+    task = Task("T1", (1, 1), (7, 1))
+    brain.open_tasks[task.tid] = task
+    assert brain._record_task_claim(task.tid, (0, 3.0, "AMR02", 30.0))
+
+    assert not brain._record_task_claim(
+        task.tid, (0, 3.0, "AMR02", 29.0))
+    assert brain._task_claims[task.tid][3] == 30.0
+
+
+def test_v6_clearance_unstick_rejects_a_segment_that_first_closes_a_gap():
+    env = open_floor(8, 8)
+    world = World(env, DEFAULT, seed=0)
+    robot = world.add_robot("AMR01", (3, 3))
+    below = world.add_robot("AMR02", (3, 2))
+    left = world.add_robot("AMR03", (2, 3))
+    # Reproduce the off-centre geometry from the dense-junction regression. Moving
+    # north ends farther from AMR03 but initially moves toward it; moving east opens
+    # both gaps monotonically.
+    robot.x, robot.y = 4.900, 4.678
+    below.x, below.y = 4.900, 3.728
+    left.x, left.y = 3.810, 4.894
+
+    brain = AMRBrain("AMR01", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    brain.goal = (4, 3)
+    brain.peers = {
+        "AMR02": Peer(
+            "AMR02", cell=(3, 2), pose=(below.x, below.y, 0.0), last_seen=5.0),
+        "AMR03": Peer(
+            "AMR03", cell=(2, 3), pose=(left.x, left.y, 0.0), last_seen=5.0),
+    }
+
+    class PreferNorth:
+        enabled = True
+
+        @staticmethod
+        def allows(_env, _source, target):
+            return target == (3, 4)
+
+    brain.circulation = PreferNorth()
+
+    assert brain._v6_clearance_unstick(5.0, world.sense("AMR01"))
+    assert brain.retreat_target == (4, 3)
 
 
 def test_v6_peer_nomination_activates_only_the_claimed_winner():

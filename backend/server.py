@@ -44,7 +44,9 @@ FRONTEND = ROOT / "frontend"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.amr import POLICIES, POLICY_BIOS4        # noqa: E402
+from src.amr import (POLICIES, POLICY_BIOS4,  # noqa: E402
+                     POLICY_PRIORITIZED_SPACE_TIME,
+                     POLICY_STOP_WAIT_COMPETITION)
 from src.bios4 import MAX_MODEL_BYTES, ModelError, model_from_json  # noqa: E402
 from src.evolve import TrainConfig, evolve         # noqa: E402
 from src.main import run_for_dashboard            # noqa: E402
@@ -165,7 +167,11 @@ def parse_run_request(payload: object) -> dict[str, object]:
 
     scenario = str(scalar("scenario", "open_floor_control"))
     policy = str(scalar("policy", "BIOS_PIBT.6"))
-    allocation_policy = str(scalar("allocation_policy", "auction"))
+    policy = {
+        "Already-Established_algorithm": POLICY_PRIORITIZED_SPACE_TIME,
+        "stop-and-wait(Competition)": POLICY_STOP_WAIT_COMPETITION,
+    }.get(policy, policy)
+    allocation_policy = str(scalar("allocation_policy", "auction_bundle"))
     if scenario not in SCENARIOS:
         raise RequestValidationError(f"unknown scenario {scenario!r}")
     if policy not in POLICIES:

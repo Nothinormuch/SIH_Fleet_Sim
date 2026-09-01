@@ -9,15 +9,18 @@ from pathlib import Path
 import shutil
 import subprocess
 import threading
+from dataclasses import replace
 from http.server import ThreadingHTTPServer
 
 import pytest
 
 from src.environment import RACK
-from src.main import run_for_dashboard
+from src.amr import POLICY_BIOS_PIBT_V6
+from src.main import run_for_dashboard, run_scenario
 from backend.server import Handler, RequestValidationError, parse_run_request
 from src.scenarios import SHOWCASE_SCENARIOS
 from src.settings import DEFAULT
+from src.task_allocation import ALLOCATION_AUCTION_BUNDLE
 from src.world import World
 
 
@@ -85,6 +88,40 @@ def test_showcase_pedestrians_are_numerous_and_remain_outside_racks():
             world.step(1.0 / DEFAULT.rates.world_hz, {})
             for human in world.humans.values():
                 assert not world._human_hits_static((human.x, human.y), human.radius)
+
+
+def test_perimeter_pedestrian_lane_is_outside_the_amr_omni_stop_field():
+    scenario = SHOWCASE_SCENARIOS["showcase_grand_challenge"]["builder"](
+        n_robots=8, seed=1)
+    world = World(scenario.env, DEFAULT, seed=scenario.seed)
+    world.add_robot("AMR-test", (2, 1), 0.0)
+    world.add_human("H-test", [(2, 1), (7, 1)])
+
+    sensors = world.sense("AMR-test")
+
+    assert sensors.detections
+    assert sensors.clearance_omni_m > DEFAULT.robot.omni_stop_m
+
+
+def test_grand_challenge_finishes_inside_its_dashboard_evidence_window():
+    profile = SHOWCASE_SCENARIOS["showcase_grand_challenge"]
+    scenario = replace(
+        profile["builder"](
+            n_robots=profile["robots"], seed=profile["seed"]),
+        duration_s=float(profile["duration"]),
+    )
+
+    result = run_scenario(
+        scenario, POLICY_BIOS_PIBT_V6, seed=profile["seed"],
+        allocation_policy=ALLOCATION_AUCTION_BUNDLE,
+    )
+
+    assert result.completed_all
+    assert result.tasks_completed == result.tasks_announced == 16
+    assert result.makespan_s < profile["duration"]
+    assert result.contacts_robot_robot == 0
+    assert result.contacts_robot_human == 0
+    assert result.contacts_robot_rack == 0
 
 
 def test_human_route_rejects_a_rack_endpoint_instead_of_clipping_through_it():
