@@ -860,11 +860,23 @@ class AMRBrain:
         # allowed to argue with it.
         if sensors.clearance_omni_m <= spec.omni_stop_m:
             self.stats["safety_stops"] += 1
-            creeping = (self.policy in (POLICY_BIOS, *PIBT_POLICIES)
-                        and sensors.t < self._creep_until
-                        and act.v > 0.0)
+            timed_creep = (self.policy in (POLICY_BIOS, *PIBT_POLICIES)
+                           and sensors.t < self._creep_until
+                           and act.v > 0.0)
+            # A chassis can finish braking slightly off-centre and leave an adjacent
+            # robot inside the conservative omni field. Permanently forbidding even a
+            # motion that increases every observed gap turns the safety envelope into
+            # a liveness trap. V3+ may creep only when instantaneous relative motion
+            # is separating from every close object; humans and anonymous obstacles
+            # are evaluated by the same geometric predicate as peers.
+            separating_creep = (
+                self.policy in V3_AUCTION_POLICIES
+                and act.v > 0.0
+                and self._escape_motion_increases_clearance(sensors, act)
+            )
+            creeping = timed_creep or separating_creep
             if (creeping and self.policy in V3_AUCTION_POLICIES
-                    and not self._escape_motion_increases_clearance(sensors, act)):
+                    and not separating_creep):
                 # A verified escape cell is not enough: while turning off-centre the
                 # first centimetres of an otherwise valid move can still arc toward a
                 # neighbouring chassis. V3 permits recovery motion only when the
@@ -880,7 +892,7 @@ class AMRBrain:
                 v_allowed = self._speed_limit_from_traffic(sensors)
                 if v_allowed <= 0.02:
                     return Actuation(v=0.0, omega=act.omega, safety_stop=True)
-                v = min(act.v, 0.20, v_allowed)
+                v = min(act.v, 0.12 if separating_creep else 0.20, v_allowed)
                 return Actuation(v=v, omega=act.omega, safety_stop=False)
             return Actuation(v=0.0, omega=act.omega * 0.3, safety_stop=True)
 
@@ -912,13 +924,14 @@ class AMRBrain:
 
     def _escape_motion_increases_clearance(self, sensors: Sensors,
                                            act: Actuation) -> bool:
-        """True only when a recovery translation separates from every close object."""
+        """True when recovery closes no close gap and opens at least one of them."""
         if act.v <= 0.0:
             return False
         vx = act.v * math.cos(sensors.pose[2])
         vy = act.v * math.sin(sensors.pose[2])
         px, py, _ = sensors.pose
         checked = False
+        improves = False
         for det in sensors.detections:
             dx, dy = det.x - px, det.y - py
             centre_distance = math.hypot(dx, dy)
@@ -933,7 +946,102 @@ class AMRBrain:
                                + (det.vy - vy) * uy)
             if separation_rate < -1e-6:
                 return False
-        return checked
+            if separation_rate > 1e-6:
+                improves = True
+        return checked and improves
+
+    def _v6_clearance_unstick(self, t: float, sensors: Sensors) -> bool:
+        """Take one bounded, lidar-verified clearance step out of a dense cluster.
+
+        Directed circulation prevents head-on aisle traffic, but it cannot create
+        physical room when several chassis brake off-centre at the same junction.  A
+        repeated retry of the same legal route then remains safe yet never translates.
+        BIOS 6 may temporarily step into one adjacent free cell after Layer 0 has
+        refused motion for a full deadlock interval.  The candidate must be unowned,
+        absent from fresh peer intent and farther from *every* close lidar return at
+        its centre.  Layer 0 independently revalidates the commanded velocity on every
+        control tick, so this method cannot authorize motion toward a peer, person or
+        anonymous obstacle.
+        """
+        if self.policy != POLICY_BIOS_PIBT_V6:
+            return False
+
+        px, py, _ = sensors.pose
+        close = []
+        for det in sensors.detections:
+            current_distance = math.hypot(det.x - px, det.y - py)
+            if current_distance < 1e-9:
+                return False
+            gap = current_distance - self.cfg.robot.radius_m - det.r
+            if gap <= self.cfg.robot.omni_stop_m + 0.05:
+                close.append((det, current_distance))
+        if not close:
+            return False
+
+        here = sensors.cell
+        occupied = {
+            peer.cell for peer in self.peers.values()
+            if sensors.t - peer.last_seen <= self._peer_stale_after_s()
+        }
+        for peer in self.peers.values():
+            if sensors.t - peer.last_seen <= self._peer_stale_after_s():
+                occupied.update(peer.intent[:2])
+
+        candidates: list[tuple[int, float, int, Cell]] = []
+        for target in self.env.neighbors(here):
+            if target in occupied:
+                continue
+            tx, ty = cell_center(target, self.cfg.cell_m)
+            gains = [
+                math.hypot(det.x - tx, det.y - ty) - current_distance
+                for det, current_distance in close
+            ]
+            # A grid step may initially be tangent to one footprint, but its cell
+            # centre must provide material extra clearance from every close return.
+            if any(gain <= 0.02 for gain in gains):
+                continue
+            circulation_penalty = int(
+                self.circulation.enabled
+                and not self.circulation.allows(self.env, here, target)
+            )
+            goal_distance = (manhattan(target, self.goal)
+                             if self.goal is not None else 0)
+            candidates.append((circulation_penalty, -min(gains), goal_distance,
+                               target))
+
+        if not candidates:
+            return False
+        target = min(candidates)[3]
+
+        self._hold = False
+        self.blocked_since = None
+        self.blocked_on = None
+        self._stall_since = None
+        self.retreat_target = target
+        self._retreat_for = None
+        self._retreat_block_cid = None
+        self._retreat_origin = here
+        self._retreat_contested = self._next_cell()
+        self._retreat_since = t
+        self.state = ST_RETREAT
+        self.path = [here, target]
+        self.path_times = []
+        self.pidx = 1
+        # This escape is intentionally planned from the measured off-centre pose.
+        # The normal follower first re-centres before an adjacent transition, which
+        # would reproduce the very motion Layer 0 has been refusing in this cluster.
+        # The selected target is an open neighbour and safety still validates the
+        # direct segment continuously, so bypass only that one centring waypoint.
+        self._cell_repair_target = target
+        self.stats["retreats"] += 1
+        self._creep_until = t + 6.0
+        self._record_decision(
+            t, "CLEARANCE_UNSTICK",
+            "Selected a free cell that increases clearance from every close object",
+            from_cell=list(here), target_cell=list(target),
+            minimum_clearance_gain_m=round(-min(candidates)[1], 3),
+            close_objects=len(close))
+        return True
 
     # ================================================================== Layer 1
 
@@ -1079,6 +1187,8 @@ class AMRBrain:
         if (loser_to is None and stalled
                 and self.policy in DIRECTED_POLICIES
                 and self.circulation.enabled):
+            if self._v6_clearance_unstick(t, sensors):
+                return
             self._creep_until = max(self._creep_until, t + 6.0)
             self._stall_since = None
             stalled = False
