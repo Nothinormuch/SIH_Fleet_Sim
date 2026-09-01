@@ -11,6 +11,19 @@ import { DigitalTwin } from './digital-twin.js';
 
 const el = id => document.getElementById(id);
 
+/* Which scenario the page arms and auto-runs on load.
+ *
+ * Not the first entry in the library, deliberately. The library is ordered by how
+ * much of BIOS it exercises, so it opens with Open Floor - which has no racks, so
+ * the first thing anyone sees is a flat plane and four robots crossing it. That
+ * is the least convincing thirty seconds the simulation can produce. Chokepoint
+ * puts opposing robots into a single-file aisle immediately, which is the
+ * coordination problem the whole project exists to solve.
+ *
+ * The gallery keeps its own order and numbering - 01 is still Open Floor - so
+ * this only changes what is armed, not what is offered. */
+const OPENING_SCENARIO = 'showcase_chokepoint';
+
 const App = {
   view: null,
   twin: null,
@@ -55,7 +68,7 @@ async function boot() {
     const r = await fetch('/api/scenarios');
     const { scenarios, showcase, policies, allocation_policies } = await r.json();
     App.showcase = showcase || [];
-    fill(el('scenario'), scenarios, 'showcase_open_floor');
+    fill(el('scenario'), scenarios, OPENING_SCENARIO);
     fill(el('policy'), policies, 'BIOS_PIBT.6');
     fill(el('allocationPolicy'), allocation_policies, 'auction');
     renderScenarioGallery(App.showcase);
@@ -171,7 +184,7 @@ function renderScenarioGallery(showcase) {
   // the fleet size in its own track, which stole enough width from the title that
   // "Human Interaction" and "Grand Challenge" both wrapped mid-name.
   gallery.innerHTML = showcase.map((item, index) => `
-    <button class="scenario-card ${index === 0 ? 'active' : ''}" data-scenario="${escapeHtml(item.id)}"
+    <button class="scenario-card ${item.id === OPENING_SCENARIO ? 'active' : ''}" data-scenario="${escapeHtml(item.id)}"
       style="--card-accent:${accents[item.accent] || accents.cyan}">
       <span class="scenario-index">0${index + 1}</span>
       <span class="scenario-copy">
@@ -183,7 +196,13 @@ function renderScenarioGallery(showcase) {
   gallery.querySelectorAll('.scenario-card').forEach(card => {
     card.addEventListener('click', () => selectScenarioProfile(card.dataset.scenario));
   });
-  if (showcase.length) selectScenarioProfile(showcase[0].id, false);
+  // Fall back to the first entry if the opening scenario is ever renamed server
+  // side, so a stale constant degrades to "opens on something" rather than to a
+  // dashboard with no scenario armed and a Launch button that does nothing.
+  if (!showcase.length) return;
+  const opening = showcase.some(item => item.id === OPENING_SCENARIO)
+    ? OPENING_SCENARIO : showcase[0].id;
+  selectScenarioProfile(opening, false);
 }
 
 function selectScenarioProfile(id, announce = true) {

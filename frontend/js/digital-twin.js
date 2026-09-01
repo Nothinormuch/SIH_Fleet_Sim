@@ -173,14 +173,22 @@ export class DigitalTwin {
    * a black field like a postage stamp, which is exactly the impression a demo of
    * a physical system cannot afford to give.
    *
-   * So solve for it instead of guessing: find the distance at which the floor
-   * fills the frustum on each axis and take the binding one. Two things the
-   * obvious version of this gets wrong, and both were in here - the floor is not
-   * seen square-on, so it is the azimuth-rotated bounding box that has to fit,
-   * not the width; and the depth axis foreshortens by sin(elevation), so fitting
-   * it at full length pushes the camera much further back than it needs to be.
+   * This measures the projection instead of modelling it. The version before it
+   * solved the fit with trigonometry - rotate the floor's bounding box by the
+   * azimuth, foreshorten the depth axis by sin(elevation), take the binding axis
+   * - which is correct in principle and got the sign of every term right, and
+   * still cropped, because a hand-derived model of a perspective projection is
+   * one approximation away from the projection itself. It was tuned on a 22 x 15
+   * floor; Chokepoint is 25 x 9, and its far corner landed 22 px off the right
+   * edge and 28 px below the bottom.
+   *
+   * So: put the camera at a trial distance, project the eight corners of the
+   * floor's bounding box, and scale the distance by however far outside the frame
+   * the worst one landed. Three passes converge well inside a pixel, and the
+   * result is exact for any map shape because the thing doing the foreshortening
+   * is the projection matrix rather than a model of it.
    */
-  frameFloor(margin = 1.06) {
+  frameFloor(fill = 0.94) {
     if (!this.map || !this.meta) return;
     const widthM = this.map.width * this.meta.cell_m;
     const depthM = this.map.height * this.meta.cell_m;
@@ -192,24 +200,39 @@ export class DigitalTwin {
     // seen from a corner, a 31 x 21 m floor presents its 37 m diagonal.
     const elevation = Math.PI * 0.25;
     const azimuth = Math.PI * 0.11;
-    const ca = Math.abs(Math.cos(azimuth));
-    const sa = Math.abs(Math.sin(azimuth));
-    const across = widthM * ca + depthM * sa;   // screen-horizontal footprint
-    const along = widthM * sa + depthM * ca;    // footprint running into the screen
+    const direction = new THREE.Vector3(
+      Math.cos(elevation) * Math.sin(azimuth),
+      Math.sin(elevation),
+      Math.cos(elevation) * Math.cos(azimuth));
 
-    const vFov = this.camera.fov * Math.PI / 180;
-    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(0.5, this.camera.aspect));
-    // The depth axis foreshortens by sin(elevation); the racks stand up out of
-    // the floor plane, so allow a few metres of headroom on top of it.
-    const projected = along * Math.sin(elevation) + 3.5;
-    const distance = Math.max((projected / 2) / Math.tan(vFov / 2),
-                              (across / 2) / Math.tan(hFov / 2)) * margin;
+    // Both floor corners and rack-height corners: what has to be in frame is the
+    // volume the warehouse occupies, not the plane it stands on.
+    const corners = [];
+    for (const x of [0, widthM]) {
+      for (const z of [0, depthM]) {
+        for (const height of [0, 3]) corners.push(this._toWorld(x, z, height));
+      }
+    }
 
-    const ground = Math.cos(elevation) * distance;
-    this.camera.position.set(ground * Math.sin(azimuth),
-                             Math.sin(elevation) * distance,
-                             ground * Math.cos(azimuth));
     this.controls.target.set(0, 0, 0);
+    let distance = Math.max(widthM, depthM);
+    for (let pass = 0; pass < 3; pass++) {
+      this.camera.position.copy(direction).multiplyScalar(distance);
+      this.camera.lookAt(this.controls.target);
+      this.camera.updateMatrixWorld();
+      let extent = 0;
+      for (const corner of corners) {
+        const ndc = corner.clone().project(this.camera);
+        extent = Math.max(extent, Math.abs(ndc.x), Math.abs(ndc.y));
+      }
+      if (!Number.isFinite(extent) || extent <= 0) break;
+      // extent is where the worst corner landed in normalised device coords, so
+      // 1 is the frame edge. Scaling the distance by extent/fill moves it to
+      // exactly `fill` of the way out, leaving the rest as margin.
+      distance *= extent / fill;
+    }
+
+    this.camera.position.copy(direction).multiplyScalar(distance);
     this.controls.minDistance = Math.max(3.5, distance * 0.1);
     this.controls.maxDistance = distance * 2.8;
     this._commitCamera();

@@ -95,7 +95,7 @@
 
     <!-- the mission bar, bottom centre -->
     <div class="mission">
-      <div class="mission-name" id="activeScenarioTitle">Open Floor</div>
+      <div class="mission-name" id="activeScenarioTitle">Chokepoint</div>
       <div class="mission-track"><i class="mission-fill" id="missionFill"></i></div>
       <div class="mission-sub" id="eventSpotlight"><span>Ready</span><strong>Launch a scenario to enter the BIOS control loop.</strong></div>
     </div>
@@ -156,9 +156,9 @@
         </div>
         <div class="col">
           <div class="col-head">
-            <span class="eyebrow" id="activeScenarioEyebrow">Energy-aware allocation</span>
+            <span class="eyebrow" id="activeScenarioEyebrow">Priority negotiation</span>
             <h2 id="deployTitle">Run profile</h2>
-            <p id="activeScenarioDescription">Identical robots independently evaluate battery, cargo, path and charger return.</p>
+            <p id="activeScenarioDescription">Opposing robots coordinate a single-file aisle with priority, yielding and expiring leases.</p>
           </div>
           <div class="scroller">
             <div class="frame">
@@ -167,8 +167,8 @@
                 <label class="field span-3"><span>Route intelligence</span><select id="policy"></select></label>
                 <label class="field span-3"><span>Task allocation</span><select id="allocationPolicy"></select></label>
                 <label class="field"><span>AMRs</span><input type="number" id="robots" value="4" min="2" max="100"></label>
-                <label class="field"><span>Seed</span><input type="number" id="seed" value="4" min="0"></label>
-                <label class="field"><span>Duration (s)</span><input type="number" id="duration" value="180" min="10" max="900" step="10"></label>
+                <label class="field"><span>Seed</span><input type="number" id="seed" value="7" min="0"></label>
+                <label class="field"><span>Duration (s)</span><input type="number" id="duration" value="320" min="10" max="900" step="10"></label>
               </div>
               <button id="runBtn" class="launch">
                 <span class="launch-beam"></span>

@@ -283,7 +283,11 @@ decision records produced by the controller itself. The text is not generated af
 run and does not claim that the AMRs use an LLM.
 
 The public demo library is deliberately limited to five explainable stories: Open Floor,
-Chokepoint, Human Interaction, Dead-Zone Mesh and Grand Challenge. The benchmark and
+Chokepoint, Human Interaction, Dead-Zone Mesh and Grand Challenge. The dashboard arms and
+auto-runs **Chokepoint** on load, not the first entry - Open Floor has no racks, so opening
+on it shows a flat plane and four robots crossing it, which is the least of what the
+simulation can do. One constant, `OPENING_SCENARIO` in `frontend/js/main.js`, decides this;
+the library keeps its own order and numbering. The benchmark and
 regression scenarios still exist in the simulation core, but are not mixed into the jury
 UI. Every showcase defaults to the decentralized `auction` allocator, heterogeneous
 battery state and cargo-aware energy admission. A WMS injects tasks; it never selects a
