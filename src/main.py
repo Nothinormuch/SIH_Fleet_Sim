@@ -389,7 +389,8 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
 
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
                       seed: int = 0, duration: float | None = None,
-                      allocation_policy: str = ALLOCATION_AUCTION, policy_model=None) -> dict:
+                      allocation_policy: str = ALLOCATION_AUCTION, policy_model=None,
+                      **extra) -> dict:
     """One run, packaged for the web dashboard: map, every frame, and the summary.
 
     Playback rather than a live stream, deliberately. The sim runs far faster than
@@ -402,21 +403,24 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
     if robots is not None:
         kw["n_robots"] = robots
     if scenario.startswith("custom_"):
-        from backend.server import CUSTOM_SCENARIOS
-        custom = CUSTOM_SCENARIOS.get(scenario)
-        if custom is None:
-            raise ValueError(f"unknown custom scenario: {scenario}")
         from src.scenarios import Scenario
         from src.geometry import Cell
+        # Read injected custom info from the request (set by backend server)
+        custom_env = extra.get("_custom_env")
+        custom_starts_raw = extra.get("_custom_starts", [])
+        custom_duration = extra.get("_custom_duration")
+        custom_seed = extra.get("_custom_seed", seed)
+        starts = [Cell(s[0], s[1]) for s in custom_starts_raw]
+        if custom_env is None:
+            raise ValueError(f"custom scenario {scenario} missing environment data")
         sc = Scenario(
-            name=custom["env"].name,
-            env=custom["env"],
-            starts=[Cell(s[0], s[1]) for s in custom.get("starts", [])],
-            assignments=[[] for _ in custom.get("starts", [])],
-            duration_s=float(duration or custom.get("duration", 180.0)),
-            seed=seed,
+            name=custom_env.name,
+            env=custom_env,
+            starts=starts,
+            assignments=[[] for _ in starts],
+            duration_s=float(custom_duration or 180.0),
+            seed=custom_seed,
         )
-        sc.duration_s = float(duration or custom.get("duration", 180.0))
     else:
         sc = SCENARIOS[scenario](**kw)
     if duration is not None and not scenario.startswith("custom_"):

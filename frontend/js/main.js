@@ -66,10 +66,10 @@ async function boot() {
   // Simulation controls
   el('runBtn').addEventListener('click', run);
   el('policy').addEventListener('change', syncPolicyUI);
-  el('trainBtn').addEventListener('click', startTraining);
-  el('cancelBtn').addEventListener('click', cancelTraining);
-  el('uploadBtn').addEventListener('click', () => el('modelFile').click());
-  el('modelFile').addEventListener('change', uploadModel);
+  if (el('trainBtn')) el('trainBtn').addEventListener('click', startTraining);
+  if (el('cancelBtn')) el('cancelBtn').addEventListener('click', cancelTraining);
+  if (el('uploadBtn')) el('uploadBtn').addEventListener('click', () => el('modelFile')?.click());
+  if (el('modelFile')) el('modelFile').addEventListener('change', uploadModel);
   syncPolicyUI();
   el('playBtn').addEventListener('click', togglePlay);
   el('speed').addEventListener('change', e => { App.speed = parseFloat(e.target.value); });
@@ -1450,14 +1450,7 @@ function initBuilder() {
     }
   });
 
-  // Clear button
-  el('builderClearBtn').addEventListener('click', () => {
-    gridData = Array.from({length: rows}, () => Array(cols).fill(0));
-    stations = [];
-    docks = [];
-    starts = [];
-    drawGrid();
-  });
+  // Clear button removed with builderClearBtn element
 
   drawGrid();
   console.log('DEBUG initBuilder ran. gridData rows:', gridData.length, 'cols:', gridData[0]?.length, 'canvas w/h:', gridCanvas.width, 'x', gridCanvas.height);
