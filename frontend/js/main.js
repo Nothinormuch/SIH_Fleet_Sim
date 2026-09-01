@@ -104,6 +104,26 @@ async function boot() {
   el('presentationBtn').addEventListener('click', togglePresentationMode);
   el('exitJuryBtn').addEventListener('click', togglePresentationMode);
   el('fullscreenBtn').addEventListener('click', toggleFullscreen);
+  el('builderBtn').addEventListener('click', () => {
+    const builder = el('builderCanvas');
+    const twin = document.querySelector('.twin-stage');
+    console.log('DEBUG clicked. builder found:', !!builder, 'is-hidden:', builder.classList.contains('is-hidden'), 'class:', builder.className);
+    console.log('DEBUG twin found:', !!twin, 'twin class:', twin?.className);
+    if (builder.classList.contains('is-hidden')) {
+      builder.classList.remove('is-hidden');
+      twin?.classList.add('is-hidden');
+      document.body.classList.add('builder-mode');
+      console.log('DEBUG builder SHOWN, twin hidden');
+    } else {
+      builder.classList.add('is-hidden');
+      twin?.classList.remove('is-hidden');
+      document.body.classList.remove('builder-mode');
+      console.log('DEBUG builder HIDDEN, twin shown');
+    }
+    console.log('DEBUG after toggle - builder class:', builder.className, 'twin class:', twin?.className);
+  });
+
+  console.log('DEBUG boot: builderBtn=', el('builderBtn'), 'builderCanvas=', el('builderCanvas'));
 
   // A live camera consumes most of a phone-sized stage. Start it closed below the
   // tablet breakpoint; the operator can still open it explicitly from the toolbar.
@@ -1189,4 +1209,217 @@ function updateSummaryProgress(frame) {
   }
 }
 
+function initBuilder() {
+  const gridCanvas = el('builderGrid');
+  const ctx = gridCanvas.getContext('2d');
+  const preview = el('builderPreview');
+  const cellSize = 28;
+  const cols = 22;
+  const rows = 14;
+  gridCanvas.width = cols * cellSize;
+  gridCanvas.height = rows * cellSize;
+  let gridData = Array.from({length: rows}, () => Array(cols).fill(0)); // 0=FREE
+  let stations = []; // [x,y]
+  let docks = [];
+  let starts = [];
+  let dragType = null;
+
+  // Pool drag start
+  document.querySelectorAll('.pool-tile').forEach(btn => {
+    btn.addEventListener('dragstart', e => {
+      dragType = btn.dataset.type; // FREE, RACK, STATION, DOCK, AMR, HUMAN
+      e.dataTransfer.setData('text/plain', dragType);
+    });
+  });
+
+  // Canvas drag over / drop
+  gridCanvas.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (!dragType) return;
+    const rect = gridCanvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / cellSize);
+    const y = Math.floor((e.clientY - rect.top) / cellSize);
+    if (x < 0 || x >= cols || y < 0 || y >= rows) {
+      preview.style.display = 'none';
+      return;
+    }
+    preview.style.display = 'block';
+    preview.style.left = rect.left + x * cellSize + 'px';
+    preview.style.top = rect.top + y * cellSize + 'px';
+    preview.style.width = cellSize + 'px';
+    preview.style.height = cellSize + 'px';
+  });
+
+  gridCanvas.addEventListener('dragleave', () => {
+    preview.style.display = 'none';
+  });
+
+  gridCanvas.addEventListener('drop', e => {
+    e.preventDefault();
+    if (!dragType) return;
+    const rect = gridCanvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / cellSize);
+    const y = Math.floor((e.clientY - rect.top) / cellSize);
+    if (x < 0 || x >= cols || y < 0 || y >= rows) return;
+    placeTile(x, y, dragType);
+    preview.style.display = 'none';
+    dragType = null;
+  });
+
+  // Click to place/remove
+  gridCanvas.addEventListener('click', e => {
+    const rect = gridCanvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / cellSize);
+    const y = Math.floor((e.clientY - rect.top) / cellSize);
+    if (x < 0 || x >= cols || y < 0 || y >= rows) return;
+    // Toggle: if clicked cell is FREE set to RACK by default for quick painting
+    const current = gridData[y][x];
+    if (current === 0) {
+      placeTile(x, y, 'RACK');
+    } else if (current === 1) {
+      placeTile(x, y, 'FREE');
+    }
+  });
+
+  function placeTile(x, y, type) {
+    if (type === 'FREE') {
+      gridData[y][x] = 0;
+      stations = stations.filter(s => !(s[0] === x && s[1] === y));
+      docks = docks.filter(s => !(s[0] === x && s[1] === y));
+      starts = starts.filter(s => !(s[0] === x && s[1] === y));
+    } else if (type === 'RACK') {
+      gridData[y][x] = 1;
+      stations = stations.filter(s => !(s[0] === x && s[1] === y));
+      docks = docks.filter(s => !(s[0] === x && s[1] === y));
+      starts = starts.filter(s => !(s[0] === x && s[1] === y));
+    } else if (type === 'STATION') {
+      gridData[y][x] = 2;
+      if (!stations.some(s => s[0] === x && s[1] === y)) stations.push([x, y]);
+    } else if (type === 'DOCK') {
+      gridData[y][x] = 3;
+      if (!docks.some(s => s[0] === x && s[1] === y)) docks.push([x, y]);
+    } else if (type === 'AMR') {
+      gridData[y][x] = 0;
+      if (!starts.some(s => s[0] === x && s[1] === y)) starts.push([x, y]);
+    } else if (type === 'HUMAN') {
+      // Human routes not stored in grid; for builder we just note presence for demo
+      gridData[y][x] = 0;
+    }
+    drawGrid();
+  }
+
+  // Asset images for tiles
+  const tileAssets = {
+    FREE: '/assets/tiles/tile_intersection.png',
+    RACK: '/assets/misc/furniture/rack_1x3.png',
+    STATION: '/assets/tiles/tile_pick_station.png',
+    DOCK: '/assets/tiles/tile_charging.png',
+    AMR: '/assets/robots/robot_amr01_base.png',
+    HUMAN: '/assets/misc/furniture/worker_human.png',
+  };
+  const tileImages = {};
+  for (const [k, src] of Object.entries(tileAssets)) {
+    const img = new Image();
+    img.src = src;
+    tileImages[k] = img;
+  }
+
+  function drawGrid() {
+    ctx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+    // Background floor
+    if (tileImages.FREE && tileImages.FREE.complete) {
+      ctx.drawImage(tileImages.FREE, 0, 0, gridCanvas.width, gridCanvas.height);
+    } else {
+      ctx.fillStyle = '#071019';
+      ctx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
+    }
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const val = gridData[y][x];
+        const cx = x * cellSize;
+        const cy = y * cellSize;
+        let typeKey = 'FREE';
+        if (val === 1) typeKey = 'RACK';
+        else if (val === 2) typeKey = 'STATION';
+        else if (val === 3) typeKey = 'DOCK';
+        const img = tileImages[typeKey];
+        if (img && img.complete && img.naturalWidth > 0) {
+          ctx.drawImage(img, cx + 1, cy + 1, cellSize - 2, cellSize - 2);
+        } else {
+          ctx.fillStyle = val === 1 ? '#1a2a3a' : val === 2 ? '#46d39a' : val === 3 ? '#f5b843' : '#0a1722';
+          ctx.fillRect(cx, cy, cellSize - 1, cellSize - 1);
+        }
+        // Small label fallback for accessibility
+        if (val === 2 || val === 3) {
+          ctx.fillStyle = '#fff';
+          ctx.font = '10px ui-monospace, monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.shadowColor = 'rgba(0,0,0,.8)';
+          ctx.shadowBlur = 3;
+          ctx.fillText(val === 2 ? 'S' : 'D', cx + cellSize / 2, cy + cellSize / 2);
+          ctx.shadowBlur = 0;
+        }
+      }
+    }
+    // Draw AMR start markers (robot asset overlay)
+    for (const [sx, sy] of starts) {
+      const cx = sx * cellSize;
+      const cy = sy * cellSize;
+      const img = tileImages.AMR;
+      if (img && img.complete && img.naturalWidth > 0) {
+        ctx.drawImage(img, cx + 2, cy + 2, cellSize - 4, cellSize - 4);
+      } else {
+        ctx.fillStyle = '#35c6f4';
+        ctx.beginPath();
+        ctx.arc(cx + cellSize / 2, cy + cellSize / 2, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Human markers drawn as overlay on grid cells (HUMAN stored in gridData)
+    }
+  }
+
+  // Save button
+  el('builderSaveBtn').addEventListener('click', async () => {
+    const payload = {
+      name: `Custom ${new Date().toISOString().slice(0, 19).replace('T', ' ')}`,
+      width: cols,
+      height: rows,
+      grid: gridData,
+      stations,
+      docks,
+      starts,
+      seed: 0,
+      duration: 300,
+    };
+    try {
+      const res = await fetch('/api/scenarios/custom', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      alert('Scenario saved! ID: ' + body.id);
+    } catch (e) {
+      alert('Save failed: ' + e.message);
+    }
+  });
+
+  // Clear button
+  el('builderClearBtn').addEventListener('click', () => {
+    gridData = Array.from({length: rows}, () => Array(cols).fill(0));
+    stations = [];
+    docks = [];
+    starts = [];
+    drawGrid();
+  });
+
+  drawGrid();
+  console.log('DEBUG initBuilder ran. gridData rows:', gridData.length, 'cols:', gridData[0]?.length, 'canvas w/h:', gridCanvas.width, 'x', gridCanvas.height);
+  console.log('DEBUG pool tiles:', document.querySelectorAll('.pool-tile').length);
+}
+
 boot();
+initBuilder();
+

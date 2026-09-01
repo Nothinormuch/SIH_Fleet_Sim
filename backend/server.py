@@ -49,6 +49,7 @@ from src.bios4 import MAX_MODEL_BYTES, ModelError, model_from_json  # noqa: E402
 from src.evolve import TrainConfig, evolve         # noqa: E402
 from src.main import run_for_dashboard            # noqa: E402
 from src.scenarios import SCENARIOS, SHOWCASE_SCENARIOS  # noqa: E402
+from src.environment import Warehouse, FREE, RACK, STATION, DOCK  # noqa: E402
 from src.task_allocation import ALLOCATION_POLICIES  # noqa: E402
 
 # Simulations are CPU-bound and a long one takes a while; serialise them so a reloading
@@ -70,6 +71,7 @@ _JOBS_LOCK = threading.Lock()
 _MODELS: dict[str, object] = {}                    # model id -> PolicyNet
 _MODEL_ORDER: list[str] = []
 MAX_MODELS = 16                                    # a dev tool, not a model registry
+CUSTOM_SCENARIOS: dict[str, dict] = {}
 
 # Bounds, not suggestions - the same reasoning as the run endpoint's. An unbounded
 # population on a CPU-bound endpoint is a denial of service against your own laptop
@@ -303,6 +305,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_train_cancel(parse_qs(parsed.query))
             if route == "/api/model":
                 return self._api_model_upload()
+            if route == "/api/scenarios/custom" and self.command == "POST":
+                return self._api_scenarios_custom()
             if route != "/api/run":
                 return self._json(404, {"error": f"not found: {route}"})
             content_type = self.headers.get_content_type()
@@ -390,6 +394,56 @@ class Handler(BaseHTTPRequestHandler):
             remaining -= len(chunk)
 
     # ------------------------------------------------------------------ endpoints
+
+    def _api_scenarios_custom(self) -> None:
+        try:
+            raw_length = self.headers.get("Content-Length")
+            if raw_length is None:
+                return self._json(411, {"error": "Content-Length is required"})
+            length = int(raw_length)
+            if length < 0 or length > MAX_REQUEST_BYTES:
+                return self._json(413, {"error": "request body is too large"})
+            body = self.rfile.read(length)
+            self._body_read = True
+            try:
+                payload = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                return self._json(400, {"error": "request body must be valid JSON"})
+        except Exception:
+            return self._json(400, {"error": "invalid request"})
+
+        # Expect: {"name":"...","width":...,"height":...,"grid":[[...],...],"stations":[[x,y],...],"docks":[[x,y],...],"starts":[[x,y],...],"seed":0,"duration":300}
+        try:
+            width = int(payload.get("width", 20))
+            height = int(payload.get("height", 20))
+            grid_raw = payload.get("grid", [])
+            if not isinstance(grid_raw, list) or len(grid_raw) != height:
+                return self._json(400, {"error": "grid must match height"})
+            grid = []
+            for row in grid_raw:
+                if not isinstance(row, list) or len(row) != width:
+                    return self._json(400, {"error": f"each grid row must have width {width}"})
+                grid.append([int(v) for v in row])
+            stations = [tuple(s) for s in payload.get("stations", []) if isinstance(s, list) and len(s) == 2]
+            docks = [tuple(s) for s in payload.get("docks", []) if isinstance(s, list) and len(s) == 2]
+            starts = [tuple(s) for s in payload.get("starts", []) if isinstance(s, list) and len(s) == 2]
+        except Exception as exc:
+            return self._json(400, {"error": f"invalid grid data: {exc}"})
+
+        try:
+            env = Warehouse(width, height, tuple(tuple(row) for row in grid), tuple(stations), tuple(docks), payload.get("name", "custom"))
+        except Exception as exc:
+            return self._json(400, {"error": f"cannot build warehouse: {exc}"})
+
+        sid = "custom_" + str(uuid.uuid4().hex[:8])
+        CUSTOM_SCENARIOS[sid] = {
+            "env": env,
+            "starts": starts,
+            "name": payload.get("name", "custom"),
+            "seed": int(payload.get("seed", 0)),
+            "duration": float(payload.get("duration", 300.0)),
+        }
+        self._json(200, {"id": sid, "name": payload.get("name", "custom"), "width": width, "height": height})
 
     def _api_scenarios(self) -> None:
         showcase = []

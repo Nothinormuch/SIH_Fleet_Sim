@@ -27,6 +27,7 @@
       </div>
       <button id="presentationBtn" class="jury-button"><span>◆</span> Jury Mode</button>
       <button id="fullscreenBtn" class="icon-button" title="Fullscreen" aria-label="Enter fullscreen">⛶</button>
+      <button id="builderBtn" class="icon-button" title="Scenario Builder" aria-label="Open tiled scenario builder">◆</button>
     </nav>
   </header>
 
@@ -49,6 +50,29 @@
         <span><i class="proof-dot evidence"></i>simulation evidence</span>
       </div>
       </section>
+
+      <!-- Scenario Builder -->
+  <section id="builderCanvas" class="builder-canvas is-hidden" aria-label="Tiled scenario builder">
+    <div class="builder-sidebar">
+      <h3>Component Pool</h3>
+      <div class="builder-pool" id="builderPool" aria-label="Draggable scenario components">
+        <button class="pool-tile" draggable="true" data-type="FREE" data-label="Free Floor" style="background:url('/assets/tiles/tile_intersection.png') center/cover; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.8);">FREE</button>
+        <button class="pool-tile" draggable="true" data-type="RACK" data-label="Rack" style="background:url('/assets/misc/furniture/rack_1x3.png') center/cover; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.8);">RACK</button>
+        <button class="pool-tile" draggable="true" data-type="STATION" data-label="Station" style="background:url('/assets/tiles/tile_pick_station.png') center/cover; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.8);">STATION</button>
+        <button class="pool-tile" draggable="true" data-type="DOCK" data-label="Dock" style="background:url('/assets/tiles/tile_charging.png') center/cover; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.8);">DOCK</button>
+        <button class="pool-tile" draggable="true" data-type="AMR" data-label="AMR Start" style="background:url('/assets/robots/robot_amr01_base.png') center/contain no-repeat; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.8);">AMR</button>
+        <button class="pool-tile" draggable="true" data-type="HUMAN" data-label="Pedestrian" style="background:url('/assets/misc/furniture/worker_human.png') center/contain no-repeat; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.8);">HUMAN</button>
+      </div>
+      <div class="builder-actions">
+        <button id="builderSaveBtn" class="launch-button"><b>Save Scenario</b></button>
+        <button id="builderClearBtn" class="ghost">Clear All</button>
+      </div>
+    </div>
+    <div class="builder-grid-wrap">
+      <canvas id="builderGrid" width="600" height="400"></canvas>
+      <div id="builderPreview" class="builder-preview" aria-hidden="true"></div>
+    </div>
+  </section>
 
       <section class="operations-dock" aria-label="Simulation controls and selected robot telemetry">
         <div class="dock-label"><span>OPERATIONS DOCK</span><small>Controls and telemetry stay outside the warehouse view</small></div>
@@ -142,7 +166,8 @@
         <div id="summary" class="summary"><p class="muted">No run yet.</p></div>
       </details>
     </aside>
-  </main>
+  
+
 
   <div id="juryOverlay" class="jury-overlay" aria-hidden="true">
     <div class="jury-copy"><small>BIOS JURY MODE</small><strong id="juryHeadline">The warehouse is thinking locally.</strong><p id="juryNarration">Every robot sees the same task, but only an eligible robot is allowed to bid.</p></div>
