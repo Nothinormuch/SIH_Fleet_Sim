@@ -59,7 +59,9 @@ from .world import Actuation, Sensors
 # ---------------------------------------------------------------------- constants
 
 POLICY_STOP_WAIT = "stop_and_wait"
+POLICY_STOP_WAIT_COMPETITION = "stop_and_wait_competition"
 POLICY_CENTRAL = "central"
+POLICY_PRIORITIZED_SPACE_TIME = "prioritized_space_time_astar"
 POLICY_HIERARCHICAL = "hierarchical"
 POLICY_BIOS = "BIOS_1.0.0"
 POLICY_BIOS_PIBT = "BIOS_PIBT.1"
@@ -77,8 +79,9 @@ V3_AUCTION_POLICIES = (POLICY_BIOS_PIBT_V3, *ENERGY_AUCTION_POLICIES)
 DIRECTED_POLICIES = (POLICY_BIOS_PIBT_V2, *V3_AUCTION_POLICIES)
 PIBT_POLICIES = (POLICY_BIOS_PIBT, *DIRECTED_POLICIES)
 DECENTRAL_POLICIES = (POLICY_BIOS, POLICY_DECENTRALIZED, *PIBT_POLICIES, POLICY_BIOS4)
-CENTRAL_POLICIES = (POLICY_CENTRAL,)
-POLICIES = (POLICY_STOP_WAIT, POLICY_CENTRAL, POLICY_HIERARCHICAL,
+STOP_WAIT_POLICIES = (POLICY_STOP_WAIT, POLICY_STOP_WAIT_COMPETITION)
+CENTRAL_POLICIES = (POLICY_CENTRAL, POLICY_PRIORITIZED_SPACE_TIME)
+POLICIES = (*STOP_WAIT_POLICIES, *CENTRAL_POLICIES, POLICY_HIERARCHICAL,
             POLICY_BIOS, POLICY_DECENTRALIZED, *PIBT_POLICIES, POLICY_BIOS4)
 
 MODE_CENTRAL = "CENTRAL_OK"
@@ -355,6 +358,13 @@ class AMRBrain:
         self._mgr_seen = -1e9
         self._seq = 0
         self._hold = False
+        # The competition baseline remains non-cooperative stop-and-wait, but avoids
+        # burning A* cycles while a temporary obstruction is still present.  A local
+        # detour is attempted only after the same next cell remains blocked for the
+        # configured persistence interval; no peer intent, priority or lease is used.
+        self._stop_wait_blocked_since: float | None = None
+        self._stop_wait_blocked_cell: Cell | None = None
+        self._stop_wait_persistent_replan_t = -1e9
 
         # Everything the report quotes about this agent, measured not asserted.
         self.stats = {
@@ -958,6 +968,25 @@ class AMRBrain:
             self._track_block(t, self._hold, blocker)
             return
 
+        if self.policy == POLICY_STOP_WAIT_COMPETITION:
+            # Stronger but still non-cooperative baseline: the decision remains
+            # strictly "is my next cell occupied?".  Event-driven waiting and a
+            # persistent-block detour improve computation/liveness without borrowing
+            # BIOS priority inheritance, intent messages, leases or reservations.
+            was_holding = self._hold
+            self._hold = self._traffic_ahead_competition(sensors)
+            nxt = self._next_cell()
+            if self._hold:
+                if not was_holding or self._stop_wait_blocked_cell != nxt:
+                    self._stop_wait_blocked_since = t
+                    self._stop_wait_blocked_cell = nxt
+                self._track_block(t, True, self._peer_ahead(sensors))
+            else:
+                self._stop_wait_blocked_since = None
+                self._stop_wait_blocked_cell = None
+                self._track_block(t, False, None)
+            return
+
         if (self.policy in V3_AUCTION_POLICIES
                 and self._repair_duplicate_cell(t, sensors)):
             return
@@ -1212,6 +1241,21 @@ class AMRBrain:
             if to_cell((det.x, det.y), cm) == nxt:
                 return True
         return False
+
+    def _traffic_ahead_competition(self, sensors: Sensors) -> bool:
+        """Equivalent next-cell test with allocation-free bounding-box checks."""
+        nxt = self._next_cell()
+        if nxt is None or not sensors.detections:
+            return False
+        cm = self.cfg.cell_m
+        x_min = nxt[0] * cm
+        y_min = nxt[1] * cm
+        x_max = x_min + cm
+        y_max = y_min + cm
+        return any(
+            x_min <= detection.x < x_max and y_min <= detection.y < y_max
+            for detection in sensors.detections
+        )
 
     def _schedule_holds(self, t: float) -> bool:
         """True while a central schedule says this cell is not ours yet.
@@ -2260,6 +2304,32 @@ class AMRBrain:
         if self.goal is None:
             return
 
+        if self.policy == POLICY_STOP_WAIT_COMPETITION:
+            if not self.path or self.pidx >= len(self.path):
+                self._replan(t, sensors.cell)
+                return
+            if self._hold:
+                waited = (0.0 if self._stop_wait_blocked_since is None else
+                          t - self._stop_wait_blocked_since)
+                retry_age = t - self._stop_wait_persistent_replan_t
+                if (waited >= self.cfg.traffic.stop_wait_persistent_s
+                        and retry_age >= self.cfg.traffic.stop_wait_replan_period_s):
+                    self._stop_wait_persistent_replan_t = t
+                    nxt = self._next_cell()
+                    if nxt is not None:
+                        self.penalty[nxt] = (
+                            self.penalty.get(nxt, 0.0)
+                            + self.cfg.traffic.replan_penalty
+                        )
+                    self._replan(t, sensors.cell, reuse_identical=True)
+                return
+            stuck = t - self._last_progress_t
+            if stuck > self.cfg.traffic.livelock_progress_s:
+                self.penalty.clear()
+                self._last_progress_t = t
+                self._replan(t, sensors.cell)
+            return
+
         # Ask for a coordinated route on EVERY tick the manager is reachable, not only
         # when the local plan has run out. Requesting it lazily meant the robot spent
         # most of its time on a local shortest path with no schedule attached, fell
@@ -2281,7 +2351,8 @@ class AMRBrain:
             self._last_progress_t = t
             self._replan(t, sensors.cell)
 
-    def _replan(self, t: float, start: Cell) -> None:
+    def _replan(self, t: float, start: Cell,
+                reuse_identical: bool = False) -> None:
         if self.goal is None:
             return
         t0 = time.perf_counter()
@@ -2346,6 +2417,14 @@ class AMRBrain:
         self.stats["plan_calls"] += 1
         self.stats["plan_cpu_max_s"] = max(self.stats["plan_cpu_max_s"], cpu)
         self.stats["local_plans"] += 1
+        if reuse_identical and path:
+            search_start = max(0, self.pidx - 1)
+            try:
+                old_start = self.path.index(start, search_start)
+            except ValueError:
+                old_start = -1
+            if old_start >= 0 and self.path[old_start:] == path:
+                return
         self.stats["replans"] += 1
         self.epoch += 1
         self.path = path
@@ -4319,7 +4398,7 @@ class AMRBrain:
 
     def _broadcast(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
-        if self.policy in (POLICY_STOP_WAIT, *CENTRAL_POLICIES):
+        if self.policy in (*STOP_WAIT_POLICIES, *CENTRAL_POLICIES):
             # Heartbeats only. The dashboard has to work for every baseline or the
             # comparison quietly becomes "with telemetry vs without", and the manager
             # needs poses to plan. Neither baseline shares *intent* with peers - that

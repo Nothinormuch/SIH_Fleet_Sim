@@ -158,6 +158,10 @@ class TrafficSpec:
     # theirs to reach us, short enough not to dominate travel time through a block.
     gate_commit_s: float = 0.45
     replan_penalty: float = 6.0     # cost added to a contested cell when detouring
+    # Strong non-cooperative comparison: wait normally, then try an individual local
+    # detour.  These parameters never enable peer intent, arbitration or reservations.
+    stop_wait_persistent_s: float = 4.0
+    stop_wait_replan_period_s: float = 3.0
     # BIOS_1.0.0 only: a robot held still longer than this edges into ANY free
     # adjacent cell so it can never settle permanently. Deliberately short: the
     # point is a liveness guarantee, not polite traffic theory.

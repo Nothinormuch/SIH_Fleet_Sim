@@ -29,7 +29,8 @@ import sys
 from dataclasses import replace
 
 from . import messages as msg
-from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
+from .amr import (AMRBrain, CENTRAL_POLICIES, POLICIES, POLICY_HIERARCHICAL,
+                  POLICY_CENTRAL, POLICY_PRIORITIZED_SPACE_TIME,
                   POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS_PIBT,
                   POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V5,
                   POLICY_BIOS_PIBT_V6,
@@ -39,7 +40,8 @@ from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
 from .scenarios import SCENARIOS, Scenario, workload_fingerprint
 from .settings import Config, DEFAULT
-from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
+from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
+                               ALLOCATION_HUNGARIAN,
                                ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED,
                                ACTIVE_ALLOCATION_POLICIES,
                                validate_allocation_policy)
@@ -96,7 +98,7 @@ def _auction_event(message: msg.Message) -> dict:
 # two places need the answer - the runner, which decides whether to build a manager,
 # and the dashboard payload, which has to tell the UI whether a missing manager is a
 # failure or the design. A policy absent from this tuple is peer-to-peer by intent.
-MANAGED_POLICIES = (POLICY_CENTRAL, POLICY_HIERARCHICAL)
+MANAGED_POLICIES = (*CENTRAL_POLICIES, POLICY_HIERARCHICAL)
 
 
 def run_scenario(sc: Scenario, policy: str, seed: int = 0,
@@ -149,8 +151,6 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                      allocation_policy=allocation_policy, policy_model=policy_model)
         b.queue = ([] if uses_allocation else
                    list(sc.assignments[i]) if i < len(sc.assignments) else [])
-        if hasattr(b, 'use_auction'):
-            b.use_auction = sc.use_auction
         brains[rid] = b
         net.register(rid)
 
@@ -160,14 +160,13 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     # The route policy may need a manager for space-time plans, while Hungarian needs
     # one only for task assignment. These responsibilities are intentionally separate.
     manager = None
-    if policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL) \
+    if policy in MANAGED_POLICIES \
             or allocation_policy == ALLOCATION_HUNGARIAN:
         manager_allocation = (ALLOCATION_HUNGARIAN
                               if allocation_policy == ALLOCATION_HUNGARIAN else None)
         manager = FleetManager(sc.env, cfg,
                                allocation_policy=manager_allocation,
-                               route_planning=policy in (
-                                   POLICY_CENTRAL, POLICY_HIERARCHICAL))
+                               route_planning=policy in MANAGED_POLICIES)
         net.register(MANAGER_ID)
 
     total_tasks = len(announced_tasks) if uses_allocation else sc.n_tasks
@@ -507,7 +506,8 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
 
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
                       seed: int = 0, duration: float | None = None,
-                      allocation_policy: str = ALLOCATION_AUCTION, policy_model=None) -> dict:
+                      allocation_policy: str = ALLOCATION_AUCTION_BUNDLE,
+                      policy_model=None) -> dict:
     """One run, packaged for the web dashboard: map, every frame, and the summary.
 
     Playback rather than a live stream, deliberately. The sim runs far faster than
@@ -538,7 +538,7 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
             "cell_m": DEFAULT.cell_m,
             "pose_units": "metres",
             "robot_diameter_m": 2.0 * DEFAULT.robot.radius_m,
-            "has_manager": policy in (POLICY_CENTRAL, POLICY_HIERARCHICAL),
+            "has_manager": policy in MANAGED_POLICIES,
             "dead_zones": [list(zone) for zone in sc.net.dead_zones],
             "energy_reserve_frac": DEFAULT.traffic.energy_reserve_frac,
             "energy_uncertainty_frac": DEFAULT.traffic.energy_uncertainty_frac,
@@ -589,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
                     choices=sorted(POLICIES) + ["all"],
                     help="route/traffic policy")
     ap.add_argument("--allocation-policy", choices=sorted(ALLOCATION_POLICIES),
-                    default=None,
+                    default=ALLOCATION_AUCTION_BUNDLE,
                     help=("task allocator: decentralized auction, Hungarian "
                           "comparison, or preassigned workload"))
     ap.add_argument("--robots", type=int, default=None)
@@ -639,6 +639,7 @@ def main(argv: list[str] | None = None) -> int:
     if POLICY_STOP_WAIT in by_policy:
         print()
         for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS,
+                     POLICY_PRIORITIZED_SPACE_TIME,
                      POLICY_DECENTRALIZED, POLICY_BIOS_PIBT,
                      POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
                      POLICY_BIOS_PIBT_V5, POLICY_BIOS_PIBT_V6, POLICY_BIOS4):

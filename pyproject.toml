@@ -27,6 +27,7 @@ sih-fault-campaign = "src.fault_campaign:main"
 sih-edge-demo = "src.distributed_demo:main"
 sih-edge-node = "src.edge_runtime:main"
 sih-auction-v2-campaign = "src.auction_v2_campaign:main"
+sih-baseline-comparison = "src.baseline_comparison:main"
 
 [tool.setuptools.packages.find]
 include = ["src*", "backend*"]

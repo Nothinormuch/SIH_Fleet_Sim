@@ -29,8 +29,8 @@ from src.messages import (MGR_BEACON, PLAN_RSP, award, bid, decode,
 from src.metrics import poisson_rate_ci
 from src.planner import Reservations, astar, prioritized_plan
 from src.settings import DEFAULT
-from src.task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
-                                 ALLOCATION_PREASSIGNED)
+from src.task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
+                                 ALLOCATION_HUNGARIAN, ALLOCATION_PREASSIGNED)
 from src.transport import ReplayWindow, SimNetwork
 from src.world import Actuation, Detection, Sensors, World
 
@@ -311,7 +311,7 @@ def test_decentralized_dashboard_run_has_no_fleet_manager():
     payload = run_for_dashboard("dense_aisles", POLICY_DECENTRALIZED,
                                 robots=2, seed=0, duration=1.0)
     assert payload["meta"]["policy"] == POLICY_DECENTRALIZED
-    assert payload["meta"]["allocation_policy"] == ALLOCATION_AUCTION
+    assert payload["meta"]["allocation_policy"] == ALLOCATION_AUCTION_BUNDLE
     assert not any(frame["manager_alive"] for frame in payload["frames"])
     events = [event for frame in payload["frames"]
               for event in frame.get("auction_events", [])]

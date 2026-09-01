@@ -53,7 +53,7 @@ async function boot() {
     App.showcase = showcase || [];
     fill(el('scenario'), scenarios, 'showcase_open_floor');
     fill(el('policy'), policies, 'BIOS_PIBT.6');
-    fill(el('allocationPolicy'), allocation_policies, 'auction');
+    fill(el('allocationPolicy'), allocation_policies, 'auction_bundle');
     renderScenarioGallery(App.showcase);
     updatePolicyProfile();
   } catch (e) {
@@ -191,8 +191,10 @@ function fill(select, values, preferred) {
     'BIOS_PIBT.6': 'BIOS 6.0 · Predictive',
     'BIOS_PIBT.5': 'BIOS 5.0 · Energy-aware',
     'BIOS_PIBT.3': 'BIOS 3.0 · Priority traffic',
-    'stop_and_wait': 'Stop-and-wait baseline',
+    'stop_and_wait': 'Stop-and-wait · basic',
+    'stop_and_wait_competition': 'Stop-and-wait · competition',
     'central': 'Central route baseline',
+    'prioritized_space_time_astar': 'Prioritized space-time A* · central',
     'hierarchical': 'Hierarchical baseline',
     'decentralized': 'Peer intent baseline',
   };
@@ -861,11 +863,14 @@ function updateManagerDot(frame) {
       : 'Hungarian task allocator DOWN';
     return;
   }
-  if (routePolicy === 'stop_and_wait' || routePolicy === 'BIOS_1.0.0') {
+  if (routePolicy === 'stop_and_wait'
+      || routePolicy === 'stop_and_wait_competition'
+      || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot';
     text.textContent = routePolicy === 'BIOS_1.0.0'
       ? 'no fleet manager · peer traffic'
-      : 'no fleet manager (baseline)';
+      : `no fleet manager · ${routePolicy === 'stop_and_wait_competition'
+        ? 'competition stop-and-wait' : 'basic stop-and-wait'}`;
     return;
   }
   if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'

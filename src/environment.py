@@ -20,6 +20,19 @@ STATION = 2     # pick / drop station - passable, tasks target these
 DOCK = 3        # charge pad - passable
 
 
+@functools.lru_cache(maxsize=8192)
+def _cached_passable_neighbors(
+    grid: tuple[tuple[int, ...], ...], width: int, height: int, cell: Cell,
+) -> tuple[Cell, ...]:
+    """Return immutable map neighbours without rebuilding the same list per A* call."""
+    x, y = cell
+    return tuple(
+        (nx, ny)
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
+        if 0 <= nx < width and 0 <= ny < height and grid[ny][nx] != RACK
+    )
+
+
 @dataclass(frozen=True)
 class Warehouse:
     width: int
@@ -40,16 +53,13 @@ class Warehouse:
             return False
         return self.grid[c[1]][c[0]] != RACK
 
-    def neighbors(self, c: Cell) -> Iterator[Cell]:
+    def neighbors(self, c: Cell) -> tuple[Cell, ...]:
         """4-connected. AMRs are differential-drive; diagonal moves would need a
         clearance check this grid cannot express, so they are simply not offered."""
-        x, y = c
-        for n in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-            if self.passable(n):
-                yield n
+        return _cached_passable_neighbors(self.grid, self.width, self.height, c)
 
     def degree(self, c: Cell) -> int:
-        return sum(1 for _ in self.neighbors(c))
+        return len(self.neighbors(c))
 
     def free_cells(self) -> Iterator[Cell]:
         for y in range(self.height):
