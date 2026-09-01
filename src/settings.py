@@ -173,6 +173,8 @@ class TrafficSpec:
     # robot can close the same auction without an auctioneer choosing the winner.
     auction_bid_window_s: float = 0.6
     auction_lease_s: float = 20.0
+    auction_unknown_bid_cache_max: int = 128
+    auction_unknown_bid_cache_ttl_s: float = 2.0
     # V3 bids on a bounded bundle instead of serialising one auction per task. One
     # active task per physical drop cell is deliberate admission control: it keeps
     # service-station queues out of the circulation lanes.
@@ -255,6 +257,20 @@ class TrafficSpec:
     # No robot owns a global charger schedule; stale information simply disappears.
     v6_charger_busy_penalty: float = 8.0
     v6_charger_intent_penalty: float = 3.0
+
+    # Experimental BIOS 6 task-allocation enhancement. The ordinary ``auction``
+    # policy remains idle-only; ``auction_bundle`` may reserve exactly one future task.
+    # The future completion estimate is expressed in equivalent traversal cells so it
+    # remains directly comparable with the existing idle-robot bid.
+    bundle_future_lease_s: float = 20.0
+    bundle_revalidate_s: float = 1.0
+    bundle_network_recovery_s: float = 1.0
+    bundle_bid_retry_s: float = 2.0
+    bundle_reassignment_threshold: float = 0.10
+    bundle_deadline_risk_weight: float = 2.0
+    bundle_reserve_risk_weight: float = 1.0
+    bundle_energy_weight: float = 4.0
+    bundle_epoch_max_advance: int = 1024
 
 
 @dataclass(frozen=True)

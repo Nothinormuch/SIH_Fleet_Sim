@@ -58,6 +58,7 @@ MAX_INTENT_CELLS = 64
 MAX_PLAN_CELLS = 1024
 MAX_EXPERIENCE_RECORDS = 8
 MAX_RELATIVE_TIME_S = 86_400.0
+MAX_AUCTION_EPOCH = 2 ** 31 - 1
 CARGO_TYPES = ("normal", "fragile", "heavy", "hazardous")
 _ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
@@ -293,24 +294,38 @@ def _validate_dict(d: dict) -> str | None:
                     and not _number(legacy_deadline, 0.0, 1e15))):
             return "invalid_task"
     elif typ == BID:
+        future = bool(body.get("future", False))
         if (not _task_id(body.get("task"))
                 or not _number(body.get("cost"), 0.0, 1e12)
-                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)):
+                or not _integer(body.get("e", 0), 0, MAX_AUCTION_EPOCH)
+                or (future and (
+                    not _task_id(body.get("active"))
+                    or not _integer(body.get("ae", 0), 0, MAX_AUCTION_EPOCH)
+                    or not _integer(body.get("bv", 0), 0, MAX_AUCTION_EPOCH)))):
             return "invalid_bid"
     elif typ == AWARD:
+        future = bool(body.get("future", False))
         if (not _task_id(body.get("task"))
                 or not _number(body.get("cost"), 0.0, 1e12)
-                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)
+                or not _integer(body.get("e", 0), 0, MAX_AUCTION_EPOCH)
                 or not _identifier(body.get("dst"), optional=True)
                 or not _identifier(body.get("winner"), optional=True)
+                or (future and (
+                    not _task_id(body.get("active"))
+                    or not _integer(body.get("ae", 0), 0, MAX_AUCTION_EPOCH)
+                    or not _integer(body.get("bv", 0), 0, MAX_AUCTION_EPOCH)))
                 or (body.get("ttl") is not None
                     and not _relative_time(body.get("ttl")))
                 or (body.get("u") is not None
                     and not _number(body.get("u"), 0.0, 1e15))):
             return "invalid_award"
     elif typ == TASK_DONE:
+        relay = body.get("relay", False)
         if (not _task_id(body.get("task"))
-                or not _integer(body.get("e", 0), 0, 2 ** 31 - 1)):
+                or not _integer(body.get("e", 0), 0, MAX_AUCTION_EPOCH)
+                or not _identifier(body.get("owner"), optional=True)
+                or not isinstance(relay, bool)
+                or (relay and not _identifier(body.get("owner")))):
             return "invalid_task_done"
     elif typ in (CLAIM, RELEASE):
         if body.get("b"):
@@ -473,16 +488,26 @@ def yield_to(src: str, seq: int, t: float, cell: Cell, winner: str) -> Message:
 
 
 def bid(src: str, seq: int, t: float, task_id: str, cost: float,
-        epoch: int = 0) -> Message:
-    return Message(BID, src, seq, t, {
+        epoch: int = 0, *, active_task: str | None = None,
+        active_epoch: int = 0, bundle_version: int = 0) -> Message:
+    body: dict[str, Any] = {
         "task": task_id, "cost": round(cost, 3), "e": int(epoch),
-    })
+    }
+    if active_task is not None:
+        body.update({
+            "future": True,
+            "active": active_task,
+            "ae": int(active_epoch),
+            "bv": int(bundle_version),
+        })
+    return Message(BID, src, seq, t, body)
 
 
 def award(src: str, seq: int, t: float, task_id: str, cost: float,
           dst: str | None = None, epoch: int = 0,
           lease_until: float | None = None,
-          winner: str | None = None) -> Message:
+          winner: str | None = None, *, active_task: str | None = None,
+          active_epoch: int = 0, bundle_version: int = 0) -> Message:
     body: dict[str, Any] = {
         "task": task_id, "cost": round(cost, 3), "e": int(epoch),
     }
@@ -493,14 +518,26 @@ def award(src: str, seq: int, t: float, task_id: str, cost: float,
         body["winner"] = winner
     if lease_until is not None:
         body["ttl"] = round(max(0.0, lease_until - t), 3)
+    if active_task is not None:
+        body.update({
+            "future": True,
+            "active": active_task,
+            "ae": int(active_epoch),
+            "bv": int(bundle_version),
+        })
     return Message(AWARD, src, seq, t, body)
 
 
 def task_done(src: str, seq: int, t: float, task_id: str,
-              epoch: int = 0) -> Message:
-    return Message(TASK_DONE, src, seq, t, {
+              epoch: int = 0, owner: str | None = None) -> Message:
+    body: dict[str, Any] = {
         "task": task_id, "e": int(epoch),
-    })
+    }
+    if owner is not None:
+        body["owner"] = owner
+        if owner != src:
+            body["relay"] = True
+    return Message(TASK_DONE, src, seq, t, body)
 
 
 def mgr_beacon(src: str, seq: int, t: float, epoch: int) -> Message:

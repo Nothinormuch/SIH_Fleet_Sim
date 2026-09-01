@@ -50,7 +50,8 @@ from .geometry import (Cell, angle_diff, bearing, cell_center, clamp, dist,
 from .planner import astar
 from .priority import PriorityKey, pibt_step
 from .settings import Config
-from .task_allocation import ALLOCATION_AUCTION, validate_allocation_policy
+from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
+                              ALLOCATION_HUNGARIAN, validate_allocation_policy)
 from .topology import analyse_topology, directed_circulation
 from .world import Actuation, Sensors
 
@@ -127,6 +128,7 @@ class Peer:
     windows: list[tuple[float, float]] = field(default_factory=list)
     priority_key: PriorityKey | None = None
     battery_frac: float = 1.0
+    task_id: str | None = None
 
 
 class AMRBrain:
@@ -160,6 +162,32 @@ class AMRBrain:
         self.pidx = 0
         self.goal: Cell | None = None
         self.task: Task | None = None
+        # ``auction_bundle`` is an experimental BIOS 6 allocator, not a new motion
+        # policy. It may hold exactly one leased task after the executing task.
+        self.future_task: Task | None = None
+        self._future_context: tuple[str, int, int] | None = None
+        self._future_bid: tuple[str, int, str, int, int, float] | None = None
+        self._future_bid_contexts: dict[
+            tuple[str, int, str], tuple[str, int, int]
+        ] = {}
+        self._pending_unknown_bids: dict[
+            str, list[tuple[float, str, int, float,
+                            tuple[str, int, int] | None]]
+        ] = {}
+        self._peer_future_nominations: dict[
+            str, tuple[int, float, float, str, int, int]
+        ] = {}
+        self._future_generation = 0
+        self._last_future_lease_broadcast = -1e9
+        self._last_future_revalidate = -1e9
+        self._future_retry_after = -1e9
+        self._future_needs_reconcile = False
+        self._future_network_candidate_since: float | None = None
+        self._known_peer_ids: set[str] = set()
+        self._task_descriptors: dict[str, tuple] = {}
+        self._task_descriptor_from_wms: set[str] = set()
+        self._completion_proofs: dict[str, tuple[int, str]] = {}
+        self.allocation_compute_ms: list[float] = []
         self.state = ST_IDLE
         self.mode = MODE_P2P
         self.epoch = 0
@@ -352,6 +380,26 @@ class AMRBrain:
             "predictive_hazards_seen": 0,
             "predictive_reroutes": 0,
             "charger_contentions_avoided": 0,
+            # Experimental bounded-future allocator and hardening telemetry.
+            "future_candidates_evaluated": 0,
+            "future_bids_sent": 0, "future_bids_won": 0,
+            "future_bids_lost": 0, "future_capacity_rejections": 0,
+            "stale_future_awards_rejected": 0,
+            "future_version_mismatches": 0,
+            "future_energy_rejections": 0,
+            "future_deadline_rejections": 0,
+            "future_charger_rejections": 0,
+            "future_lease_renewals": 0, "future_lease_expiries": 0,
+            "future_invalidations": 0, "future_promotions": 0,
+            "future_promotion_failures": 0,
+            "future_network_fallbacks": 0,
+            "future_hysteresis_prevented": 0,
+            "rejected_unknown_bids": 0,
+            "deferred_unknown_bids": 0,
+            "rejected_epoch_jumps": 0,
+            "rejected_task_conflicts": 0,
+            "rejected_task_completions": 0,
+            "rejected_directed_awards": 0,
         }
 
     # ================================================================== main tick
@@ -2294,7 +2342,97 @@ class AMRBrain:
 
     def _auction_enabled(self) -> bool:
         """Whether this robot owns the peer-auction allocation responsibility."""
-        return self.allocation_policy == ALLOCATION_AUCTION or self.use_auction
+        return self.allocation_policy in (
+            ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE) or self.use_auction
+
+    def _future_allocation_enabled(self) -> bool:
+        """Whether this BIOS 6 robot may reserve one bounded future task."""
+        return (self.policy == POLICY_BIOS_PIBT_V6
+                and self.allocation_policy == ALLOCATION_AUCTION_BUNDLE)
+
+    def _future_network_healthy(self, t: float) -> bool:
+        """Require a stable, complete-enough peer view before reserving future work.
+
+        Configured loss/dead-zones disable the optimization outright. For live partitions,
+        every peer learned earlier must still be fresh; active execution never depends on
+        this advisory test.
+        """
+        # One-step lookahead is useful on open, bursty layouts. Controlled single-file
+        # blocks make traffic-wave admission more important than speculative locality;
+        # paired benchmarks showed no benefit there, so retain ordinary BIOS 6.
+        if (self.blocks.members or self.cfg.net.loss > 0.0
+                or self.cfg.net.dead_zones):
+            self._future_network_candidate_since = None
+            return False
+        if not self._known_peer_ids:
+            self._future_network_candidate_since = None
+            return False
+        stale = self._peer_stale_after_s()
+        raw_healthy = all(
+            rid in self.peers and t - self.peers[rid].last_seen <= stale
+            for rid in self._known_peer_ids
+        )
+        if not raw_healthy:
+            self._future_network_candidate_since = None
+            return False
+        if self._future_network_candidate_since is None:
+            self._future_network_candidate_since = t
+        return (t - self._future_network_candidate_since
+                >= max(0.0, self.cfg.traffic.bundle_network_recovery_s))
+
+    def _safe_incoming_epoch(self, current: int, incoming: int) -> bool:
+        return (0 <= incoming < msg.MAX_AUCTION_EPOCH
+                and incoming <= current
+                + max(1, self.cfg.traffic.bundle_epoch_max_advance))
+
+    def _cache_unknown_bid(self, t: float, source: str, body: dict) -> None:
+        """Defer reordered bids in a small TTL cache; never make them authoritative."""
+        ttl = max(0.0, self.cfg.traffic.auction_unknown_bid_cache_ttl_s)
+        for tid, entries in list(self._pending_unknown_bids.items()):
+            fresh = [entry for entry in entries if t - entry[0] <= ttl]
+            if fresh:
+                self._pending_unknown_bids[tid] = fresh
+            else:
+                self._pending_unknown_bids.pop(tid, None)
+        context = None
+        if body.get("future") and self._future_allocation_enabled():
+            context = (
+                str(body["active"]), int(body.get("ae", 0)),
+                int(body.get("bv", 0)))
+        entry = (
+            t, source, int(body.get("e", 0)), float(body["cost"]), context)
+        self._pending_unknown_bids.setdefault(str(body["task"]), []).append(entry)
+        self.stats["deferred_unknown_bids"] += 1
+        limit = max(1, self.cfg.traffic.auction_unknown_bid_cache_max)
+        while sum(len(entries) for entries in self._pending_unknown_bids.values()) > limit:
+            oldest_tid = min(
+                self._pending_unknown_bids,
+                key=lambda tid: (self._pending_unknown_bids[tid][0][0], tid))
+            self._pending_unknown_bids[oldest_tid].pop(0)
+            self.stats["rejected_unknown_bids"] += 1
+            if not self._pending_unknown_bids[oldest_tid]:
+                self._pending_unknown_bids.pop(oldest_tid, None)
+
+    def _admit_deferred_bids(self, tid: str, t: float) -> None:
+        task = self.open_tasks.get(tid)
+        if task is None:
+            return
+        ttl = max(0.0, self.cfg.traffic.auction_unknown_bid_cache_ttl_s)
+        for seen_t, source, epoch, cost, context in self._pending_unknown_bids.pop(
+                tid, []):
+            if t - seen_t > ttl or not self._safe_incoming_epoch(
+                    task.auction_epoch, epoch) or epoch < task.auction_epoch:
+                self.stats["rejected_unknown_bids"] += 1
+                continue
+            if epoch > task.auction_epoch:
+                task.auction_epoch = epoch
+                task.bid_deadline = t + self.cfg.traffic.auction_bid_window_s
+                self._bids.pop(tid, None)
+                self._bid_opened.pop(tid, None)
+            self._bids.setdefault(tid, {})[(epoch, source)] = cost
+            self._bid_seen_t[(tid, epoch, source)] = seen_t
+            if context is not None:
+                self._future_bid_contexts[(tid, epoch, source)] = context
 
     def _task_loop(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
@@ -2317,6 +2455,28 @@ class AMRBrain:
                 self.goal = None
             else:
                 return
+
+        if self._future_allocation_enabled():
+            self._consume_future_nomination(t, sensors, outbox)
+            if self.future_task is not None:
+                if not self._future_network_healthy(t):
+                    if not self._future_needs_reconcile:
+                        self.stats["future_network_fallbacks"] += 1
+                    self._future_needs_reconcile = True
+                elif (t - self._last_future_revalidate
+                      >= self.cfg.traffic.bundle_revalidate_s):
+                    self._last_future_revalidate = t
+                    if (self.future_task.tid not in self.open_tasks
+                            or self.future_task.tid in self.completed_tasks):
+                        self._release_future(
+                            t, outbox, "future task was cancelled or completed",
+                            reauction=False)
+                    elif not self._future_sequence_feasible(
+                            self.future_task, sensors, t)[0]:
+                        self._release_future(
+                            t, outbox, "future sequence became infeasible")
+                    else:
+                        self._future_needs_reconcile = False
 
         if self.task is None:
             if self._needs_duplicate_vacate:
@@ -2360,7 +2520,14 @@ class AMRBrain:
                              if tid in self.open_tasks), None)
             if assigned is not None:
                 self._awarded.remove(assigned)
-                self._accept_task(t, self.open_tasks[assigned], sensors.cell)
+                task = self.open_tasks[assigned]
+                feasible, _required, _reserve = self._energy_feasible(
+                    task, sensors, t=t)
+                if (feasible and self.allocation_policy
+                        in (None, ALLOCATION_HUNGARIAN)):
+                    self._accept_task(t, task, sensors.cell)
+                else:
+                    self.stats["rejected_directed_awards"] += 1
             else:
                 nominated = next((
                     (tid, nomination)
@@ -2400,6 +2567,11 @@ class AMRBrain:
                 self._vacate_if_in_the_way(t, sensors)
             return
 
+        if (self._future_allocation_enabled()
+                and self.future_task is None
+                and self._future_network_healthy(t)):
+            self._run_v3_batch_auction(t, sensors, outbox)
+
         if self.state in (ST_TO_PICK, ST_BLOCKED) and self._arrived(sensors, self.task.pick) \
                 and self.goal == self.task.pick:
             self.state = ST_TO_DROP
@@ -2411,6 +2583,8 @@ class AMRBrain:
             outbox.append(msg.task_done(
                 self.rid, self._next_seq(), t, self.task.tid,
                 epoch=self.task.auction_epoch))
+            self._completion_proofs[self.task.tid] = (
+                self.task.auction_epoch, self.rid)
             self.open_tasks.pop(self.task.tid, None)
             self.completed_tasks.add(self.task.tid)
             self._task_claims.pop(self.task.tid, None)
@@ -2426,6 +2600,9 @@ class AMRBrain:
             self.state = ST_IDLE
             self._priority_grace_since = None
             self._priority_grace_until = -1e9
+            if self._future_allocation_enabled() and self.future_task is not None:
+                if self._promote_future(t, sensors, outbox):
+                    return
             # Clear the station. A drop point is a shared resource, and a robot that
             # finishes its last job and simply stops where it stands is parked on top
             # of it - permanently, since nothing will ever ask it to move. That single
@@ -2675,8 +2852,10 @@ class AMRBrain:
                               outbox: list[msg.Message]) -> None:
         """Allocate a congestion-safe batch using replicated peer bids.
 
-        There is no auctioneer. Every idle AMR advertises costs for its best bounded
-        bundle, observes one complete bid window, then runs the same deterministic
+        There is no auctioneer. Every ordinary-auction AMR remains idle-only. In the
+        experimental ``auction_bundle`` mode, a busy AMR with an empty future slot may
+        advertise exactly one bundle-version-bound future bid. Every participant runs the
+        same deterministic
         greedy matching over the bid messages it heard. A robot may win at most one
         task per round and each physical drop cell admits only a bounded number of
         active tasks. Awards remain expiring peer claims, so incomplete views converge
@@ -2685,7 +2864,19 @@ class AMRBrain:
         # The WMS only announces work. This method is reached through `_task_loop`,
         # but the guard is explicit so no direct caller can make a working or charging
         # robot participate in another auction.
-        if self.task is not None or self.state != ST_IDLE:
+        busy_future = (
+            self._future_allocation_enabled()
+            and self.task is not None
+            and self.state not in (ST_IDLE, ST_CHARGING)
+            and self.future_task is None
+            and (self._future_bid is None
+                 or self._v3_round_started is not None)
+            and t >= self._future_retry_after
+            and self._future_network_healthy(t)
+        )
+        if self.task is not None and not busy_future:
+            return
+        if self.task is None and self.state != ST_IDLE:
             return
         if self.policy in ENERGY_AUCTION_POLICIES and t < self._energy_retry_after:
             return
@@ -2699,10 +2890,65 @@ class AMRBrain:
             self._v3_round_started = None
             self._remote_winner_since = None
             self._remote_winner_fingerprint = None
+            if self._future_bid is not None:
+                self._future_bid = None
+                self._future_generation = (
+                    self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
             return
 
         if self._v3_round_started is None:
             self._v3_round_started = t
+            if busy_future:
+                started = time.perf_counter()
+                ranked_future = []
+                for task in available:
+                    self.stats["future_candidates_evaluated"] += 1
+                    feasible, _required, _reserve, _reason = (
+                        self._future_sequence_feasible(task, sensors, t))
+                    if not feasible:
+                        continue
+                    future_cost = self._future_bid_cost(task, sensors, t)
+                    idle_cost = self._best_fresh_idle_cost(task, t)
+                    threshold = max(
+                        0.0, self.cfg.traffic.bundle_reassignment_threshold)
+                    if (idle_cost is not None
+                            and future_cost >= idle_cost * (1.0 - threshold)):
+                        self.stats["future_hysteresis_prevented"] += 1
+                        continue
+                    ranked_future.append((
+                        self._task_urgency(task, t),
+                        future_cost,
+                        task.tid, task))
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                self.allocation_compute_ms.append(elapsed_ms)
+                if len(self.allocation_compute_ms) > 2048:
+                    del self.allocation_compute_ms[:-2048]
+                if not ranked_future:
+                    self._v3_round_started = None
+                    self._future_retry_after = (
+                        t + self.cfg.traffic.bundle_bid_retry_s)
+                    return
+                _urgency, cost, _tid, task = min(
+                    ranked_future, key=lambda item: (item[0], item[1], item[2]))
+                context = (
+                    self.task.tid, self.task.auction_epoch,
+                    self._future_generation)
+                key = (task.auction_epoch, self.rid)
+                self._bids.setdefault(task.tid, {})[key] = cost
+                self._bid_seen_t[(task.tid, task.auction_epoch, self.rid)] = t
+                self._future_bid_contexts[
+                    (task.tid, task.auction_epoch, self.rid)] = context
+                self._future_bid = (
+                    task.tid, task.auction_epoch,
+                    context[0], context[1], context[2], cost)
+                outbox.append(msg.bid(
+                    self.rid, self._next_seq(), t, task.tid, cost,
+                    epoch=task.auction_epoch,
+                    active_task=context[0], active_epoch=context[1],
+                    bundle_version=context[2]))
+                self.stats["auction_bids_sent"] += 1
+                self.stats["future_bids_sent"] += 1
+                return
             eligible = []
             for task in available:
                 if self.policy in ENERGY_AUCTION_POLICIES:
@@ -2811,11 +3057,26 @@ class AMRBrain:
                     continue
                 if self._bid_seen_t.get((tid, epoch, rid), -1e9) < fresh_after:
                     continue
+                future_context = self._future_bid_contexts.get((tid, epoch, rid))
                 if rid != self.rid:
                     peer = self.peers.get(rid)
-                    if (peer is None or t - peer.last_seen > self._peer_stale_after_s()
-                            or peer.state != ST_IDLE or peer.goal is not None):
+                    if peer is None or t - peer.last_seen > self._peer_stale_after_s():
                         continue
+                    if future_context is None:
+                        if peer.state != ST_IDLE or peer.goal is not None:
+                            continue
+                    elif (not self._future_allocation_enabled()
+                          or peer.state in (ST_IDLE, ST_CHARGING)
+                          or peer.task_id != future_context[0]):
+                        continue
+                elif future_context is None:
+                    if self.task is not None or self.state != ST_IDLE:
+                        continue
+                elif (self.task is None or self.future_task is not None
+                      or self.task.tid != future_context[0]
+                      or self.task.auction_epoch != future_context[1]
+                      or self._future_generation != future_context[2]):
+                    continue
                 candidates.append((cost, tid, rid, epoch))
 
         used_robots: set[str] = set()
@@ -2853,8 +3114,15 @@ class AMRBrain:
             if any(tid not in corridor_allowed_tasks.get(cid, {tid})
                    for cid in directions):
                 continue
-            robot_cell = (sensors.cell if rid == self.rid
-                          else self.peers[rid].cell)
+            bid_context = self._future_bid_contexts.get((tid, epoch, rid))
+            if bid_context is not None:
+                active_record = self.open_tasks.get(bid_context[0])
+                if active_record is None:
+                    continue
+                robot_cell = active_record.drop
+            else:
+                robot_cell = (sensors.cell if rid == self.rid
+                              else self.peers[rid].cell)
             if self._approach_crosses_task_corridor(task, robot_cell):
                 # Do not send an AMR through the admitted wave empty merely to reach
                 # a pickup on the far side.  BIOS 5 handles the all-robots-stranded
@@ -2877,7 +3145,7 @@ class AMRBrain:
                 corridor_load[cid] = corridor_load.get(cid, 0) + 1
             assignments.append((rid, tid, cost, epoch))
 
-        won: tuple[str, float, int, float] | None = None
+        won: tuple[str, float, int, float, tuple[str, int, int] | None] | None = None
         for rid, tid, cost, epoch in assignments:
             task_record = self.open_tasks.get(tid)
             lease_until = t + (
@@ -2891,7 +3159,9 @@ class AMRBrain:
                 # refreshes the lease, and a disagreement expires harmlessly.
                 self._record_task_claim(tid, (epoch, cost, rid, lease_until))
             if rid == self.rid:
-                won = (tid, cost, epoch, lease_until)
+                won = (
+                    tid, cost, epoch, lease_until,
+                    self._future_bid_contexts.get((tid, epoch, rid)))
 
         nominate_remote = (
             self.policy == POLICY_BIOS_PIBT_V6
@@ -2922,10 +3192,14 @@ class AMRBrain:
                         else self.cfg.traffic.auction_lease_s)
                     self._record_task_claim(
                         tid, (epoch, cost, rid, nomination_until))
+                    context = self._future_bid_contexts.get((tid, epoch, rid))
                     outbox.append(msg.award(
                         self.rid, self._next_seq(), t, tid, cost,
                         epoch=epoch, lease_until=nomination_until,
-                        winner=rid))
+                        winner=rid,
+                        active_task=context[0] if context else None,
+                        active_epoch=context[1] if context else 0,
+                        bundle_version=context[2] if context else 0))
                 self._remote_winner_since = t
         else:
             self._remote_winner_since = None
@@ -2933,20 +3207,40 @@ class AMRBrain:
 
         self._v3_round_started = None
         if won is None:
+            if busy_future and self._future_bid is not None:
+                self.stats["future_bids_lost"] += 1
+                self._future_bid = None
+                self._future_generation = (
+                    self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
+                self._future_retry_after = (
+                    t + self.cfg.traffic.bundle_bid_retry_s)
             if self.policy in ENERGY_AUCTION_POLICIES and not assignments:
                 self._v5_reposition_stranded_bidder(
                     t, sensors, available_by_id, candidates, best_by_task,
                     corridor_load, corridor_allowed_tasks, anchor_tasks)
             return
-        tid, cost, epoch, lease_until = won
+        tid, cost, epoch, lease_until, future_context = won
         task = self.open_tasks.get(tid)
         if task is None:
             return
-        self._accept_task(t, task, sensors.cell,
-                          lease_until=lease_until, bid_cost=cost)
+        if future_context is not None:
+            if not self._future_sequence_feasible(task, sensors, t)[0] \
+                    or not self._reserve_future(
+                        t, task, cost, lease_until, future_context):
+                self.stats["stale_future_awards_rejected"] += 1
+                self._future_bid = None
+                self._future_generation = (
+                    self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
+                return
+        else:
+            self._accept_task(t, task, sensors.cell,
+                              lease_until=lease_until, bid_cost=cost)
         outbox.append(msg.award(
             self.rid, self._next_seq(), t, tid, cost,
-            epoch=epoch, lease_until=lease_until))
+            epoch=epoch, lease_until=lease_until,
+            active_task=future_context[0] if future_context else None,
+            active_epoch=future_context[1] if future_context else 0,
+            bundle_version=future_context[2] if future_context else 0))
 
     def _v5_reposition_stranded_bidder(
             self, t: float, sensors: Sensors, available: dict[str, Task],
@@ -3158,6 +3452,289 @@ class AMRBrain:
             self._energy_required_cache[cache_key] = result
         return result
 
+    def _future_sequence_estimate(
+            self, future: Task, sensors: Sensors, t: float
+            ) -> tuple[float, float, float] | None:
+        """Return energy, active completion, and future completion for ACTIVE -> FUTURE."""
+        active = self.task
+        if active is None or future.tid == active.tid:
+            return None
+        spec = self.cfg.robot
+        traffic = self.cfg.traffic
+        if any(task.cargo_weight < 0.0
+               or task.cargo_weight > spec.max_payload_kg
+               for task in (active, future)):
+            return None
+        active_factor = self._cargo_factor(active.cargo_type)
+        future_factor = self._cargo_factor(future.cargo_type)
+        if active_factor is None or future_factor is None:
+            return None
+
+        edge_cost = self._v6_edge_costs(t)
+
+        def path(a: Cell, b: Cell, *, learned: bool = True) -> list[Cell]:
+            return astar(
+                self.env, a, b, extra_cost=self.penalty,
+                edge_cost=edge_cost if learned else None)
+
+        if self.state == ST_TO_DROP or self.goal == active.drop:
+            active_approach_steps = 0
+            active_loaded = path(sensors.cell, active.drop)
+            active_handling_s = 0.0
+        else:
+            active_approach = path(sensors.cell, active.pick)
+            active_loaded = path(active.pick, active.drop)
+            if not active_approach:
+                return None
+            active_approach_steps = max(0, len(active_approach) - 1)
+            active_handling_s = traffic.energy_service_s * active_factor
+        transition = path(active.drop, future.pick)
+        future_loaded = path(future.pick, future.drop)
+        if not active_loaded or not transition or not future_loaded:
+            return None
+
+        charger_paths = [
+            path(future.drop, dock, learned=False) for dock in self.env.docks
+        ]
+        charger_steps = [max(0, len(route) - 1)
+                         for route in charger_paths if route]
+        if not self.env.docks or not charger_steps:
+            return None
+
+        active_loaded_steps = max(0, len(active_loaded) - 1)
+        transition_steps = max(0, len(transition) - 1)
+        future_loaded_steps = max(0, len(future_loaded) - 1)
+        charger_step_count = min(charger_steps) if charger_steps else 0
+        cruise_mps = max(0.1, 0.65 * spec.v_max)
+        seconds_per_step = self.cfg.cell_m / cruise_mps
+        active_approach_s = active_approach_steps * seconds_per_step
+        active_loaded_s = active_loaded_steps * seconds_per_step
+        transition_s = transition_steps * seconds_per_step
+        future_loaded_s = future_loaded_steps * seconds_per_step
+        charger_s = charger_step_count * seconds_per_step
+        future_handling_s = traffic.energy_service_s * future_factor
+        active_completion_s = (
+            active_approach_s + active_loaded_s + active_handling_s)
+        future_completion_s = (
+            active_completion_s + transition_s
+            + future_loaded_s + future_handling_s)
+
+        active_weight = 1.0 + traffic.cargo_full_payload_energy_premium * (
+            active.cargo_weight / max(1e-9, spec.max_payload_kg))
+        future_weight = 1.0 + traffic.cargo_full_payload_energy_premium * (
+            future.cargo_weight / max(1e-9, spec.max_payload_kg))
+        energy_wh = (
+            spec.draw_move_w
+            * (active_approach_s
+               + traffic.energy_loaded_multiplier * active_loaded_s)
+            * active_factor * active_weight / 3600.0
+            + spec.draw_idle_w * active_handling_s / 3600.0
+            + spec.draw_move_w
+            * (transition_s
+               + traffic.energy_loaded_multiplier * future_loaded_s)
+            * future_factor * future_weight / 3600.0
+            + spec.draw_idle_w * future_handling_s / 3600.0
+            + spec.draw_move_w * charger_s / 3600.0
+        )
+        required = energy_wh / spec.battery_full_wh
+        required *= 1.0 + traffic.energy_uncertainty_frac
+        return required, active_completion_s, future_completion_s
+
+    def _future_sequence_feasible(
+            self, future: Task, sensors: Sensors, t: float
+            ) -> tuple[bool, float, float, str]:
+        estimate = self._future_sequence_estimate(future, sensors, t)
+        if estimate is None:
+            self.stats["future_charger_rejections"] += 1
+            return False, 1.0, -1.0, "path_or_charger"
+        required, active_completion_s, future_completion_s = estimate
+        reserve = sensors.battery_frac - required
+        if reserve < self.cfg.traffic.energy_reserve_frac:
+            self.stats["future_energy_rejections"] += 1
+            return False, required, reserve, "energy"
+        active = self.task
+        if (active is not None and active.deadline is not None
+                and t + active_completion_s > active.deadline):
+            self.stats["future_deadline_rejections"] += 1
+            return False, required, reserve, "active_deadline"
+        if (future.deadline is not None
+                and t + future_completion_s > future.deadline):
+            self.stats["future_deadline_rejections"] += 1
+            return False, required, reserve, "future_deadline"
+        return True, required, reserve, "ok"
+
+    def _future_bid_cost(self, future: Task, sensors: Sensors, t: float) -> float:
+        estimate = self._future_sequence_estimate(future, sensors, t)
+        if estimate is None:
+            return 1e9
+        required, _active_completion_s, future_completion_s = estimate
+        cruise_mps = max(0.1, 0.65 * self.cfg.robot.v_max)
+        equivalent_cells = future_completion_s * cruise_mps / self.cfg.cell_m
+        deadline_risk = 0.0
+        if future.deadline is not None:
+            slack = max(0.0, future.deadline - (t + future_completion_s))
+            deadline_risk = min(30.0, 30.0 / max(1.0, slack))
+        reserve = sensors.battery_frac - required
+        reserve_slack = max(
+            0.0, reserve - self.cfg.traffic.energy_reserve_frac)
+        reserve_risk = max(0.0, 0.20 - reserve_slack) * 10.0
+        return float(
+            equivalent_cells
+            + self.cfg.traffic.bundle_energy_weight * required * 100.0
+            + self.cfg.traffic.bundle_deadline_risk_weight * deadline_risk
+            + self.cfg.traffic.bundle_reserve_risk_weight * reserve_risk)
+
+    def _best_fresh_idle_cost(self, task: Task, t: float) -> float | None:
+        """Comparable lower bid from a currently idle peer, if one is visible."""
+        edge_cost = self._v6_edge_costs(t)
+        best = math.inf
+        for peer in self.peers.values():
+            if (t - peer.last_seen > self._peer_stale_after_s()
+                    or peer.state != ST_IDLE or peer.goal is not None
+                    or peer.battery_frac
+                    < self.cfg.traffic.energy_charge_trigger_frac):
+                continue
+            estimate = self._task_estimate(
+                task, peer.cell, extra_cost=self.penalty,
+                edge_cost=edge_cost)
+            if estimate is None:
+                continue
+            required, completion_s = estimate
+            if (peer.battery_frac - required
+                    < self.cfg.traffic.energy_reserve_frac):
+                continue
+            if task.deadline is not None and t + completion_s > task.deadline:
+                continue
+            cruise_mps = max(0.1, 0.65 * self.cfg.robot.v_max)
+            equivalent_cells = completion_s * cruise_mps / self.cfg.cell_m
+            battery_penalty = max(0.0, 0.25 - peer.battery_frac) * 20.0
+            best = min(best, equivalent_cells + battery_penalty)
+        return None if math.isinf(best) else float(best)
+
+    def _reserve_future(
+            self, t: float, task: Task, cost: float, lease_until: float,
+            context: tuple[str, int, int]) -> bool:
+        if (not self._future_allocation_enabled() or self.task is None
+                or self.future_task is not None):
+            self.stats["future_capacity_rejections"] += 1
+            return False
+        expected = (self.task.tid, self.task.auction_epoch,
+                    self._future_generation)
+        if context != expected:
+            self.stats["future_version_mismatches"] += 1
+            return False
+        if not self._record_task_claim(
+                task.tid,
+                (task.auction_epoch, cost, self.rid, lease_until)):
+            self.stats["stale_future_awards_rejected"] += 1
+            return False
+        self.future_task = task
+        self._future_context = context
+        self._future_bid = None
+        self._future_needs_reconcile = False
+        self.stats["future_bids_won"] += 1
+        self._record_decision(
+            t, "FUTURE_RESERVED",
+            f"Reserved {task.tid} after {context[0]}",
+            active=context[0], future=task.tid,
+            bundle_version=context[2], bid_cost=round(cost, 3))
+        return True
+
+    def _release_future(self, t: float, outbox: list[msg.Message], reason: str,
+                        *, reauction: bool = True) -> None:
+        task = self.future_task
+        if task is None:
+            return
+        claim = self._task_claims.get(task.tid)
+        if claim is not None and claim[2] == self.rid:
+            self._task_claims.pop(task.tid, None)
+        self.future_task = None
+        self._future_context = None
+        self._future_bid = None
+        self._future_generation = (self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
+        self._future_needs_reconcile = False
+        self.stats["future_invalidations"] += 1
+        if reauction:
+            self._restart_auction(task, t)
+            outbox.append(msg.task_new(
+                self.rid, self._next_seq(), t, task.tid, task.pick, task.drop,
+                epoch=task.auction_epoch,
+                bid_until=t + self.cfg.traffic.auction_bid_window_s,
+                cargo_type=task.cargo_type, cargo_weight=task.cargo_weight,
+                priority=task.priority, deadline=task.deadline))
+        self._record_decision(
+            t, "FUTURE_RELEASED", f"Released {task.tid}: {reason}",
+            future=task.tid, reason=reason)
+
+    def _promote_future(
+            self, t: float, sensors: Sensors, outbox: list[msg.Message]) -> bool:
+        future = self.future_task
+        context = self._future_context
+        if future is None or context is None:
+            return False
+        claim = self._task_claims.get(future.tid)
+        feasible, _required, _reserve = self._energy_feasible(
+            future, sensors, t=t)
+        valid = (
+            not self._future_needs_reconcile
+            and self._future_network_healthy(t)
+            and future.tid in self.open_tasks
+            and future.tid not in self.completed_tasks
+            and claim is not None
+            and claim[0] == future.auction_epoch
+            and claim[2] == self.rid
+            and claim[3] > t
+            and feasible
+        )
+        if not valid:
+            self.stats["future_promotion_failures"] += 1
+            self._release_future(
+                t, outbox, "promotion revalidation failed",
+                reauction=(future.tid in self.open_tasks
+                           and future.tid not in self.completed_tasks))
+            return False
+        lease_until = claim[3]
+        cost = claim[1]
+        self.future_task = None
+        self._future_context = None
+        self._future_generation = (self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
+        self._accept_task(
+            t, future, sensors.cell,
+            lease_until=lease_until, bid_cost=cost)
+        self.stats["future_promotions"] += 1
+        self._record_decision(
+            t, "FUTURE_PROMOTED", f"Promoted {future.tid} to active",
+            future=future.tid, previous_active=context[0])
+        return True
+
+    def _consume_future_nomination(
+            self, t: float, sensors: Sensors, outbox: list[msg.Message]) -> None:
+        if self.task is None or self.future_task is not None:
+            return
+        nomination = next(iter(sorted(self._peer_future_nominations.items())), None)
+        if nomination is None:
+            return
+        tid, (epoch, cost, lease_until, active_tid, active_epoch, version) = nomination
+        self._peer_future_nominations.pop(tid, None)
+        task = self.open_tasks.get(tid)
+        expected_bid = self._future_bid
+        context = (active_tid, active_epoch, version)
+        matching = (
+            task is not None
+            and expected_bid is not None
+            and expected_bid[:5] == (
+                tid, epoch, active_tid, active_epoch, version)
+            and self._future_network_healthy(t)
+            and self._future_sequence_feasible(task, sensors, t)[0]
+            and lease_until > t
+        )
+        if not matching or not self._reserve_future(
+                t, task, cost, lease_until, context):
+            self.stats["stale_future_awards_rejected"] += 1
+            self._future_generation = (
+                self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
+            self._future_bid = None
+
     def _energy_candidate(self, task: Task, t: float, sensors: Sensors) -> bool:
         """Whether this robot is among the nearest healthy candidates for a task.
 
@@ -3251,6 +3828,23 @@ class AMRBrain:
             if (old[2] == self.rid and claim[2] != self.rid
                     and self.task is not None and self.task.tid == tid):
                 self._drop_current_task()
+                if self.future_task is not None:
+                    self._task_claims.pop(self.future_task.tid, None)
+                    self.future_task = None
+                    self._future_context = None
+                    self._future_bid = None
+                    self._future_generation = (
+                        self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
+                    self.stats["future_invalidations"] += 1
+            if (old[2] == self.rid and claim[2] != self.rid
+                    and self.future_task is not None
+                    and self.future_task.tid == tid):
+                self.future_task = None
+                self._future_context = None
+                self._future_bid = None
+                self._future_generation = (
+                    self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
+                self.stats["future_invalidations"] += 1
         self._task_claims[tid] = claim
         task = self.open_tasks.get(tid)
         if task is not None:
@@ -3280,7 +3874,8 @@ class AMRBrain:
         return (new[1], new[2]) < (old[1], old[2])
 
     def _restart_auction(self, task: Task, t: float) -> None:
-        task.auction_epoch += 1
+        task.auction_epoch = min(
+            msg.MAX_AUCTION_EPOCH - 1, task.auction_epoch + 1)
         task.bid_deadline = t + self.cfg.traffic.auction_bid_window_s
         self._bid_opened.pop(task.tid, None)
         self._bids.pop(task.tid, None)
@@ -3289,6 +3884,9 @@ class AMRBrain:
         task.lease_until = 0.0
         self._awarded.discard(task.tid)
         self._peer_nominations.pop(task.tid, None)
+        self._peer_future_nominations.pop(task.tid, None)
+        for key in [key for key in self._future_bid_contexts if key[0] == task.tid]:
+            self._future_bid_contexts.pop(key, None)
 
     def _expire_task_claims(self, t: float) -> None:
         for tid, claim in list(self._task_claims.items()):
@@ -3297,6 +3895,15 @@ class AMRBrain:
             if self.task is not None and self.task.tid == tid \
                     and claim[2] == self.rid:
                 self._drop_current_task()
+            if (self.future_task is not None
+                    and self.future_task.tid == tid
+                    and claim[2] == self.rid):
+                self.future_task = None
+                self._future_context = None
+                self._future_bid = None
+                self._future_generation = (
+                    self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
+                self.stats["future_lease_expiries"] += 1
             self._task_claims.pop(tid, None)
             self._peer_nominations.pop(tid, None)
             task = self.open_tasks.get(tid)
@@ -3552,6 +4159,7 @@ class AMRBrain:
                 sensors.battery_frac, self.mode, self.state,
                 self.task.tid if self.task else None))
             self._broadcast_auction_lease(t, outbox)
+            self._broadcast_future_lease(t, outbox)
             self._broadcast_task_catalog(t, outbox)
             return
 
@@ -3586,6 +4194,7 @@ class AMRBrain:
             self.stats["heartbeat_messages_suppressed"] += 1
 
         self._broadcast_auction_lease(t, outbox)
+        self._broadcast_future_lease(t, outbox)
         self._broadcast_task_catalog(t, outbox)
         self._broadcast_completion_catalog(t, outbox)
         self._v6_broadcast_experience(t, outbox)
@@ -3635,6 +4244,30 @@ class AMRBrain:
             self.rid, self._next_seq(), t, self.task.tid, claim[1],
             epoch=claim[0], lease_until=lease_until))
 
+    def _broadcast_future_lease(self, t: float,
+                                outbox: list[msg.Message]) -> None:
+        if (not self._future_allocation_enabled() or self.future_task is None
+                or self._future_context is None):
+            return
+        refresh_s = self.cfg.traffic.v6_lease_refresh_s
+        if t - self._last_future_lease_broadcast < refresh_s:
+            return
+        task = self.future_task
+        claim = self._task_claims.get(task.tid)
+        if claim is None or claim[2] != self.rid:
+            return
+        active_tid, active_epoch, version = self._future_context
+        lease_until = t + self.cfg.traffic.bundle_future_lease_s
+        self._record_task_claim(
+            task.tid, (claim[0], claim[1], self.rid, lease_until))
+        outbox.append(msg.award(
+            self.rid, self._next_seq(), t, task.tid, claim[1],
+            epoch=claim[0], lease_until=lease_until,
+            active_task=active_tid, active_epoch=active_epoch,
+            bundle_version=version))
+        self._last_future_lease_broadcast = t
+        self.stats["future_lease_renewals"] += 1
+
     def _broadcast_task_catalog(self, t: float,
                                 outbox: list[msg.Message]) -> None:
         """Gossip one unfinished task so missed WMS announcements eventually heal."""
@@ -3678,8 +4311,10 @@ class AMRBrain:
         tid = completed[self._completion_cursor % len(completed)]
         self._completion_cursor += 1
         self._last_completion_broadcast = t
+        epoch, owner = self._completion_proofs.get(tid, (0, self.rid))
         outbox.append(msg.task_done(
-            self.rid, self._next_seq(), t, tid, epoch=0))
+            self.rid, self._next_seq(), t, tid,
+            epoch=epoch, owner=(owner if owner != self.rid else None)))
 
     def _intent_horizon(self, t: float) -> tuple[list[Cell], list[tuple[float, float]]]:
         # A completed task can leave its final waypoint in ``path`` until the next
@@ -3717,6 +4352,7 @@ class AMRBrain:
 
             if m.type == msg.HEARTBEAT:
                 p = self.peers.setdefault(m.src, Peer(m.src))
+                self._known_peer_ids.add(m.src)
                 p.cell = msg.as_cell(b["c"])
                 p.pose = tuple(b["p"])
                 p.priority = b.get("pr", 0.0)
@@ -3725,6 +4361,7 @@ class AMRBrain:
                 p.goal = msg.as_cell(b["g"]) if b.get("g") else None
                 p.priority_key = PriorityKey.from_wire(b.get("pk"), m.src)
                 p.battery_frac = float(b.get("b", p.battery_frac))
+                p.task_id = b.get("task")
                 p.last_seen = t
                 # INTENT is sent only while a route has cells to advertise.  An idle
                 # peer therefore sends no empty INTENT packet to overwrite its last
@@ -3768,6 +4405,24 @@ class AMRBrain:
                 else:
                     deadline = t + self.cfg.traffic.auction_bid_window_s
                 current = self.open_tasks.get(tid)
+                current_epoch = current.auction_epoch if current is not None else 0
+                if not self._safe_incoming_epoch(current_epoch, epoch):
+                    self.stats["rejected_epoch_jumps"] += 1
+                    continue
+                incoming_descriptor = (
+                    msg.as_cell(b["pk"]), msg.as_cell(b["dp"]),
+                    cargo_type, round(cargo_weight, 6), task_priority)
+                known_descriptor = self._task_descriptors.get(tid)
+                descriptor_conflict = (
+                    known_descriptor is not None
+                    and known_descriptor != incoming_descriptor)
+                if descriptor_conflict and (
+                        m.src != "WMS" or tid in self._task_descriptor_from_wms):
+                    self.stats["rejected_task_conflicts"] += 1
+                    continue
+                if m.src == "WMS":
+                    self._task_descriptor_from_wms.add(tid)
+                self._task_descriptors[tid] = incoming_descriptor
                 if current is None:
                     self.open_tasks[tid] = Task(
                         tid=tid, pick=msg.as_cell(b["pk"]),
@@ -3801,24 +4456,49 @@ class AMRBrain:
                         current.priority = task_priority
                     if current.deadline is None and task_deadline is not None:
                         current.deadline = task_deadline
+                if descriptor_conflict and m.src == "WMS" and current is not None:
+                    # A valid WMS announcement is the only allowed correction to a
+                    # descriptor learned provisionally from peer gossip. Apply the
+                    # complete immutable descriptor even when the epoch is unchanged.
+                    current.pick = msg.as_cell(b["pk"])
+                    current.drop = msg.as_cell(b["dp"])
+                    current.cargo_type = cargo_type
+                    current.cargo_weight = cargo_weight
+                    current.priority = task_priority
+                    current.deadline = task_deadline
                 claim = self._task_claims.get(tid)
                 task_record = self.open_tasks.get(tid)
                 if claim is not None and task_record is not None:
                     task_record.lease_owner = claim[2]
                     task_record.lease_until = claim[3]
+                self._admit_deferred_bids(tid, t)
             elif m.type == msg.BID:
                 tid = b["task"]
                 epoch = int(b.get("e", 0))
                 task = self.open_tasks.get(tid)
-                if task is not None and epoch < task.auction_epoch:
+                if task is None:
+                    self._cache_unknown_bid(t, m.src, b)
                     continue
-                if task is not None and epoch > task.auction_epoch:
+                if not self._safe_incoming_epoch(task.auction_epoch, epoch):
+                    self.stats["rejected_epoch_jumps"] += 1
+                    continue
+                if epoch < task.auction_epoch:
+                    continue
+                if epoch > task.auction_epoch:
                     task.auction_epoch = epoch
                     task.bid_deadline = t + self.cfg.traffic.auction_bid_window_s
                     self._bids.pop(tid, None)
                     self._bid_opened.pop(tid, None)
                 self._bids.setdefault(tid, {})[(epoch, m.src)] = float(b["cost"])
                 self._bid_seen_t[(tid, epoch, m.src)] = t
+                if b.get("future"):
+                    if not self._future_allocation_enabled():
+                        self._bids[tid].pop((epoch, m.src), None)
+                        self._bid_seen_t.pop((tid, epoch, m.src), None)
+                        continue
+                    self._future_bid_contexts[(tid, epoch, m.src)] = (
+                        str(b["active"]), int(b.get("ae", 0)),
+                        int(b.get("bv", 0)))
             elif m.type == msg.AWARD:
                 tid = b["task"]
                 epoch = int(b.get("e", 0))
@@ -3834,9 +4514,26 @@ class AMRBrain:
                 else:
                     lease_until = t + self.cfg.traffic.auction_lease_s
                 task = self.open_tasks.get(tid)
-                if task is not None and epoch < task.auction_epoch:
+                directed = b.get("dst") is not None
+                if directed:
+                    # Only the configured Hungarian manager may issue a directed task
+                    # assignment. A shared fleet PSK authenticates membership, not role.
+                    if (m.src != "FM0"
+                            or self.allocation_policy
+                            not in (None, ALLOCATION_HUNGARIAN)):
+                        self.stats["rejected_directed_awards"] += 1
+                        continue
+                    if b.get("dst") == self.rid:
+                        self._awarded.add(tid)
                     continue
-                if task is not None and epoch > task.auction_epoch:
+                if task is None:
+                    continue
+                if not self._safe_incoming_epoch(task.auction_epoch, epoch):
+                    self.stats["rejected_epoch_jumps"] += 1
+                    continue
+                if epoch < task.auction_epoch:
+                    continue
+                if epoch > task.auction_epoch:
                     task.auction_epoch = epoch
                     task.bid_deadline = t
                     self._bids.pop(tid, None)
@@ -3845,33 +4542,78 @@ class AMRBrain:
                 # the destination robot. Only peer-auction awards create expiring
                 # claims; otherwise a central assignment could vanish mid-task when
                 # the manager's one-shot message is older than the lease.
-                if b.get("dst") is None:
-                    local_bid = self._bids.get(tid, {}).get((epoch, self.rid))
-                    local_bid_t = self._bid_seen_t.get(
-                        (tid, epoch, self.rid), -1e9)
+                local_bid = self._bids.get(tid, {}).get((epoch, self.rid))
+                local_bid_t = self._bid_seen_t.get(
+                    (tid, epoch, self.rid), -1e9)
+                matching_local_bid = (
+                    local_bid is not None
+                    and round(local_bid, 3) == round(cost, 3)
+                    and t - local_bid_t
+                    <= max(2.0 * self.cfg.traffic.auction_lease_s,
+                           self._task_lease_duration(task))
+                )
+                context = None
+                if b.get("future"):
+                    context = (
+                        str(b["active"]), int(b.get("ae", 0)),
+                        int(b.get("bv", 0)))
                     matching_local_bid = (
-                        local_bid is not None
-                        and round(local_bid, 3) == round(cost, 3)
-                        and t - local_bid_t
-                        <= max(2.0 * self.cfg.traffic.auction_lease_s,
-                               self._task_lease_duration(task)
-                               if task is not None else 0.0)
-                    )
-                    # A peer can nominate this robot only for a task/epoch/cost this
-                    # robot actually bid recently. Peers may still publish claims for
-                    # other winners, but they cannot command local task execution.
-                    recorded = False
-                    if owner != self.rid or matching_local_bid:
-                        recorded = self._record_task_claim(
-                            tid, (epoch, cost, owner, lease_until))
-                    if (recorded and owner == self.rid
-                            and self.task is None and self.state == ST_IDLE):
+                        matching_local_bid
+                        and self._future_bid_contexts.get(
+                            (tid, epoch, self.rid)) == context)
+                # A peer can nominate this robot only for a task/epoch/cost and bundle
+                # context this robot actually bid recently.
+                recorded = False
+                if owner != self.rid or matching_local_bid:
+                    recorded = self._record_task_claim(
+                        tid, (epoch, cost, owner, lease_until))
+                if recorded and owner == self.rid:
+                    if context is not None:
+                        if (self.future_task is not None
+                                and self.future_task.tid == tid
+                                and self._future_context == context):
+                            # This is a lease refresh for an already-consumed award,
+                            # not a second nomination for the one available slot.
+                            pass
+                        else:
+                            self._peer_future_nominations[tid] = (
+                                epoch, cost, lease_until,
+                                context[0], context[1], context[2])
+                    elif self.task is None and self.state == ST_IDLE:
                         self._peer_nominations[tid] = (
                             epoch, cost, lease_until)
-                if b.get("dst") == self.rid:
-                    self._awarded.add(tid)
             elif m.type == msg.TASK_DONE:
                 tid = b["task"]
+                task = self.open_tasks.get(tid)
+                if task is None:
+                    continue
+                epoch = int(b.get("e", 0))
+                owner = str(b.get("owner") or m.src)
+                claim = self._task_claims.get(tid)
+                validated_relay = (
+                    bool(b.get("relay"))
+                    and owner != m.src
+                    and m.src in self._known_peer_ids
+                    and owner in self._known_peer_ids
+                )
+                valid_completion = (
+                    epoch == task.auction_epoch
+                    # Direct self-attestation is required for duplicate-winner
+                    # convergence: partitioned peers can each hold a different
+                    # same-epoch claim, but a completed physical job must not be
+                    # executed again. Transport authentication establishes source
+                    # membership; stale epochs and third-party owner names that do not
+                    # match the locally replicated claim remain rejected. A relay is
+                    # accepted only while it carries that same owner/epoch proof,
+                    # preserving completion convergence under packet loss.
+                    and (owner == m.src
+                         or (claim is not None and claim[0] == epoch
+                             and claim[2] == owner)
+                         or validated_relay)
+                )
+                if not valid_completion:
+                    self.stats["rejected_task_completions"] += 1
+                    continue
                 # A partition or asymmetric bid view can briefly create duplicate
                 # winners. Completion is the convergence point: a robot still
                 # executing that same logical task must cancel its stale copy or it
@@ -3880,13 +4622,21 @@ class AMRBrain:
                         and self.task is not None and self.task.tid == tid):
                     self._drop_current_task()
                     self._needs_duplicate_vacate = True
+                if self.future_task is not None and self.future_task.tid == tid:
+                    self.future_task = None
+                    self._future_context = None
+                    self._future_bid = None
+                    self._future_generation = (
+                        self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
                 self.open_tasks.pop(tid, None)
                 self.completed_tasks.add(tid)
+                self._completion_proofs[tid] = (epoch, owner)
                 self._task_claims.pop(tid, None)
                 self._bids.pop(tid, None)
                 self._bid_opened.pop(tid, None)
                 self._awarded.discard(tid)
                 self._peer_nominations.pop(tid, None)
+                self._peer_future_nominations.pop(tid, None)
                 for key in [key for key in self._bid_seen_t if key[0] == tid]:
                     self._bid_seen_t.pop(key, None)
             elif m.type == msg.MGR_BEACON:

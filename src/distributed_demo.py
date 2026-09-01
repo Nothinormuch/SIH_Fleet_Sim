@@ -27,7 +27,8 @@ from .amr import AMRBrain, POLICY_BIOS_PIBT_V6, Task
 from .edge_runtime import EdgeRuntime
 from .scenarios import SCENARIOS
 from .settings import DEFAULT
-from .task_allocation import ALLOCATION_AUCTION, ALLOCATION_PREASSIGNED
+from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
+                              ALLOCATION_PREASSIGNED)
 from .transport import DEFAULT_GROUP, DEFAULT_PORT, UdpMulticastTransport
 from .world import Actuation, Sensors, World
 
@@ -160,7 +161,7 @@ def run_distributed_demo(scenario_name: str = "open_floor_control",
                 raise RuntimeError(f"{rid} failed to start: {event}")
             ready.append(event)
 
-        if allocation_policy == ALLOCATION_AUCTION:
+        if allocation_policy in (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE):
             task_source = UdpMulticastTransport(
                 "WMS", group=group, port=port, interface=interface,
                 shared_key=shared_key, require_auth=True,
@@ -273,7 +274,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--duration", type=float, default=5.0)
     parser.add_argument("--policy", default=POLICY_BIOS_PIBT_V6)
     parser.add_argument("--allocation-policy",
-                        choices=(ALLOCATION_PREASSIGNED, ALLOCATION_AUCTION),
+                        choices=(ALLOCATION_PREASSIGNED, ALLOCATION_AUCTION,
+                                 ALLOCATION_AUCTION_BUNDLE),
                         default=ALLOCATION_PREASSIGNED)
     parser.add_argument("--group", default=DEFAULT_GROUP)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)

@@ -156,6 +156,34 @@ class PolicyResult:
     predictive_reroutes: int = 0
     charger_contentions_avoided: int = 0
 
+    future_candidates_evaluated: int = 0
+    future_bids_sent: int = 0
+    future_bids_won: int = 0
+    future_bids_lost: int = 0
+    future_capacity_rejections: int = 0
+    stale_future_awards_rejected: int = 0
+    future_version_mismatches: int = 0
+    future_lease_renewals: int = 0
+    future_lease_expiries: int = 0
+    future_invalidations: int = 0
+    future_promotions: int = 0
+    future_promotion_failures: int = 0
+    future_network_fallbacks: int = 0
+    future_energy_rejections: int = 0
+    future_deadline_rejections: int = 0
+    future_charger_rejections: int = 0
+    future_hysteresis_prevented: int = 0
+    rejected_unknown_bids: int = 0
+    deferred_unknown_bids: int = 0
+    rejected_epoch_jumps: int = 0
+    rejected_task_conflicts: int = 0
+    rejected_task_completions: int = 0
+    rejected_directed_awards: int = 0
+    allocation_compute_mean_ms: float = 0.0
+    allocation_compute_median_ms: float = 0.0
+    allocation_compute_p95_ms: float = 0.0
+    allocation_compute_max_ms: float = 0.0
+
     plan_cpu_total_s: float = 0.0
     plan_calls: int = 0
     plan_cpu_mean_ms: float = 0.0

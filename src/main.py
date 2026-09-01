@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
 import sys
 from dataclasses import replace
 
@@ -84,7 +85,8 @@ def _auction_event(message: msg.Message) -> dict:
         "seq": message.seq,
         "t": round(message.t, 3),
     }
-    for key in ("task", "cost", "e", "dl", "u", "dst", "winner"):
+    for key in ("task", "cost", "e", "dl", "u", "dst", "winner",
+                "future", "active", "ae", "bv"):
         if key in body:
             event[key] = body[key]
     return event
@@ -343,6 +345,13 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
     plan_calls = int(agg("plan_calls")) + (manager.stats["plans"] if manager else 0)
     plan_max = max([b.stats["plan_cpu_max_s"] for b in brains.values()] +
                    [manager.stats["plan_cpu_max_s"] if manager else 0.0])
+    allocation_samples = sorted(
+        value for brain in brains.values()
+        for value in brain.allocation_compute_ms)
+    allocation_p95 = (
+        allocation_samples[min(len(allocation_samples) - 1,
+                               int(0.95 * len(allocation_samples)))]
+        if allocation_samples else 0.0)
 
     return PolicyResult(
         policy=policy, allocation_policy=allocation_policy,
@@ -390,6 +399,39 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         predictive_hazards_seen=int(agg("predictive_hazards_seen")),
         predictive_reroutes=int(agg("predictive_reroutes")),
         charger_contentions_avoided=int(agg("charger_contentions_avoided")),
+        future_candidates_evaluated=int(agg("future_candidates_evaluated")),
+        future_bids_sent=int(agg("future_bids_sent")),
+        future_bids_won=int(agg("future_bids_won")),
+        future_bids_lost=int(agg("future_bids_lost")),
+        future_capacity_rejections=int(agg("future_capacity_rejections")),
+        stale_future_awards_rejected=int(agg("stale_future_awards_rejected")),
+        future_version_mismatches=int(agg("future_version_mismatches")),
+        future_lease_renewals=int(agg("future_lease_renewals")),
+        future_lease_expiries=int(agg("future_lease_expiries")),
+        future_invalidations=int(agg("future_invalidations")),
+        future_promotions=int(agg("future_promotions")),
+        future_promotion_failures=int(agg("future_promotion_failures")),
+        future_network_fallbacks=int(agg("future_network_fallbacks")),
+        future_energy_rejections=int(agg("future_energy_rejections")),
+        future_deadline_rejections=int(agg("future_deadline_rejections")),
+        future_charger_rejections=int(agg("future_charger_rejections")),
+        future_hysteresis_prevented=int(agg("future_hysteresis_prevented")),
+        rejected_unknown_bids=int(agg("rejected_unknown_bids")),
+        deferred_unknown_bids=int(agg("deferred_unknown_bids")),
+        rejected_epoch_jumps=int(agg("rejected_epoch_jumps")),
+        rejected_task_conflicts=int(agg("rejected_task_conflicts")),
+        rejected_task_completions=int(agg("rejected_task_completions")),
+        rejected_directed_awards=int(agg("rejected_directed_awards")),
+        allocation_compute_mean_ms=(
+            round(statistics.mean(allocation_samples), 4)
+            if allocation_samples else 0.0),
+        allocation_compute_median_ms=(
+            round(statistics.median(allocation_samples), 4)
+            if allocation_samples else 0.0),
+        allocation_compute_p95_ms=round(allocation_p95, 4),
+        allocation_compute_max_ms=(
+            round(max(allocation_samples), 4)
+            if allocation_samples else 0.0),
         safety_stop_ticks=int(agg("safety_stops")),
         human_yield_ticks=sum(h.yield_ticks for h in world.humans.values()),
         seconds_degraded=round(agg("seconds_degraded") / max(1, n), 1),
