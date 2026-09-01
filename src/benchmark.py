@@ -220,9 +220,19 @@ def write_csv(payload: dict, path: Path) -> None:
         "contacts_robot_human", "contacts_robot_rack", "robot_hours",
         "deadlocks_detected", "retreats", "yields", "replans",
         "dynamic_obstacles_detected", "dynamic_reroutes", "task_reassignments",
-        "robot_failures",
-        "msgs_per_robot_s", "bytes_per_robot_s", "plan_cpu_mean_ms",
-        "plan_cpu_max_ms", "net_loss",
+        "robot_failures", "auction_bids_sent", "energy_bids_suppressed",
+        "energy_no_eligible_rounds", "nonproductive_wait_ticks",
+        "safety_stop_ticks", "human_yield_ticks", "seconds_degraded",
+        "msgs_sent", "bytes_sent", "msgs_per_robot_s", "bytes_per_robot_s",
+        "heartbeat_messages_sent", "intent_messages_sent",
+        "auction_messages_sent", "coordination_messages_sent",
+        "heartbeat_messages_suppressed", "intent_messages_suppressed",
+        "lease_renewals_suppressed", "bid_rebroadcasts_suppressed",
+        "decision_events", "congestion_samples", "experience_messages_sent",
+        "experience_updates_received", "experience_guided_replans",
+        "predictive_hazards_seen", "predictive_reroutes",
+        "charger_contentions_avoided", "plan_cpu_mean_ms", "plan_cpu_max_ms",
+        "net_loss",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")

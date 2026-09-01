@@ -22,14 +22,21 @@ only, so a robot node drops onto a bare Raspberry Pi image with no build step.
 
 ## Decentralized priority algorithm
 
-The default policy is `BIOS_PIBT.5` with peer `auction` allocation. It combines V3's
-traffic layer with battery-aware priority/deadline cargo allocation. Every
-AMR broadcasts a
+The default policy is `BIOS_PIBT.6` with peer `auction` allocation. It combines V5's
+battery-aware priority/deadline cargo allocation with event-triggered communication,
+bounded predictive hints and measured recovery escalation. Every AMR broadcasts a
 frozen lexicographic priority plus its next-cell intent. On grid-like rack maps it
 plans on a strongly connected one-way circulation graph and takes an expiring,
 two-phase peer lease on every destination cell. This prevents head-on entry and restores
 one-robot-per-cell ownership before a queue forms. Merge contenders use the same frozen
 total order; no process assigns moves and the dashboard is a passive observer.
+
+BIOS 6 adds short-horizon occupancy prediction, distributed congestion experience,
+charger-aware dock choice, load-aware idle-lane clearing, bounded auction-churn backoff,
+peer winner nomination after persistent split views and machine-derived decision
+explanations. BIOS 5 remains selectable as the frozen release baseline. The BIOS 6
+multi-seed safety, liveness, performance and multi-process gates are documented in
+[`docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md`](docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md).
 
 Maps that cannot be oriented without losing reachability use bounded directional task
 waves, block leases, early mouth staging and PIBT. Local 50 Hz protective stopping
@@ -158,7 +165,8 @@ nothing else. Separately tuned controllers would make the comparison meaningless
 | `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
 | `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
 | `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Retained decentralized comparison policy. |
-| `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, payload/cargo factors, priority/deadline ordering, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Default fully decentralized route + allocation policy. |
+| `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, payload/cargo factors, priority/deadline ordering, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Frozen decentralized release baseline. |
+| `BIOS_PIBT.6` | V5 plus event-triggered traffic, decaying peer congestion experience, soft anonymous-moving-object forecasts, charger contention avoidance, load-aware idle clearing, churn recovery and decision traces. | Default fully decentralized route + allocation policy. |
 
 Task ownership is selected independently of the route policy. `auction` lets peers
 broadcast bids and converge on deterministic leased awards; this is the fully
@@ -224,8 +232,8 @@ See [`docs/SIH_ACCEPTANCE_BENCHMARK.md`](docs/SIH_ACCEPTANCE_BENCHMARK.md) for t
 method, limitations and commands. Raw evidence is checked in as
 [`artifacts/benchmarks/sih-acceptance.json`](artifacts/benchmarks/sih-acceptance.json)
 and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv).
-All 148 Python regressions pass; lint, Python compilation and all frontend JavaScript syntax
-checks also pass.
+The complete Python regression suite, lint, Python compilation and frontend JavaScript
+syntax checks are release gates; run them again before quoting a new commit as evidence.
 
 ## The dashboard
 
@@ -237,6 +245,11 @@ A dedicated operations dock below the scene holds camera, playback and selected-
 telemetry, so no robot card or transport control covers the warehouse. A 2D diagnostic
 view remains available for protocol inspection.
 
+When `BIOS_PIBT.6` is selected, the side rail adds a **Collective Intelligence** panel.
+It reports measured packet suppressions, forecasts and reroutes, then replays bounded
+decision records produced by the controller itself. The text is not generated after the
+run and does not claim that the AMRs use an LLM.
+
 The public demo library is deliberately limited to five explainable stories: Open Floor,
 Chokepoint, Human Interaction, Dead-Zone Mesh and Grand Challenge. The benchmark and
 regression scenarios still exist in the simulation core, but are not mixed into the jury
@@ -245,13 +258,16 @@ battery state and cargo-aware energy admission. A WMS injects tasks; it never se
 winner. Each AMR admits a bid only when the task, cargo factor and post-task charger return
 remain above the protected reserve.
 
-The release-checked default showcase profiles all finish their distinct workloads:
-Open Floor 8/8 at 128.84 s, Chokepoint 8/8 at 254.00 s, Human Interaction 10/10 at
-458.52 s, Dead-Zone Mesh 6/6 at 535.88 s, and Grand Challenge 16/16 at 754.08 s.
-Across those five deterministic runs there were zero observed robot/robot,
-robot/human, and robot/rack contacts. Their closest observed separations were 1.158 m,
-1.352 m, 0.921 m, 1.023 m, and 0.895 m respectively. These are simulation observations,
-not physical safety certification.
+The previous checked-in acceptance campaign remains BIOS 5 versus stop-and-wait evidence;
+it must not be relabelled as BIOS 6 evidence. The final BIOS 6 three-seed showcase matrix
+records zero observed robot/robot, robot/human and robot/rack contacts in 10.019 candidate
+robot-hours. Open Floor and Human Interaction retain exact per-seed makespan parity while
+cutting messages by 38.4% and 32.7%. BIOS 6 completes all 24 Chokepoint tasks versus
+V5's 22, and all 18 Dead-Zone tasks versus V5's 16. In Grand Challenge fixed windows it
+completes 47 tasks versus 27 (+74.1%), cuts waits by 58.4% and messages by 33.8%, with no
+per-seed task-count regression. These are simulation observations, not physical safety
+certification or a universal speedup claim. Exact evidence and limitations are in
+[`docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md`](docs/BIOS_PIBT_6_PREDICTIVE_INTELLIGENCE.md).
 
 Pick a showcase, route policy, task-allocation policy, fleet size and seed; the server
 runs the simulation and returns the map, every telemetry frame and the result summary,

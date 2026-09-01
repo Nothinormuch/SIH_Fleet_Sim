@@ -1,15 +1,16 @@
 """Properties of the decentralised priority engine."""
 
 import random
+from dataclasses import replace
 
 from src.amr import (AMRBrain, CELL_ZONE_BASE, POLICIES, POLICY_BIOS_PIBT,
                      POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
-                     POLICY_BIOS_PIBT_V5, Peer,
+                     POLICY_BIOS_PIBT_V5, POLICY_BIOS_PIBT_V6, Peer,
                      ST_IDLE, Task)
 from src.environment import (FREE, Warehouse, chokepoint_warehouse,
                              classic_warehouse, open_floor)
-from src.messages import (BID, TASK_DONE, TASK_NEW, block_claim, decode, encode,
-                          task_done)
+from src.messages import (BID, TASK_DONE, TASK_NEW, award, block_claim, decode,
+                          encode, task_done)
 from src.priority import PriorityKey, pibt_step
 from src.settings import DEFAULT
 from src.scenarios import dead_zone
@@ -126,6 +127,8 @@ def test_policy_is_exposed_under_bios_pibt_name():
     assert POLICY_BIOS_PIBT_V3 in POLICIES
     assert POLICY_BIOS_PIBT_V5 == "BIOS_PIBT.5"
     assert POLICY_BIOS_PIBT_V5 in POLICIES
+    assert POLICY_BIOS_PIBT_V6 == "BIOS_PIBT.6"
+    assert POLICY_BIOS_PIBT_V6 in POLICIES
 
 
 def test_v5_rejects_energy_infeasible_task_and_accepts_charged_robot():
@@ -314,6 +317,225 @@ def test_v3_peer_catalog_repeats_completion_records():
     assert len(outbox) == 1
     assert outbox[0].type == TASK_DONE
     assert outbox[0].body["task"] == "T1"
+
+
+def test_v6_completion_gossip_stays_quiet_on_healthy_circulation_but_heals_dead_zones():
+    env = classic_warehouse()
+    healthy = AMRBrain(
+        "AMR01", env, DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    healthy.completed_tasks.add("T1")
+    healthy_outbox = []
+
+    healthy._broadcast_completion_catalog(1.0, healthy_outbox)
+
+    assert healthy.circulation.enabled
+    assert healthy_outbox == []
+
+    degraded_cfg = replace(
+        DEFAULT,
+        net=replace(DEFAULT.net, dead_zones=((3.0, 3.0, 1.0),)),
+    )
+    degraded = AMRBrain(
+        "AMR01", env, degraded_cfg,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    degraded.completed_tasks.add("T1")
+    degraded_outbox = []
+
+    degraded._broadcast_completion_catalog(1.0, degraded_outbox)
+
+    assert len(degraded_outbox) == 1
+    assert degraded_outbox[0].type == TASK_DONE
+    assert degraded_outbox[0].body["task"] == "T1"
+
+
+def test_v6_identifies_parking_routes_through_a_radio_dead_zone():
+    cfg = replace(
+        DEFAULT,
+        net=replace(DEFAULT.net, dead_zones=((5.0, 5.0, 2.0),)),
+    )
+    env = classic_warehouse()
+    brain = AMRBrain(
+        "AMR01", env, cfg,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+
+    assert brain._route_crosses_radio_dead_zone([(4, 4), (5, 5)])
+    assert not brain._route_crosses_radio_dead_zone([(0, 0), (1, 0)])
+
+    for index in range(len(env.docks) + 1):
+        tid = f"T{index}"
+        brain.open_tasks[tid] = Task(tid, env.stations[0], env.docks[0])
+    assert not brain._v6_remote_idle_vacate_allowed([(0, 0), (1, 0)])
+
+    brain.open_tasks.pop(f"T{len(env.docks)}")
+    assert brain._v6_remote_idle_vacate_allowed([(0, 0), (1, 0)])
+    assert not brain._v6_remote_idle_vacate_allowed([(4, 4), (5, 5)])
+
+
+def test_v6_transient_loss_task_lease_backoff_is_per_task_and_bounded():
+    cfg = replace(
+        DEFAULT,
+        net=replace(
+            DEFAULT.net,
+            loss=0.05,
+            dead_zones=((5.0, 2.0, 1.0),),
+        ),
+    )
+    brain = AMRBrain(
+        "AMR01", open_floor(10, 4), cfg,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    normal = Task("NORMAL", (1, 1), (8, 1), auction_epoch=7)
+    churned = Task("CHURNED", (1, 1), (8, 1), auction_epoch=8)
+    severe = Task("SEVERE", (1, 1), (8, 1), auction_epoch=100)
+
+    assert brain._task_lease_duration(normal) == DEFAULT.traffic.auction_lease_s
+    assert brain._task_lease_duration(churned) \
+        == DEFAULT.traffic.auction_lease_s + DEFAULT.traffic.v6_churn_lease_step_s
+    assert brain._task_lease_duration(severe) \
+        == DEFAULT.traffic.v6_churn_lease_max_s
+
+    deterministic = AMRBrain(
+        "AMR02", brain.env,
+        replace(cfg, net=replace(cfg.net, loss=0.0)),
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    assert deterministic._task_lease_duration(severe) \
+        == DEFAULT.traffic.auction_lease_s
+
+
+def test_v6_peer_nomination_activates_only_the_claimed_winner():
+    env = open_floor(8, 4)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR02", (1, 1))
+    brain = AMRBrain(
+        "AMR02", env, DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    task = Task("T1", (2, 1), (7, 1))
+    brain.open_tasks[task.tid] = task
+    # Bid/award costs are serialized to three decimals on the wire.
+    brain._bids[task.tid] = {(task.auction_epoch, brain.rid): 5.0004}
+    brain._bid_seen_t[(task.tid, task.auction_epoch, brain.rid)] = 1.0
+    nomination = award(
+        "AMR01", 1, 1.0, task.tid, 5.0, epoch=0,
+        lease_until=21.0, winner="AMR02",
+    )
+
+    brain._ingest(1.0, [nomination])
+    brain._task_loop(1.0, world.sense("AMR02"), [])
+
+    assert brain.task is task
+    assert brain.state == "to_pick"
+    assert brain._task_claims[task.tid][2] == "AMR02"
+
+
+def test_v6_peer_nomination_requires_matching_local_bid():
+    env = open_floor(8, 4)
+    brain = AMRBrain(
+        "AMR02", env, DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    task = Task("T1", (2, 1), (7, 1))
+    brain.open_tasks[task.tid] = task
+
+    brain._ingest(1.0, [award(
+        "AMR01", 1, 1.0, task.tid, 5.0, epoch=0,
+        lease_until=21.0, winner="AMR02",
+    )])
+
+    assert task.tid not in brain._peer_nominations
+    assert task.tid not in brain._task_claims
+
+
+def test_v6_peer_nomination_revalidates_deadline_before_acceptance():
+    env = open_floor(8, 4)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR02", (1, 1))
+    brain = AMRBrain(
+        "AMR02", env, DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    task = Task("T1", (2, 1), (7, 1), deadline=0.5)
+    brain.open_tasks[task.tid] = task
+    brain._bids[task.tid] = {(task.auction_epoch, brain.rid): 5.0}
+    brain._bid_seen_t[(task.tid, task.auction_epoch, brain.rid)] = 1.0
+    brain._ingest(1.0, [award(
+        "AMR01", 1, 1.0, task.tid, 5.0, epoch=0,
+        lease_until=21.0, winner="AMR02",
+    )])
+
+    brain._task_loop(1.0, world.sense("AMR02"), [])
+
+    assert brain.task is None
+    assert task.tid not in brain._peer_nominations
+    assert task.tid not in brain._task_claims
+
+
+def test_v6_remote_nomination_timer_resets_when_assignment_changes():
+    env = open_floor(8, 4)
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("AMR01", (1, 1))
+    brain = AMRBrain(
+        "AMR01", env, DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    brain.open_tasks = {
+        "A": Task("A", (2, 1), (7, 1)),
+        "B": Task("B", (2, 2), (7, 2)),
+    }
+    brain.peers["AMR02"] = Peer(
+        "AMR02", cell=(1, 2), state=ST_IDLE, last_seen=1.0)
+
+    def close_round(t: float, a_cost: float, b_cost: float):
+        brain._v3_round_started = t - 0.7
+        brain.peers["AMR02"].last_seen = t
+        for tid, cost in (("A", a_cost), ("B", b_cost)):
+            brain._bids[tid] = {(0, "AMR02"): cost}
+            brain._bid_seen_t[(tid, 0, "AMR02")] = t
+        outbox = []
+        brain._run_v3_batch_auction(t, world.sense("AMR01"), outbox)
+        return outbox
+
+    assert close_round(1.0, 1.0, 2.0) == []
+    assert brain._remote_winner_since == 1.0
+
+    # B has only just become the remote winner, so A's prior stability time cannot
+    # authorize an immediate nomination for B.
+    assert close_round(21.2, 2.0, 1.0) == []
+    assert brain._remote_winner_since == 21.2
+
+    nominated = close_round(42.0, 2.0, 1.0)
+    assert len(nominated) == 1
+    assert nominated[0].body["task"] == "B"
+    assert nominated[0].body["winner"] == "AMR02"
+
+
+def test_v6_remote_experience_counter_is_one_bounded_observation():
+    brain = AMRBrain(
+        "AMR01", open_floor(4, 4), DEFAULT,
+        policy=POLICY_BIOS_PIBT_V6,
+        allocation_policy=ALLOCATION_AUCTION,
+    )
+    record = [1, 1, 2, 1, 60.0, 1_000_000]
+
+    brain._v6_ingest_experience(1.0, "AMR02", [record])
+    brain._v6_ingest_experience(2.0, "AMR02", [record])
+
+    assert brain._edge_experience[((1, 1), (2, 1))][1] == 1
+    assert brain._v6_edge_costs(2.0) == {}
 
 
 def test_peer_completion_cancels_a_duplicate_local_task():

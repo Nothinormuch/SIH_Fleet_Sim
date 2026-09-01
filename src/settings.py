@@ -206,6 +206,56 @@ class TrafficSpec:
     cargo_hazardous_factor: float = 1.25
     cargo_full_payload_energy_premium: float = 0.35
 
+    # BIOS 6 event-triggered communication.  Layer 0 never consumes these packets;
+    # the slow periodic heartbeat is only an anti-entropy/liveness backstop.  State
+    # changes and nearby conflicts still transmit immediately at the normal 5 Hz.
+    v6_idle_heartbeat_s: float = 0.6
+    v6_cruise_heartbeat_s: float = 0.3
+    v6_intent_refresh_s: float = 0.4
+    v6_peer_stale_s: float = 1.0
+    v6_conflict_radius_cells: int = 3
+    # A 20 s award lease does not need a 5 Hz refresh. A one-second healthy-link
+    # refresh still provides many independent retry opportunities before expiry.
+    v6_lease_refresh_s: float = 1.0
+    # Radio holes need more refresh opportunities while still sending less than V5's
+    # fixed 5 Hz stream. The 0.5 s value is the balanced point from the pinned
+    # loss/dead-zone ablation; faster renewal reduced availability, while a longer
+    # task lease delayed crashed-owner recovery.
+    v6_degraded_lease_refresh_s: float = 0.5
+    # After repeated epoch churn under combined random loss and a radio hole, extend
+    # only that task's claim using bounded linear backoff. Deterministic partitions
+    # keep the normal expiry; global lease extension failed the recovery ablation.
+    v6_churn_epoch: int = 8
+    v6_churn_lease_step_s: float = 2.0
+    v6_churn_lease_max_s: float = 40.0
+    v6_catalog_gossip_s: float = 1.0
+    v6_bid_refresh_s: float = 0.6
+    v6_bid_cache_s: float = 0.8
+    v6_bid_cost_delta: float = 0.25
+    # Directed-edge experience is expressed in equivalent traversal cells.  It
+    # changes route preference and bid ETA, never Layer-0 safety authority.
+    v6_experience_alpha: float = 0.35
+    v6_experience_decay_s: float = 120.0
+    v6_experience_penalty_cap: float = 6.0
+    # Do not reroute on an anecdote. Eight repeated waits were the first threshold
+    # that preserved the human-crossing and dense-aisle baselines in ablation tests.
+    v6_experience_min_samples: int = 8
+    v6_experience_share_s: float = 5.0
+    v6_experience_max_records: int = 2
+    # Short-horizon anticipation is deliberately soft.  A forecast raises route
+    # cost; it never becomes an obstacle and can never override Layer-0 safety.
+    # Anonymous moving detections cover people/forklifts. Cooperating AMRs remain in
+    # the existing PIBT/INTENT layer so their occupancy is not counted twice. The
+    # cooldown prevents route oscillation around a crossing pedestrian.
+    v6_prediction_horizon_s: float = 2.4
+    v6_prediction_step_s: float = 0.6
+    v6_prediction_penalty: float = 3.0
+    v6_prediction_replan_s: float = 1.5
+    # A charging peer's heartbeat goal acts as a soft, decentralised appointment.
+    # No robot owns a global charger schedule; stale information simply disappears.
+    v6_charger_busy_penalty: float = 8.0
+    v6_charger_intent_penalty: float = 3.0
+
 
 @dataclass(frozen=True)
 class Config:

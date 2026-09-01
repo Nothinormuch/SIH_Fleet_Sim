@@ -31,6 +31,7 @@ from . import messages as msg
 from .amr import (AMRBrain, POLICIES, POLICY_HIERARCHICAL, POLICY_CENTRAL,
                   POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS_PIBT,
                   POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V5,
+                  POLICY_BIOS_PIBT_V6,
                   POLICY_DECENTRALIZED, POLICY_BIOS4,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
@@ -187,6 +188,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
              "blocked_on": brain.blocked_on,
              "priority_key": (brain._pub_priority_key.to_wire()
                               if brain.policy in PIBT_POLICIES else None),
+             "decision": (brain.decision_log[-1] if brain.decision_log else None),
              "done": len(brain.completed), "failed": rid in failed_nodes}
             for rid, brain in sorted(brains.items())
         ]
@@ -232,9 +234,15 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                 if verbose:
                     print(f"  [t={t:6.1f}] {rid} restarted", file=sys.stderr)
         for event in sc.obstacles:
-            if event.oid not in activated_obstacles and t >= event.appear_at:
-                world.add_obstacle(event.oid, event.cell, event.radius_m)
-                activated_obstacles.add(event.oid)
+            active_window_open = (
+                event.clear_at is None or t < event.clear_at)
+            if (event.oid not in activated_obstacles
+                    and event.oid not in cleared_obstacles
+                    and active_window_open and t >= event.appear_at):
+                obstacle = world.add_obstacle(
+                    event.oid, event.cell, event.radius_m)
+                if obstacle is not None:
+                    activated_obstacles.add(event.oid)
             if (event.clear_at is not None and event.oid not in cleared_obstacles
                     and t >= event.clear_at):
                 world.remove_obstacle(event.oid)
@@ -365,6 +373,23 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         auction_bids_sent=int(agg("auction_bids_sent")),
         energy_bids_suppressed=int(agg("energy_bids_suppressed")),
         energy_no_eligible_rounds=int(agg("energy_no_eligible_rounds")),
+        nonproductive_wait_ticks=int(agg("nonproductive_wait_ticks")),
+        heartbeat_messages_sent=int(agg("heartbeat_messages_sent")),
+        intent_messages_sent=int(agg("intent_messages_sent")),
+        auction_messages_sent=int(agg("auction_messages_sent")),
+        coordination_messages_sent=int(agg("coordination_messages_sent")),
+        heartbeat_messages_suppressed=int(agg("heartbeat_messages_suppressed")),
+        intent_messages_suppressed=int(agg("intent_messages_suppressed")),
+        lease_renewals_suppressed=int(agg("lease_renewals_suppressed")),
+        bid_rebroadcasts_suppressed=int(agg("bid_rebroadcasts_suppressed")),
+        decision_events=int(agg("decision_events")),
+        congestion_samples=int(agg("congestion_samples")),
+        experience_messages_sent=int(agg("experience_messages_sent")),
+        experience_updates_received=int(agg("experience_updates_received")),
+        experience_guided_replans=int(agg("experience_guided_replans")),
+        predictive_hazards_seen=int(agg("predictive_hazards_seen")),
+        predictive_reroutes=int(agg("predictive_reroutes")),
+        charger_contentions_avoided=int(agg("charger_contentions_avoided")),
         safety_stop_ticks=int(agg("safety_stops")),
         human_yield_ticks=sum(h.yield_ticks for h in world.humans.values()),
         seconds_degraded=round(agg("seconds_degraded") / max(1, n), 1),
@@ -467,7 +492,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Headless AMR fleet simulation (SIH26123).")
     ap.add_argument("--scenario", default="crossing_chokepoint",
                     choices=sorted(SCENARIOS))
-    ap.add_argument("--policy", default=POLICY_BIOS_PIBT_V5,
+    ap.add_argument("--policy", default=POLICY_BIOS_PIBT_V6,
                     choices=sorted(POLICIES) + ["all"],
                     help="route/traffic policy")
     ap.add_argument("--allocation-policy", choices=sorted(ALLOCATION_POLICIES),
@@ -523,7 +548,7 @@ def main(argv: list[str] | None = None) -> int:
         for cand in (POLICY_CENTRAL, POLICY_HIERARCHICAL, POLICY_BIOS,
                      POLICY_DECENTRALIZED, POLICY_BIOS_PIBT,
                      POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
-                     POLICY_BIOS_PIBT_V5, POLICY_BIOS4):
+                     POLICY_BIOS_PIBT_V5, POLICY_BIOS_PIBT_V6, POLICY_BIOS4):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")
