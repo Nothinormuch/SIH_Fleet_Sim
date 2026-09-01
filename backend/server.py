@@ -168,7 +168,11 @@ def parse_run_request(payload: object) -> dict[str, object]:
     scenario = str(scalar("scenario", "open_floor_control"))
     policy = str(scalar("policy", "BIOS_PIBT.5"))
     allocation_policy = str(scalar("allocation_policy", "auction"))
-    if scenario not in SCENARIOS:
+    is_custom = scenario.startswith("custom_")
+    if is_custom:
+        if scenario not in CUSTOM_SCENARIOS:
+            raise RequestValidationError(f"unknown custom scenario {scenario!r}")
+    elif scenario not in SCENARIOS:
         raise RequestValidationError(f"unknown scenario {scenario!r}")
     if policy not in POLICIES:
         raise RequestValidationError(f"unknown policy {policy!r}")
@@ -447,14 +451,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_scenarios(self) -> None:
         showcase = []
+        custom_scenarios = []
+        for sid, data in CUSTOM_SCENARIOS.items():
+            custom_scenarios.append({
+                "id": sid,
+                "title": data.get("name", "Custom Scenario"),
+                "eyebrow": "Custom Builder",
+                "description": f"Custom layout · {data.get('width', '?')}×{data.get('height', '?')}",
+                "robots": len(data.get("starts", [])),
+                "humans": 0,
+                "seed": data.get("seed", 0),
+                "duration": int(data.get("duration", 300)),
+                "accent": "lime",
+            })
         for scenario_id, profile in SHOWCASE_SCENARIOS.items():
             showcase.append({
                 "id": scenario_id,
                 **{key: value for key, value in profile.items() if key != "builder"},
             })
+        all_showcase = showcase + custom_scenarios
         self._json(200, {
-            "scenarios": [item["id"] for item in showcase],
-            "showcase": showcase,
+            "scenarios": [item["id"] for item in all_showcase],
+            "showcase": all_showcase,
             "policies": sorted(POLICIES),
             "allocation_policies": sorted(ALLOCATION_POLICIES),
         })
@@ -477,9 +495,18 @@ class Handler(BaseHTTPRequestHandler):
                     "hint": "models are held in memory and are lost across restarts - "
                             "upload the .json again"})
 
+        is_custom = request["scenario"].startswith("custom_")
+        if is_custom:
+            custom = CUSTOM_SCENARIOS.get(request["scenario"])
+            if custom is None:
+                return self._json(404, {"error": f"unknown custom scenario {request['scenario']!r}"})
+            # Pass custom info through to run_for_dashboard by injecting into request
+            request["_custom_env"] = custom["env"]
+            request["_custom_starts"] = custom.get("starts", [])
+            request["_custom_duration"] = float(request.get("duration", custom.get("duration", 180.0)))
+            request["_custom_seed"] = int(request.get("seed", custom.get("seed", 0)))
         with _SIM_LOCK:
             result = run_for_dashboard(policy_model=model, **request)
-        self._json(200, result)
 
     def _api_train_start(self) -> None:
         try:

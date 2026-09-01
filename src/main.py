@@ -401,8 +401,25 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
     kw: dict = {"seed": seed}
     if robots is not None:
         kw["n_robots"] = robots
-    sc = SCENARIOS[scenario](**kw)
-    if duration is not None:
+    if scenario.startswith("custom_"):
+        from backend.server import CUSTOM_SCENARIOS
+        custom = CUSTOM_SCENARIOS.get(scenario)
+        if custom is None:
+            raise ValueError(f"unknown custom scenario: {scenario}")
+        from src.scenarios import Scenario
+        from src.geometry import Cell
+        sc = Scenario(
+            name=custom["env"].name,
+            env=custom["env"],
+            starts=[Cell(s[0], s[1]) for s in custom.get("starts", [])],
+            assignments=[[] for _ in custom.get("starts", [])],
+            duration_s=float(duration or custom.get("duration", 180.0)),
+            seed=seed,
+        )
+        sc.duration_s = float(duration or custom.get("duration", 180.0))
+    else:
+        sc = SCENARIOS[scenario](**kw)
+    if duration is not None and not scenario.startswith("custom_"):
         sc.duration_s = float(duration)
 
     frames: list = []

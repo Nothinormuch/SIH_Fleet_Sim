@@ -1209,6 +1209,50 @@ function updateSummaryProgress(frame) {
   }
 }
 
+function refreshCustomGallery() {
+  const gallery = el('customGallery');
+  if (!gallery) return;
+  fetch('/api/scenarios/custom')
+    .then(r => r.json())
+    .catch(() => ({ scenarios: [] }))
+    .then(data => {
+      // Fallback: server doesn't have /api/scenarios/custom GET; use /api/scenarios
+      fetch('/api/scenarios')
+        .then(r => r.json())
+        .then(s => {
+          const custom = (s.showcase || []).filter(item => item.id && item.id.startsWith('custom_'));
+          // Push custom scenarios into App.showcase so selectScenarioProfile works
+          custom.forEach(c => {
+            if (!App.showcase.find(i => i.id === c.id)) App.showcase.push(c);
+          });
+          if (!custom.length) gallery.innerHTML = '<p class="muted">No custom scenarios saved yet.</p>';
+          else {
+            const accents = {cyan:'#35c6f4', amber:'#f5b843', violet:'#b78cff', rose:'#ff6577', lime:'#a3e635'};
+            gallery.innerHTML = custom.map(item => `
+              <button class="scenario-card" data-scenario="${escapeHtml(item.id)}"
+                style="--card-accent:${accents[item.accent]||accents.lime}">
+                <span class="scenario-index">◆</span>
+                <span class="scenario-copy"><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.eyebrow)}</small></span>
+                <span class="scenario-meta">${item.robots||0} AMRs · ${item.seed||0}</span>
+              </button>`).join('');
+            gallery.querySelectorAll('.scenario-card').forEach(card => {
+              card.addEventListener('click', () => {
+                el('scenario').value = card.dataset.scenario;
+                selectScenarioProfile(card.dataset.scenario);
+                // Also set controls from saved data if available
+                const item = custom.find(i => i.id === card.dataset.scenario);
+                if (item) {
+                  el('robots').value = item.robots || 4;
+                  el('seed').value = item.seed || 0;
+                  el('duration').value = item.duration || 300;
+                }
+              });
+            });
+          }
+        });
+    });
+}
+
 function initBuilder() {
   const gridCanvas = el('builderGrid');
   const ctx = gridCanvas.getContext('2d');
@@ -1403,6 +1447,8 @@ function initBuilder() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       alert('Scenario saved! ID: ' + body.id);
+      // Refresh custom gallery
+      refreshCustomGallery();
     } catch (e) {
       alert('Save failed: ' + e.message);
     }
@@ -1420,6 +1466,7 @@ function initBuilder() {
   drawGrid();
   console.log('DEBUG initBuilder ran. gridData rows:', gridData.length, 'cols:', gridData[0]?.length, 'canvas w/h:', gridCanvas.width, 'x', gridCanvas.height);
   console.log('DEBUG pool tiles:', document.querySelectorAll('.pool-tile').length);
+  refreshCustomGallery();
 }
 
 boot();
