@@ -322,8 +322,10 @@ looks the same whether it is coordinating or getting lucky:
 - **task allocation** — `TASK_NEW`, `BID`, `AWARD` and `TASK_DONE` messages for the
   peer auction, or directed manager awards for Hungarian allocation
 - **mapped human workers** — three in Human Interaction and five in Grand Challenge,
-  with rack-safe pedestrian routes, high-visibility 3D PPE models and yield state.
-  They publish nothing; only the onboard safety layer sees them
+  phased around a protected one-way perimeter apron with eight inspection stations,
+  recurring work dwell, high-visibility 3D PPE models and explicit work/yield state.
+  Generic mixed-aisle tests remain available for local-safety validation; workers
+  publish nothing and never participate in fleet negotiation
 
 The run endpoint is POST-only, size- and workload-bounded, and protected by strict
 request validation and browser security headers. Playback rather than a live socket:

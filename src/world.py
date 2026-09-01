@@ -124,6 +124,13 @@ class HumanState:
     paused: bool = False
     yield_ticks: int = 0
     theta: float = 0.0
+    work_indices: frozenset[int] = field(default_factory=frozenset)
+    dwell_s: float = 1.8
+    dwell_remaining_s: float = 0.0
+    work_visits: int = 0
+    distance_travelled: float = 0.0
+    mode: str = "walking"          # walking | working | yielding
+    uses_apron: bool = False
 
     def velocity(self) -> Vec:
         if len(self.waypoints) < 2 or self.paused:
@@ -138,6 +145,13 @@ class HumanState:
     def step(self, dt: float) -> None:
         if len(self.waypoints) < 2:
             return
+        if self.dwell_remaining_s > 1e-9:
+            self.dwell_remaining_s = max(0.0, self.dwell_remaining_s - dt)
+            self.paused = True
+            self.mode = "working"
+            return
+        self.paused = False
+        self.mode = "walking"
         remaining = self.speed * dt
         # Consume the complete timestep even when it begins exactly on a waypoint.
         # Returning early at a cell centre created a zero-motion candidate that the
@@ -155,7 +169,14 @@ class HumanState:
             self.y += dy / d * travel
             remaining -= travel
             if d - travel < 1e-9:
+                arrived = self.idx
                 self.idx = (self.idx + self.direction) % len(self.waypoints)
+                if arrived in self.work_indices:
+                    self.work_visits += 1
+                    self.dwell_remaining_s = self.dwell_s
+                    self.paused = True
+                    self.mode = "working"
+                    return
             if remaining <= 1e-9:
                 return
 
@@ -205,12 +226,13 @@ class World:
         return st
 
     def add_human(self, hid: str, waypoints: list[Cell], speed: float = 1.15) -> HumanState:
-        """Add a worker and expand sparse waypoints into a closed, rack-safe route.
+        """Add a worker and expand workstations into a closed, rack-safe route.
 
-        Scenario authors may provide only the meaningful endpoints. Every segment,
-        including the return segment, is resolved by the same A* map used by the AMRs.
-        Invalid endpoints fail loudly instead of silently creating a person who walks
-        through shelving.
+        The supplied cells are work locations, not a hand-authored animation spline.
+        Every segment, including the return segment, is resolved by the same A* map
+        used by the AMRs.  The safest point on that circuit is selected as the initial
+        position after robots and earlier workers have been placed.  This prevents a
+        valid route from materialising a worker inside a staging queue at frame zero.
         """
         if len(waypoints) < 2:
             raise ValueError(f"human {hid!r} requires at least two route cells")
@@ -231,40 +253,87 @@ class World:
             raise ValueError(f"human {hid!r} route does not contain a walkable loop")
 
         cm = self.cfg.cell_m
-        # Perimeter routes represent marked pedestrian lanes beside the AMR travel
-        # centreline. Offset them toward the warehouse boundary so a worker is visibly
-        # present without occupying the same geometric lane as a robot.
-        offset_x = offset_y = 0.0
-        # A marked pedestrian lane must sit outside the AMR's *protective* field,
-        # not merely outside its physical footprint.  The old fixed 0.95 m offset
-        # left only 0.30 m between the two bodies, inside the configured 0.45 m omni
-        # stop field. A worker walking harmlessly beside the logistics lane therefore
-        # safety-stopped every passing AMR for the entire patrol. Keep a measured
-        # reserve beyond the scanner field while retaining enough boundary clearance
-        # for the pedestrian footprint.
         pedestrian_radius = 0.30
-        required_offset = (
-            self.cfg.robot.radius_m + pedestrian_radius
-            + self.cfg.robot.omni_stop_m + 0.12
-        )
-        boundary_limit = 1.5 * cm - pedestrian_radius - 0.05
-        lane_offset = min(required_offset, boundary_limit)
-        if all(cell[1] == 1 for cell in expanded):
-            offset_y = -lane_offset
-        elif all(cell[1] == self.env.height - 2 for cell in expanded):
-            offset_y = lane_offset
-        elif all(cell[0] == 1 for cell in expanded):
-            offset_x = -lane_offset
-        elif all(cell[0] == self.env.width - 2 for cell in expanded):
-            offset_x = lane_offset
-        pts = [
-            ((cell[0] + 0.5) * cm + offset_x,
-             (cell[1] + 0.5) * cm + offset_y)
+        # Do not fake a second lane by shifting a worker into an adjacent AMR row. The
+        # old Grand Challenge moved row-1 workers directly onto row 0. Ordinary paths
+        # remain on honest cell centres. A complete four-sided presentation route is
+        # the one explicit exception: it maps to the safety apron outside the vehicle
+        # boundary, which is rendered as a separate pedestrian walkway in the UI.
+        work_cells = frozenset(waypoints)
+        route_sides = {
+            side
             for cell in expanded
+            for side, present in (
+                ("left", cell[0] == 1),
+                ("right", cell[0] == self.env.width - 2),
+                ("bottom", cell[1] == 1),
+                ("top", cell[1] == self.env.height - 2),
+            )
+            if present
+        }
+        uses_apron = (
+            route_sides == {"left", "right", "bottom", "top"}
+            and all(
+                cell[0] in (1, self.env.width - 2)
+                or cell[1] in (1, self.env.height - 2)
+                for cell in expanded
+            )
+        )
+        # Keep the presentation apron beyond the onboard lidar range of an AMR on the
+        # outer vehicle lane. The person remains visible in the digital twin, but does
+        # not become an anonymous dynamic obstacle through a wall or safety barrier.
+        apron_offset = 2.50 * cm
+
+        def route_point(cell: Cell) -> Vec:
+            x = (cell[0] + 0.5) * cm
+            y = (cell[1] + 0.5) * cm
+            if uses_apron:
+                if cell[0] == 1:
+                    x = -apron_offset
+                elif cell[0] == self.env.width - 2:
+                    x = self.env.width * cm + apron_offset
+                if cell[1] == 1:
+                    y = -apron_offset
+                elif cell[1] == self.env.height - 2:
+                    y = self.env.height * cm + apron_offset
+            return (x, y)
+
+        occupied_points = [
+            (robot.x, robot.y) for robot in self.robots.values()
+        ] + [
+            (human.x, human.y) for human in self.humans.values()
         ]
+        initial_point = route_point(expanded[0])
+        spawn_clearance = (
+            self.cfg.robot.radius_m + pedestrian_radius
+            + self.cfg.robot.omni_stop_m + 0.16
+        )
+        if (occupied_points
+                and min(dist(initial_point, occupied) for occupied in occupied_points)
+                < spawn_clearance):
+            safest_index = max(
+                range(len(expanded)),
+                key=lambda index: (
+                    min(
+                        dist(
+                            route_point(expanded[index]),
+                            occupied,
+                        )
+                        for occupied in occupied_points
+                    ),
+                    -index,
+                ),
+            )
+            expanded = expanded[safest_index:] + expanded[:safest_index]
+        pts = [route_point(cell) for cell in expanded]
+        work_indices = frozenset(
+            index for index, cell in enumerate(expanded) if cell in work_cells
+        )
         h = HumanState(
             hid, pts, speed=speed, radius=pedestrian_radius,
-            x=pts[0][0], y=pts[0][1], idx=1 % len(pts))
+            x=pts[0][0], y=pts[0][1], idx=1 % len(pts),
+            work_indices=work_indices, uses_apron=uses_apron,
+        )
         self.humans[hid] = h
         return h
 
@@ -344,50 +413,128 @@ class World:
         # Workers use their own local perception and refuse to walk through fixtures,
         # pallets, AMRs, or one another. They still publish no intent and receive no
         # fleet messages: robots must detect them with the independent safety layer.
+        #
+        # The look-ahead margin is deliberately larger than the AMR's omni stop field.
+        # A person who notices a robot only after entering that field has already made
+        # the robot stop.  Evaluating both directions lets the worker turn away on the
+        # same control tick instead of remaining a stationary obstacle for one tick and
+        # repeatedly bouncing between two waypoints.
         accepted_human_segments: list[tuple[Vec, Vec, float]] = []
         for hid in sorted(self.humans):
             h = self.humans[hid]
-            old_x, old_y, old_idx, old_direction = h.x, h.y, h.idx, h.direction
-            h.paused = False
-            h.step(dt)
-            candidate = (h.x, h.y)
-            blocked = self._human_hits_static(candidate, h.radius)
-            if not blocked:
+            start = prev_h[hid]
+            base_state = (
+                h.x, h.y, h.idx, h.direction, h.paused, h.theta,
+                h.dwell_remaining_s, h.work_visits,
+                h.mode,
+            )
+
+            def restore_human(state=base_state) -> None:
+                (h.x, h.y, h.idx, h.direction, h.paused, h.theta,
+                 h.dwell_remaining_s, h.work_visits, h.mode) = state
+
+            protective_separation = (
+                h.radius + spec.radius_m + spec.omni_stop_m + 0.16
+            )
+            awareness_distance = protective_separation + 1.10
+            nearby_robot = any(
+                dist(start, prev[rid]) < awareness_distance
+                for rid in self.robots
+            )
+
+            def candidate_is_clear(candidate: Vec) -> bool:
+                if self._human_hits_static(candidate, h.radius, h.uses_apron):
+                    return False
                 for rid, robot in self.robots.items():
-                    # Preserve a personal-space margin without turning the pedestrian
-                    # model into an invisible wall wider than the robot's own local
-                    # braking field. Layer 0 remains responsible for the final stop.
-                    # Preserve at least the checked 0.90 m centre separation after
-                    # accounting for one integration step of robot braking. The human
-                    # remains non-communicating; this is their own local perception,
-                    # complementary to (not a substitute for) the AMR safety bubble.
-                    threshold = h.radius + spec.radius_m + 0.35
-                    start_distance = dist(prev_h[hid], (robot.x, robot.y))
+                    start_distance = dist(start, prev[rid])
                     end_distance = dist(candidate, (robot.x, robot.y))
                     clearance = segments_min_distance(
-                        prev_h[hid], candidate, prev[rid], (robot.x, robot.y))
-                    escaping = (start_distance < threshold
-                                and end_distance > start_distance + 1e-6)
-                    if clearance < threshold and not escaping:
-                        blocked = True
-                        break
-            if not blocked:
+                        start, candidate, prev[rid], (robot.x, robot.y))
+                    escaping = (
+                        start_distance < protective_separation
+                        and end_distance > start_distance + 1e-6
+                    )
+                    if clearance < protective_separation and not escaping:
+                        return False
                 for other_start, other_end, other_radius in accepted_human_segments:
-                    threshold = h.radius + other_radius + 0.08
-                    start_distance = dist(prev_h[hid], other_end)
+                    threshold = h.radius + other_radius + 0.12
+                    start_distance = dist(start, other_start)
                     end_distance = dist(candidate, other_end)
                     clearance = segments_min_distance(
-                        prev_h[hid], candidate, other_start, other_end)
-                    escaping = (start_distance < threshold
-                                and end_distance > start_distance + 1e-6)
+                        start, candidate, other_start, other_end)
+                    escaping = (
+                        start_distance < threshold
+                        and end_distance > start_distance + 1e-6
+                    )
                     if clearance < threshold and not escaping:
-                        blocked = True
-                        break
-            if blocked:
-                h.x, h.y = old_x, old_y
+                        return False
+                return True
+
+            attempts: list[tuple[float, bool, tuple]] = []
+            directions = (False, True) if nearby_robot else (False,)
+            for reverse in directions:
+                restore_human()
+                if nearby_robot:
+                    # Work pauses are interruptible: a worker secures the aisle before
+                    # inspecting a rack, then leaves when an AMR approaches.
+                    h.dwell_remaining_s = 0.0
+                if reverse:
+                    old_idx, old_direction = base_state[2], base_state[3]
+                    h.direction = -old_direction
+                    h.idx = (old_idx - old_direction) % len(h.waypoints)
+                h.step(dt)
+                candidate = (h.x, h.y)
+                if not candidate_is_clear(candidate):
+                    continue
+                closest_robot = min(
+                    (dist(candidate, (robot.x, robot.y))
+                     for robot in self.robots.values()),
+                    default=99.0,
+                )
+                attempts.append((closest_robot, not reverse, (
+                    h.x, h.y, h.idx, h.direction, h.paused, h.theta,
+                    h.dwell_remaining_s, h.work_visits,
+                    h.mode,
+                )))
+
+            # If the normal direction is physically blocked, retry away from it even
+            # when the blocker was just outside the proactive awareness range.
+            if not attempts and not nearby_robot:
+                restore_human()
+                old_idx, old_direction = base_state[2], base_state[3]
                 h.direction = -old_direction
                 h.idx = (old_idx - old_direction) % len(h.waypoints)
+                h.step(dt)
+                candidate = (h.x, h.y)
+                if candidate_is_clear(candidate):
+                    attempts.append((
+                        min(
+                            (dist(candidate, (robot.x, robot.y))
+                             for robot in self.robots.values()),
+                            default=99.0,
+                        ),
+                        False,
+                        (
+                            h.x, h.y, h.idx, h.direction, h.paused, h.theta,
+                            h.dwell_remaining_s, h.work_visits,
+                            h.mode,
+                        ),
+                    ))
+
+            if attempts:
+                _, kept_direction, chosen_state = max(
+                    attempts, key=lambda item: (item[0], item[1])
+                )
+                restore_human(chosen_state)
+                moved = dist(start, (h.x, h.y))
+                h.distance_travelled += moved
+                if nearby_robot or not kept_direction:
+                    h.mode = "yielding"
+                    h.yield_ticks += 1
+            else:
+                restore_human()
                 h.paused = True
+                h.mode = "yielding"
                 h.yield_ticks += 1
             accepted_human_segments.append(
                 (prev_h[hid], (h.x, h.y), h.radius))
@@ -421,7 +568,8 @@ class World:
             return True
         return False
 
-    def _human_hits_static(self, p: Vec, radius: float) -> bool:
+    def _human_hits_static(self, p: Vec, radius: float,
+                           allow_apron: bool = False) -> bool:
         """Circle-vs-map collision check for pedestrians and dynamic obstacles."""
         cm = self.cfg.cell_m
         cx, cy = to_cell(p, cm)
@@ -435,9 +583,12 @@ class World:
                 ny = clamp(p[1], gy * cm, (gy + 1) * cm)
                 if (p[0] - nx) ** 2 + (p[1] - ny) ** 2 < radius * radius:
                     return True
-        if not (radius <= p[0] <= self.env.width * cm - radius):
+        apron = 2.80 * cm if allow_apron else 0.0
+        if not (-apron + radius <= p[0]
+                <= self.env.width * cm + apron - radius):
             return True
-        if not (radius <= p[1] <= self.env.height * cm - radius):
+        if not (-apron + radius <= p[1]
+                <= self.env.height * cm + apron - radius):
             return True
         return any(
             dist(p, (obstacle.x, obstacle.y)) < radius + obstacle.radius
@@ -648,7 +799,11 @@ class World:
                     "y": round(h.y, 3),
                     "th": round(h.theta, 3),
                     "paused": h.paused,
+                    "mode": h.mode,
                     "yield_ticks": h.yield_ticks,
+                    "work_visits": h.work_visits,
+                    "distance_m": round(h.distance_travelled, 2),
+                    "uses_apron": h.uses_apron,
                 }
                 for h in self.humans.values()
             ],

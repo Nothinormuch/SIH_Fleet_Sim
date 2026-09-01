@@ -860,7 +860,11 @@ function interpolate(f0, f1, u) {
       y: lerp(a.y, b.y, u),
       th: lerpAngle(aHeading, bHeading, u),
       paused: u >= .5 ? Boolean(b.paused) : Boolean(a.paused),
+      mode: u >= .5 ? (b.mode || 'walking') : (a.mode || 'walking'),
       yield_ticks: u >= .5 ? Number(b.yield_ticks || 0) : Number(a.yield_ticks || 0),
+      work_visits: u >= .5 ? Number(b.work_visits || 0) : Number(a.work_visits || 0),
+      distance_m: lerp(Number(a.distance_m || 0), Number(b.distance_m || 0), u),
+      uses_apron: u >= .5 ? Boolean(b.uses_apron) : Boolean(a.uses_apron),
     };
   });
   return { t: lerp(f0.t, f1.t, u), robots, humans,
@@ -1347,6 +1351,8 @@ function renderSummary(s, meta) {
       <dl>
         <dt>Deadlocks detected</dt><dd>${Number(s.deadlocks_detected || 0)}</dd>
         <dt>Pedestrian yield ticks</dt><dd>${Number(s.human_yield_ticks || 0)}</dd>
+        <dt>Human work visits</dt><dd>${Number(s.human_work_visits || 0)}</dd>
+        <dt>Human distance covered</dt><dd>${Number(s.human_distance_m || 0).toFixed(1)} m</dd>
         <dt>Auction bids submitted</dt><dd>${Number(s.auction_bids_sent || 0)}</dd>
         <dt>Peer messages exchanged</dt><dd>${Number(s.msgs_sent || 0)}</dd>
         <dt>Broadcasts suppressed</dt><dd>${Number(s.heartbeat_messages_suppressed || 0) + Number(s.intent_messages_suppressed || 0) + Number(s.lease_renewals_suppressed || 0) + Number(s.bid_rebroadcasts_suppressed || 0)}</dd>

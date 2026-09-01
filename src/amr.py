@@ -1010,17 +1010,31 @@ class AMRBrain:
             return False
 
         here = sensors.cell
-        occupied = {
-            peer.cell for peer in self.peers.values()
+        fresh_peers = [
+            peer for peer in self.peers.values()
             if sensors.t - peer.last_seen <= self._peer_stale_after_s()
-        }
-        for peer in self.peers.values():
-            if sensors.t - peer.last_seen <= self._peer_stale_after_s():
-                occupied.update(peer.intent[:2])
+        ]
+        occupied = {peer.cell for peer in fresh_peers}
+        intended_by: dict[Cell, list[Peer]] = {}
+        for peer in fresh_peers:
+            for cell in peer.intent[:2]:
+                intended_by.setdefault(cell, []).append(peer)
+
+        requested = self._next_cell()
 
         candidates: list[tuple[int, float, int, Cell]] = []
         for target in self.env.neighbors(here):
             if target in occupied:
+                continue
+            contenders = intended_by.get(target, [])
+            if contenders and not (
+                target == requested
+                and all(
+                    not self._peer_outranks(
+                        peer, self._arbitration_key())
+                    for peer in contenders
+                )
+            ):
                 continue
             tx, ty = cell_center(target, self.cfg.cell_m)
             # The destination centre being farther away is insufficient: a straight
@@ -1558,9 +1572,42 @@ class AMRBrain:
         horizon covers ``feeder -> mouth -> first block cell``; an actual occupant in
         the mouth then stops the follower while a full cell of braking room remains.
         """
-        if self.policy not in V3_AUCTION_POLICIES or self.circulation.enabled:
+        if self.policy not in V3_AUCTION_POLICIES:
             return None
         future = self._future_path_cells(3)
+        if self.circulation.enabled:
+            if self.policy != POLICY_BIOS_PIBT_V6:
+                return None
+            # A cell lease prevents two robots from owning the same destination, but
+            # it does not by itself leave enough continuous braking room when the
+            # leader is turning through a merge. Stage one cell before an occupied
+            # junction so the queue cannot compact into an omnidirectional safety
+            # latch. Ordinary straight convoys keep their existing spacing and
+            # throughput; only degree-three/four merge cells receive this backpressure.
+            if len(future) < 2:
+                return None
+            junction = future[1]
+            if self.env.degree(junction) < 3:
+                return None
+            approach = (
+                junction[0] - future[0][0],
+                junction[1] - future[0][1],
+            )
+            for peer in self.peers.values():
+                if peer.cell == junction and peer.goal is not None:
+                    onward = next(
+                        (cell for cell in peer.intent if cell != peer.cell),
+                        None,
+                    )
+                    if onward is None:
+                        return peer.rid
+                    departure = (
+                        onward[0] - junction[0],
+                        onward[1] - junction[1],
+                    )
+                    if departure != approach:
+                        return peer.rid
+            return None
         if len(future) < 2 or not any(
             self._controlled_block(cell) is not None for cell in future
         ):
@@ -2968,6 +3015,27 @@ class AMRBrain:
                     self._needs_duplicate_vacate = False
                 if self._needs_duplicate_vacate:
                     return
+            task_clearance_request = (
+                next((
+                    peer for peer in self.peers.values()
+                    if peer.task_id is not None and peer.blocked_on == self.rid
+                ), None)
+                if self.policy == POLICY_BIOS_PIBT_V6 else None
+            )
+            remaining_parking_route = self.path[self.pidx:]
+            if (task_clearance_request is not None
+                    and self.goal is not None
+                    and len(remaining_parking_route) > 1):
+                # Parking is optional; a loaded peer's progress is not. An idle AMR
+                # following a long dock route can become one side of an idle-idle
+                # wait cycle while the task owner queues behind it. Cancel only the
+                # long parking trip. A one-cell clearance move already in progress is
+                # allowed to finish, preventing this rule from resetting it every tick.
+                self.goal = None
+                self.path = []
+                self.path_times = []
+                self.pidx = 0
+                self._auction_reposition_target = None
             if self._auction_reposition_target is not None:
                 target = self._auction_reposition_target
                 if self._arrived(sensors, target):
@@ -3164,15 +3232,28 @@ class AMRBrain:
         ]
         if not blockers_requesting_clearance:
             return
+        explicit_blockers = (
+            [
+                peer for peer in blockers_requesting_clearance
+                if peer.blocked_on == self.rid
+            ]
+            if self.policy == POLICY_BIOS_PIBT_V6 else []
+        )
+        # Physical occupancy and somebody else's destination are hard exclusions.
+        # The requesting robot's own future intent is different: the idle chassis is
+        # already sitting in that corridor and may need to move one cell *forward*
+        # along it before there is any side bay to use. Treating the entire requesting
+        # route as forbidden leaves it with no legal vacate move and permanently parks
+        # it in front of the task owner. The requester continues to hold behind us;
+        # every translated step is still revalidated by Layer 0.
         taken = {p.cell for p in self.peers.values()} | {
             p.goal for p in self.peers.values() if p.goal} | {
-            cell for p in self.peers.values() for cell in p.intent
+            cell
+            for p in self.peers.values()
+            if p not in explicit_blockers
+            for cell in p.intent
         }
         options = [n for n in self.env.neighbors(here) if n not in taken]
-        explicit_blockers = [
-            peer for peer in blockers_requesting_clearance
-            if peer.blocked_on == self.rid
-        ]
         if (self.policy == POLICY_BIOS_PIBT_V6 and self.circulation.enabled
                 and explicit_blockers):
             # A one-cell sidestep is insufficient when every adjacent cell is part of
@@ -3221,7 +3302,20 @@ class AMRBrain:
                         self.blocks.id_of(n) == here_cid,
                         manhattan(n, exit_cell), n))
         if options:
-            self.goal = min(options, key=lambda c: manhattan(c, self.home))
+            self.goal = (
+                min(options, key=lambda c: (
+                    -min(
+                        manhattan(c, peer.cell)
+                        for peer in explicit_blockers
+                    ),
+                    manhattan(c, self.home),
+                    c,
+                ))
+                if explicit_blockers
+                else min(options, key=lambda c: manhattan(c, self.home))
+            )
+            if explicit_blockers and self.goal == self._next_cell():
+                return
             if (self.policy in V3_AUCTION_POLICIES
                     and not self.circulation.enabled
                     and self._controlled_block(here) is not None):

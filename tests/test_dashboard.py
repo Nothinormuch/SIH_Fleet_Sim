@@ -77,30 +77,54 @@ def test_showcase_pedestrians_are_numerous_and_remain_outside_racks():
         scenario = profile["builder"](
             n_robots=profile["robots"], seed=profile["seed"])
         assert len(scenario.humans) == expected
+        crew_cells = [cell for route in scenario.humans for cell in route]
+        for route in scenario.humans:
+            xs = [cell[0] for cell in route]
+            ys = [cell[1] for cell in route]
+            assert max(xs) - min(xs) >= 2
+            assert max(ys) - min(ys) >= scenario.env.height // 5
+            assert all(0 < y < scenario.env.height - 1 for y in ys)
+        assert max(cell[0] for cell in crew_cells) - min(
+            cell[0] for cell in crew_cells) >= 2 * scenario.env.width // 3
         world = World(scenario.env, DEFAULT, seed=scenario.seed)
         for index, route in enumerate(scenario.humans):
             human = world.add_human(f"H{index + 1}", route)
-            assert not world._human_hits_static((human.x, human.y), human.radius)
+            assert not world._human_hits_static(
+                (human.x, human.y), human.radius, human.uses_apron)
 
-        # Walk every route for a full minute without AMRs. This catches both invalid
-        # endpoints and interpolation that cuts across a rack between valid cells.
-        for _ in range(int(60 * DEFAULT.rates.world_hz)):
+        # Walk every route for three minutes without AMRs. This covers the complete
+        # warehouse-wide apron rather than only one short rack-bank patrol.
+        for _ in range(int(180 * DEFAULT.rates.world_hz)):
             world.step(1.0 / DEFAULT.rates.world_hz, {})
             for human in world.humans.values():
-                assert not world._human_hits_static((human.x, human.y), human.radius)
+                assert not world._human_hits_static(
+                    (human.x, human.y), human.radius, human.uses_apron)
+
+        assert all(human.distance_travelled > 40.0 for human in world.humans.values())
+        assert all(human.work_visits >= 2 for human in world.humans.values())
 
 
-def test_perimeter_pedestrian_lane_is_outside_the_amr_omni_stop_field():
+def test_grand_challenge_workers_do_not_spawn_in_the_amr_staging_lane():
     scenario = SHOWCASE_SCENARIOS["showcase_grand_challenge"]["builder"](
-        n_robots=8, seed=1)
+        n_robots=10, seed=1)
     world = World(scenario.env, DEFAULT, seed=scenario.seed)
-    world.add_robot("AMR-test", (2, 1), 0.0)
-    world.add_human("H-test", [(2, 1), (7, 1)])
+    for index, cell in enumerate(scenario.starts):
+        world.add_robot(f"AMR{index + 1:02d}", cell, 0.0)
+    humans = [
+        world.add_human(f"H{index + 1}", route)
+        for index, route in enumerate(scenario.humans)
+    ]
 
-    sensors = world.sense("AMR-test")
-
-    assert sensors.detections
-    assert sensors.clearance_omni_m > DEFAULT.robot.omni_stop_m
+    protected = (
+        DEFAULT.robot.radius_m + humans[0].radius
+        + DEFAULT.robot.omni_stop_m + 0.16
+    )
+    for human in humans:
+        assert min(
+            math.hypot(human.x - robot.x, human.y - robot.y)
+            for robot in world.robots.values()
+        ) > protected
+        assert human.uses_apron
 
 
 def test_grand_challenge_finishes_inside_its_dashboard_evidence_window():
@@ -119,6 +143,46 @@ def test_grand_challenge_finishes_inside_its_dashboard_evidence_window():
     assert result.completed_all
     assert result.tasks_completed == result.tasks_announced == 16
     assert result.makespan_s < profile["duration"]
+    assert result.contacts_robot_robot == 0
+    assert result.contacts_robot_human == 0
+    assert result.contacts_robot_rack == 0
+
+
+def test_grand_challenge_liveness_does_not_depend_on_pedestrian_interference():
+    """Protected worker routing must not be the perturbation that unsticks the AMRs."""
+    profile = SHOWCASE_SCENARIOS["showcase_grand_challenge"]
+    scenario = replace(
+        profile["builder"](
+            n_robots=profile["robots"], seed=profile["seed"]),
+        humans=[], duration_s=float(profile["duration"]),
+    )
+
+    result = run_scenario(
+        scenario, POLICY_BIOS_PIBT_V6, seed=profile["seed"],
+        allocation_policy=ALLOCATION_AUCTION_BUNDLE,
+    )
+
+    assert result.completed_all
+    assert result.tasks_completed == result.tasks_announced == 16
+    assert result.contacts_robot_robot == 0
+    assert result.contacts_robot_rack == 0
+
+
+def test_loaded_robot_preempts_idle_parking_cycle_in_grand_challenge():
+    """Seed 4 previously left one loaded AMR behind two optional parking trips."""
+    profile = SHOWCASE_SCENARIOS["showcase_grand_challenge"]
+    scenario = replace(
+        profile["builder"](n_robots=8, seed=4),
+        duration_s=float(profile["duration"]),
+    )
+
+    result = run_scenario(
+        scenario, POLICY_BIOS_PIBT_V6, seed=4,
+        allocation_policy=ALLOCATION_AUCTION_BUNDLE,
+    )
+
+    assert result.completed_all
+    assert result.tasks_completed == result.tasks_announced == 16
     assert result.contacts_robot_robot == 0
     assert result.contacts_robot_human == 0
     assert result.contacts_robot_rack == 0

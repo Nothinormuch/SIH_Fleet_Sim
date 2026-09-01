@@ -133,6 +133,8 @@ class PolicyResult:
     nonproductive_wait_ticks: int = 0
     safety_stop_ticks: int = 0
     human_yield_ticks: int = 0
+    human_work_visits: int = 0
+    human_distance_m: float = 0.0
     seconds_degraded: float = 0.0
 
     msgs_sent: int = 0

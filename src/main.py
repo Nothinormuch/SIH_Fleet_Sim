@@ -484,6 +484,9 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
             if allocation_samples else 0.0),
         safety_stop_ticks=int(agg("safety_stops")),
         human_yield_ticks=sum(h.yield_ticks for h in world.humans.values()),
+        human_work_visits=sum(h.work_visits for h in world.humans.values()),
+        human_distance_m=round(
+            sum(h.distance_travelled for h in world.humans.values()), 2),
         seconds_degraded=round(agg("seconds_degraded") / max(1, n), 1),
         msgs_sent=int(agg("msgs_sent")),
         bytes_sent=int(agg("bytes_sent")),
@@ -526,8 +529,14 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
     frames: list = []
     result = run_scenario(sc, policy, seed=seed, trace=frames,
                           allocation_policy=allocation_policy, policy_model=policy_model)
+    map_payload = sc.env.to_json()
+    map_payload["pedestrian_apron"] = any(
+        bool(human.get("uses_apron"))
+        for frame in frames[:1]
+        for human in frame.get("humans", [])
+    )
     return {
-        "map": sc.env.to_json(),
+        "map": map_payload,
         "meta": {
             "scenario": sc.name, "policy": policy,
             "allocation_policy": allocation_policy, "seed": seed,

@@ -38,7 +38,6 @@ from .amr import Task
 from .environment import (DOCK, FREE, RACK, STATION, Warehouse,
                           chokepoint_warehouse, classic_warehouse, open_floor)
 from .geometry import Cell, manhattan
-from .planner import astar
 from .settings import Config, NetSpec
 from .task_allocation import ACTIVE_ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED
 
@@ -196,14 +195,6 @@ def _round_robin(tasks: list[Task], n: int) -> list[list[Task]]:
     return out
 
 
-def _closed_human_walk(env: Warehouse, start: Cell, goal: Cell) -> list[Cell]:
-    """A contiguous out-and-back pedestrian route that never crosses shelving."""
-    path = astar(env, start, goal)
-    if len(path) < 2:
-        raise ValueError(f"invalid human walkway from {start!r} to {goal!r}")
-    return path + path[-2:0:-1]
-
-
 def _pedestrian_walks(env: Warehouse, robot_starts: list[Cell], count: int,
                       mixed: bool = False) -> list[list[Cell]]:
     """Build rack-safe walks and place their starts away from parked AMRs.
@@ -247,12 +238,19 @@ def _pedestrian_walks(env: Warehouse, robot_starts: list[Cell], count: int,
 
 
 def _place_pedestrian_walks(env: Warehouse, robot_starts: list[Cell],
-                            specs: list[tuple[Cell, Cell]]) -> list[list[Cell]]:
-    """Turn walkway endpoints into loops with non-overlapping initial positions."""
+                            specs: list[tuple[Cell, ...] | list[Cell]]) -> list[list[Cell]]:
+    """Rotate sparse workstation circuits away from initial AMR positions.
+
+    ``World.add_human`` owns the rack-safe A* expansion. Keeping the scenario routes
+    sparse preserves the distinction between a cell crossed in transit and a work
+    location where the person may briefly stop.
+    """
     walks: list[list[Cell]] = []
     occupied_starts = list(robot_starts)
-    for start, goal in specs:
-        route = _closed_human_walk(env, start, goal)
+    for spec in specs:
+        route = list(spec)
+        if len(route) < 2 or any(not env.passable(cell) for cell in route):
+            raise ValueError(f"invalid pedestrian workstation circuit {route!r}")
         offset = max(
             range(len(route)),
             key=lambda index: (
@@ -268,33 +266,38 @@ def _place_pedestrian_walks(env: Warehouse, robot_starts: list[Cell],
 
 
 def _showcase_pedestrian_walks(env: Warehouse, robot_starts: list[Cell],
-                               grand: bool = False) -> list[list[Cell]]:
-    """Short, visible patrols that create crossings without occupying whole aisles."""
-    cross_rows = [
-        y for y in range(2, env.height - 2)
-        if all(env.passable((x, y)) for x in range(1, env.width - 1))
+                               seed: int, grand: bool = False) -> list[list[Cell]]:
+    """Build a deterministic, warehouse-wide pedestrian inspection loop.
+
+    The inner-perimeter cells are semantic workstations; ``World.add_human`` maps this
+    complete four-sided circuit onto the separately rendered pedestrian apron outside
+    the AMR traffic floor. This replaces the old fake offset that moved row-1 people
+    directly onto row 0. Every worker receives a seeded phase on the same one-way loop,
+    preventing head-on pedestrian conflicts while making the crew visibly roam around
+    the full warehouse.
+    """
+    rng = random.Random((seed + 1) * 104729 + (17 if grand else 0))
+    mid_x = env.width // 2
+    mid_y = env.height // 2
+    loop = [
+        (1, 1),
+        (mid_x, 1),
+        (env.width - 2, 1),
+        (env.width - 2, mid_y),
+        (env.width - 2, env.height - 2),
+        (mid_x, env.height - 2),
+        (1, env.height - 2),
+        (1, mid_y),
     ]
-    if len(cross_rows) < 3:
-        raise ValueError("showcase warehouse requires three pedestrian cross aisles")
-    if grand:
-        specs = [
-            ((2, 1), (7, 1)),
-            ((11, 1), (16, 1)),
-            ((env.width - 11, 1), (env.width - 6, 1)),
-            ((5, env.height - 2), (10, env.height - 2)),
-            ((env.width - 14, env.height - 2),
-             (env.width - 9, env.height - 2)),
-        ]
-    else:
-        specs = [
-            # Marked pedestrian patrols run beside the perimeter AMR centreline.
-            # Robots still encounter workers near entry/exit aprons, while people do
-            # not unrealistically pace back and forth across every logistics aisle.
-            ((2, 1), (7, 1)),
-            ((14, 1), (19, 1)),
-            ((env.width - 11, env.height - 2),
-             (env.width - 6, env.height - 2)),
-        ]
+    if any(not env.passable(cell) for cell in loop):
+        raise ValueError("showcase warehouse has no valid inner-perimeter worker loop")
+    specs: list[tuple[Cell, ...]] = []
+    phases = list(range(len(loop)))
+    rng.shuffle(phases)
+    for index in range(5 if grand else 3):
+        rotation = phases[index % len(phases)]
+        circuit = loop[rotation:] + loop[:rotation]
+        specs.append(tuple(circuit))
     return _place_pedestrian_walks(env, robot_starts, specs)
 
 
@@ -642,7 +645,7 @@ def showcase_human(n_robots: int = 5, tasks_per_robot: int = 2,
                    seed: int = 7) -> Scenario:
     scenario = human_in_aisle(n_robots, tasks_per_robot, seed)
     scenario.humans = _showcase_pedestrian_walks(
-        scenario.env, scenario.starts)
+        scenario.env, scenario.starts, seed)
     return _showcase_profile(scenario, "showcase_human")
 
 
@@ -657,9 +660,9 @@ def showcase_grand_challenge(n_robots: int = 8, tasks_per_robot: int = 2,
                              seed: int = 1) -> Scenario:
     """A deterministic jury story: traffic, humans, radio degradation and blockage."""
     base = dense_aisles(n_robots, tasks_per_robot, seed)
+    humans = _showcase_pedestrian_walks(base.env, base.starts, seed, grand=True)
     env = base.env
     cross_aisle = min(11, env.height - 3)
-    humans = _showcase_pedestrian_walks(env, base.starts, grand=True)
     net = NetSpec(
         loss=0.05,
         dead_zones=((env.width * 0.62, env.height * 0.48, 4.0),),
@@ -701,8 +704,8 @@ SHOWCASE_SCENARIOS = {
     },
     "showcase_human": {
         "builder": showcase_human, "title": "Human Interaction",
-        "eyebrow": "Local perception",
-        "description": "Three non-broadcasting workers patrol mapped lanes while robots stop and replan locally.",
+        "eyebrow": "Segregated operations",
+        "description": "Three workers inspect eight perimeter stations on a protected one-way pedestrian apron while AMRs retain independent local safety.",
         "robots": 5, "humans": 3, "seed": 7, "duration": 520, "accent": "violet",
     },
     "showcase_dead_zone": {
@@ -714,7 +717,7 @@ SHOWCASE_SCENARIOS = {
     "showcase_grand_challenge": {
         "builder": showcase_grand_challenge, "title": "Grand Challenge",
         "eyebrow": "The full BIOS story",
-        "description": "Open traffic, humans, chokepoints, a blocked aisle, mixed cargo, a dead zone and robot recovery.",
+        "description": "Open traffic, protected worker operations, chokepoints, a blocked aisle, mixed cargo, a dead zone and robot recovery.",
         "robots": 8, "humans": 5, "seed": 1, "duration": 800, "accent": "lime",
     },
 }

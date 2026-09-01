@@ -306,8 +306,10 @@ export class DigitalTwin {
     const cell = this.meta.cell_m;
     const widthM = this.map.width * cell;
     const heightM = this.map.height * cell;
+    const apronMargin = this.map.pedestrian_apron ? cell * 2.5 : .6;
     const floor = new THREE.Mesh(
-      new THREE.BoxGeometry(widthM + 1.2, .35, heightM + 1.2),
+      new THREE.BoxGeometry(widthM + apronMargin * 2 + .8, .35,
+                            heightM + apronMargin * 2 + .8),
       new THREE.MeshStandardMaterial({color: PALETTE.floor, roughness: .88, metalness: .08}),
     );
     floor.position.y = -.22;
@@ -320,6 +322,32 @@ export class DigitalTwin {
     grid.material.transparent = true;
     grid.material.opacity = .55;
     this.world.add(grid);
+
+    if (this.map.pedestrian_apron) {
+      const laneMaterial = new THREE.MeshBasicMaterial({
+        color: PALETTE.amber, transparent: true, opacity: .20, depthWrite: false,
+      });
+      const apronOffset = cell * 2.50;
+      const apronWidth = cell * .62;
+      const horizontal = new THREE.BoxGeometry(
+        widthM + apronOffset * 2, .022, apronWidth,
+      );
+      const vertical = new THREE.BoxGeometry(
+        apronWidth, .022, heightM + apronOffset * 2,
+      );
+      for (const z of [heightM / 2 + apronOffset, -heightM / 2 - apronOffset]) {
+        const lane = new THREE.Mesh(horizontal, laneMaterial);
+        lane.position.set(0, .018, z);
+        lane.renderOrder = 2;
+        this.world.add(lane);
+      }
+      for (const x of [-widthM / 2 - apronOffset, widthM / 2 + apronOffset]) {
+        const lane = new THREE.Mesh(vertical, laneMaterial);
+        lane.position.set(x, .018, 0);
+        lane.renderOrder = 2;
+        this.world.add(lane);
+      }
+    }
 
     const rackCells = [];
     for (let y = 0; y < this.map.height; y++) {
@@ -612,9 +640,11 @@ export class DigitalTwin {
     pauseRing.position.y = .025;
     pauseRing.visible = false;
     group.add(body, head, helmet, stripe, pauseRing);
-    const label = makeLabel(`${id} · WORKER`, '#f5b843', true);
-    label.position.y = 2.08;
-    label.scale.multiplyScalar(.72);
+    // The yellow vest and helmet already communicate the role. A compact ID avoids
+    // the long "WORKER" plaques covering AMR labels when both share a junction.
+    const label = makeLabel(id, '#f5b843', true);
+    label.position.y = 2.02;
+    label.scale.multiplyScalar(.52);
     group.add(label);
     group.userData = {limbs, pauseRing};
     this.dynamic.add(group);
@@ -690,7 +720,11 @@ export class DigitalTwin {
       group.userData.limbs.forEach((limb, index) => {
         limb.rotation.x = index % 2 ? -stride : stride;
       });
-      group.userData.pauseRing.visible = Boolean(human.paused);
+      const humanMode = human.mode || (human.paused ? 'yielding' : 'walking');
+      group.userData.pauseRing.visible = humanMode !== 'walking';
+      group.userData.pauseRing.material.color.setHex(
+        humanMode === 'working' ? PALETTE.green : PALETTE.amber,
+      );
       group.userData.pauseRing.rotation.z = simTime * 1.5;
     }
     const activeObstacles = new Set();

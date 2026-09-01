@@ -315,6 +315,19 @@ function renderStaticFloor(ctx, view, map, imgs) {
 
   drawRacks(ctx, view, map, imgs);
 
+  if (map.pedestrian_apron) {
+    const [left, top] = view.cellToScreen(0, map.height);
+    const [right, bottom] = view.cellToScreen(map.width, 0);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(245,184,67,.52)';
+    ctx.lineWidth = Math.max(4, view.cell * .28);
+    ctx.setLineDash([Math.max(5, view.cell * .5), Math.max(4, view.cell * .3)]);
+    ctx.strokeRect(left - ctx.lineWidth, top - ctx.lineWidth,
+                   right - left + ctx.lineWidth * 2,
+                   bottom - top + ctx.lineWidth * 2);
+    ctx.restore();
+  }
+
   // Highlight the single-file blocks the traffic layer actually controls.
   ctx.save();
   ctx.strokeStyle = 'rgba(245,184,67,.55)';

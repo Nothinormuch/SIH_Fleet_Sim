@@ -236,7 +236,9 @@ function drawHuman(ctx, view, h, imgs) {
   // A dashed ring, deliberately: this agent publishes no intent, honours no priority
   // and cannot be negotiated with. Only the onboard safety layer sees it at all.
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,95,87,.75)';
+  ctx.strokeStyle = h.mode === 'working'
+    ? 'rgba(70,211,154,.85)'
+    : h.mode === 'yielding' ? 'rgba(245,184,67,.85)' : 'rgba(255,95,87,.75)';
   ctx.setLineDash([4, 4]);
   ctx.lineWidth = 1.5;
   ctx.beginPath();
