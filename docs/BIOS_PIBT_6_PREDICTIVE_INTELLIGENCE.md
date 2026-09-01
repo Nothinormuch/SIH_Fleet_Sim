@@ -172,10 +172,22 @@ A final real-process smoke test ran three independently spawned BIOS 6 AMR nodes
 6,000 control ticks each, with deliberately different monotonic-clock offsets and signed
 UDP transport. All nodes converged on the 12/12 completion catalog, the referee observed
 peer traffic and zero contacts, authentication/replay/malformed counters stayed clean,
-and no 20 ms compute deadline was missed. The slowest observed node loop was 1.535 ms and
-maximum resident memory was 29.125 MiB on the development Mac. The referee ran in fast
+and no 20 ms compute deadline was missed. The slowest observed node loop was 3.027 ms and
+maximum resident memory was 29.5 MiB on the development Mac. The referee ran in fast
 IPC mode, so this proves process separation, protocol execution and measured per-tick
 compute on that machine; it is not Raspberry Pi scheduling or performance evidence.
+
+Checked evidence for release commit `80aebdb`:
+
+- Paired showcases: [Open Floor JSON](../artifacts/benchmarks/bios6-showcase-open.json),
+  [Human JSON](../artifacts/benchmarks/bios6-showcase-human.json),
+  [Chokepoint JSON](../artifacts/benchmarks/bios6-showcase-chokepoint.json), and
+  [Dead-Zone JSON](../artifacts/benchmarks/bios6-showcase-dead-zone.json). Each records
+  `source_tree_dirty: false`; matching CSV files are stored beside them.
+- Grand Challenge: [BIOS 5 baseline](../artifacts/benchmarks/bios5-grand-challenge-baseline.json),
+  [BIOS 6 candidate](../artifacts/benchmarks/bios6-grand-challenge.json), and
+  [BIOS 6 seed-1 repeat](../artifacts/benchmarks/bios6-grand-seed1-repeat.json).
+- Multi-process proof: [three-node signed-UDP run](../artifacts/benchmarks/bios6-distributed-demo.json).
 
 ## Promotion gates
 
