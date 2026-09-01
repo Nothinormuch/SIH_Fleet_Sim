@@ -43,6 +43,7 @@ from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
                                ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED,
                                ACTIVE_ALLOCATION_POLICIES,
                                validate_allocation_policy)
+from .task_protocol import CompletionCertificate, task_descriptor_hash
 from .transport import SimNetwork
 from .world import Actuation, World
 
@@ -121,6 +122,20 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     net.register(WMS_ID)
     announced_tasks = _announced_tasks(sc, allocation_policy)
     uses_allocation = bool(announced_tasks)
+    announced_identities = {
+        task.tid: (
+            task.tid,
+            task.generation,
+            task.descriptor_hash or task_descriptor_hash(
+                task.tid, task.generation, task.pick, task.drop,
+                task.cargo_type, task.cargo_weight, task.priority,
+                (task.descriptor_deadline_s
+                 if task.descriptor_deadline_s is not None else task.deadline),
+            ),
+        )
+        for task in announced_tasks
+    }
+    wms_completed: set[str] = set()
 
     brains: dict[str, AMRBrain] = {}
     for i, start in enumerate(sc.starts):
@@ -224,10 +239,12 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
         for rid, restart_at in sc.robot_restart_at.items():
             if t >= restart_at and rid in failed_nodes and rid in brains:
                 index = int(rid.removeprefix("AMR")) - 1
+                terminal_records = brains[rid].export_terminal_records()
                 failed_nodes.remove(rid)
                 brains[rid] = AMRBrain(
                     rid, sc.env, cfg, policy=policy,
-                    home=sc.starts[index], allocation_policy=allocation_policy)
+                    home=sc.starts[index], allocation_policy=allocation_policy,
+                    terminal_records=terminal_records)
                 # An auction node reconstructs its catalog from peer gossip after a
                 # restart. Pre-assigned work has no distributed owner record, so its
                 # static queue is restored explicitly for that comparison mode.
@@ -250,19 +267,49 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
                 world.remove_obstacle(event.oid)
                 cleared_obstacles.add(event.oid)
 
+        if uses_allocation:
+            # The injector observes terminal lifecycle only so it can stop repeating
+            # completed jobs. It never evaluates bids, chooses a winner, or sends an
+            # award; task allocation remains entirely peer-to-peer. A missed report
+            # merely causes harmless repeated TASK_NEW anti-entropy.
+            for report in net.poll(t, WMS_ID):
+                if report.type != msg.TASK_DONE or report.body.get("cv") is None:
+                    continue
+                certificate = CompletionCertificate.from_mapping(report.body)
+                if certificate is None:
+                    continue
+                expected = announced_identities.get(certificate.task_id)
+                direct_owner = (
+                    certificate.owner == report.src
+                    and not bool(report.body.get("relay")))
+                verified_relay = (
+                    bool(report.body.get("relay"))
+                    and certificate.owner != report.src
+                    and report.src in brains
+                    and certificate.owner in brains)
+                if certificate.key == expected and (direct_owner or verified_relay):
+                    wms_completed.add(certificate.task_id)
+
         if uses_allocation and t >= next_wms_announcement:
             # TASK_NEW is an idempotent catalog announcement, not a one-shot command.
             # Repeating it is essential: if every robot loses the first multicast,
             # peer gossip has no copy from which to repair the missing task. Existing
             # or completed tasks ignore the same-epoch repeat.
-            next_wms_announcement = t + 2.0 * cfg.traffic.task_gossip_period_s
+            next_wms_announcement = t + cfg.traffic.wms_announcement_period_s
             for tk in announced_tasks:
+                if tk.tid in wms_completed:
+                    continue
                 seq += 1
                 announcement = msg.task_new(
                     WMS_ID, seq, t, tk.tid, tk.pick, tk.drop, epoch=0,
                     bid_until=t + cfg.traffic.auction_bid_window_s,
                     cargo_type=tk.cargo_type, cargo_weight=tk.cargo_weight,
-                    priority=tk.priority, deadline=tk.deadline)
+                    priority=tk.priority, deadline=tk.deadline,
+                    generation=tk.generation,
+                    descriptor_hash=tk.descriptor_hash or None,
+                    descriptor_deadline_s=(
+                        tk.descriptor_deadline_s
+                        if tk.descriptor_deadline_s is not None else tk.deadline))
                 net.send(t, WMS_ID, announcement)
                 if trace is not None:
                     auction_events.append(_auction_event(announcement))
@@ -422,6 +469,10 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         rejected_task_conflicts=int(agg("rejected_task_conflicts")),
         rejected_task_completions=int(agg("rejected_task_completions")),
         rejected_directed_awards=int(agg("rejected_directed_awards")),
+        completion_certificates_accepted=int(agg("completion_certificates_accepted")),
+        completion_certificates_relayed=int(agg("completion_certificates_relayed")),
+        task_resurrections_suppressed=int(agg("task_resurrections_suppressed")),
+        deadline_misses=int(agg("deadline_misses")),
         allocation_compute_mean_ms=(
             round(statistics.mean(allocation_samples), 4)
             if allocation_samples else 0.0),

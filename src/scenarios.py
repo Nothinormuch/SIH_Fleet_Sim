@@ -114,6 +114,9 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
             "deadline": task.deadline,
             "lease_owner": task.lease_owner,
             "lease_until": task.lease_until,
+            "generation": task.generation,
+            "descriptor_hash": task.descriptor_hash,
+            "descriptor_deadline_s": task.descriptor_deadline_s,
         }
 
     if allocation in ACTIVE_ALLOCATION_POLICIES:
@@ -602,6 +605,9 @@ def _showcase_profile(sc: Scenario, name: str) -> Scenario:
             cargo_weight=cargo_weight,
             priority=priority,
             deadline=(deadline_base + 15.0 * index) if index % 3 == 1 else None,
+            generation=task.generation,
+            descriptor_hash=task.descriptor_hash,
+            descriptor_deadline_s=task.descriptor_deadline_s,
         ))
     sc.unassigned = profiled
     sc.assignments = [[] for _ in range(sc.n_robots)]

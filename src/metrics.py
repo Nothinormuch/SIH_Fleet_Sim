@@ -179,6 +179,10 @@ class PolicyResult:
     rejected_task_conflicts: int = 0
     rejected_task_completions: int = 0
     rejected_directed_awards: int = 0
+    completion_certificates_accepted: int = 0
+    completion_certificates_relayed: int = 0
+    task_resurrections_suppressed: int = 0
+    deadline_misses: int = 0
     allocation_compute_mean_ms: float = 0.0
     allocation_compute_median_ms: float = 0.0
     allocation_compute_p95_ms: float = 0.0

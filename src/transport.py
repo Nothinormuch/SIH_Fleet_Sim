@@ -165,7 +165,8 @@ class SimNetwork:
             # on their content and send time; sequence is deliberately excluded because
             # event-triggered policies allocate fewer preceding sequence numbers.
             identity = json.dumps(
-                [self.seed, src, dst, message.type, round(float(t), 6), message.body],
+                [self.seed, src, dst, message.type, round(float(t), 6),
+                 msg.delivery_identity_body(message)],
                 sort_keys=True, separators=(",", ":"), allow_nan=False,
             ).encode("utf-8")
             digest = hashlib.blake2b(identity, digest_size=16).digest()

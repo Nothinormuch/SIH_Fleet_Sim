@@ -342,7 +342,11 @@ class World:
                     # Preserve a personal-space margin without turning the pedestrian
                     # model into an invisible wall wider than the robot's own local
                     # braking field. Layer 0 remains responsible for the final stop.
-                    threshold = h.radius + spec.radius_m + 0.27
+                    # Preserve at least the checked 0.90 m centre separation after
+                    # accounting for one integration step of robot braking. The human
+                    # remains non-communicating; this is their own local perception,
+                    # complementary to (not a substitute for) the AMR safety bubble.
+                    threshold = h.radius + spec.radius_m + 0.35
                     start_distance = dist(prev_h[hid], (robot.x, robot.y))
                     end_distance = dist(candidate, (robot.x, robot.y))
                     clearance = segments_min_distance(

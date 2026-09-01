@@ -175,6 +175,12 @@ def run_distributed_demo(scenario_name: str = "open_floor_control",
                     cargo_type=task.cargo_type,
                     cargo_weight=task.cargo_weight,
                     priority=task.priority, deadline=task.deadline,
+                    generation=task.generation,
+                    descriptor_hash=task.descriptor_hash or None,
+                    descriptor_deadline_s=(
+                        task.descriptor_deadline_s
+                        if task.descriptor_deadline_s is not None
+                        else task.deadline),
                 ))
 
         dt = 1.0 / DEFAULT.rates.world_hz

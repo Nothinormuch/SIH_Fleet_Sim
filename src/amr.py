@@ -52,6 +52,7 @@ from .priority import PriorityKey, pibt_step
 from .settings import Config
 from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
                               ALLOCATION_HUNGARIAN, validate_allocation_policy)
+from .task_protocol import CompletionCertificate, task_descriptor_hash
 from .topology import analyse_topology, directed_circulation
 from .world import Actuation, Sensors
 
@@ -110,6 +111,13 @@ class Task:
     # Local mirror for observability; `_task_claims` remains authoritative.
     lease_owner: str | None = None
     lease_until: float = 0.0
+    # WMS-controlled logical-job identity. Auction retries advance ``auction_epoch``;
+    # only a genuinely new warehouse job may advance ``generation``.
+    generation: int = 0
+    descriptor_hash: str = ""
+    # Immutable WMS deadline relative to the workload origin. Runtime ``deadline`` is
+    # receiver-local and therefore cannot participate directly in a cross-node hash.
+    descriptor_deadline_s: float | None = None
 
 
 @dataclass
@@ -137,7 +145,8 @@ class AMRBrain:
     def __init__(self, rid: str, env: Warehouse, cfg: Config,
                  policy: str = POLICY_HIERARCHICAL, home: Cell = (0, 0),
                  allocation_policy: str | None = None,
-                 policy_model=None) -> None:
+                 policy_model=None,
+                 terminal_records: list[dict] | None = None) -> None:
         if policy not in POLICIES:
             raise ValueError(f"unknown policy {policy!r}")
         validate_allocation_policy(allocation_policy)
@@ -162,8 +171,9 @@ class AMRBrain:
         self.pidx = 0
         self.goal: Cell | None = None
         self.task: Task | None = None
-        # ``auction_bundle`` is an experimental BIOS 6 allocator, not a new motion
-        # policy. It may hold exactly one leased task after the executing task.
+        # ``auction_bundle`` is the released BIOS 6 Auction V2 allocator, not a new
+        # motion policy. It may hold exactly one leased task after the executing task;
+        # ordinary ``auction`` remains the frozen idle-only comparison.
         self.future_task: Task | None = None
         self._future_context: tuple[str, int, int] | None = None
         self._future_bid: tuple[str, int, str, int, int, float] | None = None
@@ -172,7 +182,8 @@ class AMRBrain:
         ] = {}
         self._pending_unknown_bids: dict[
             str, list[tuple[float, str, int, float,
-                            tuple[str, int, int] | None]]
+                            tuple[str, int, int] | None,
+                            int | None, str | None]]
         ] = {}
         self._peer_future_nominations: dict[
             str, tuple[int, float, float, str, int, int]
@@ -186,7 +197,11 @@ class AMRBrain:
         self._known_peer_ids: set[str] = set()
         self._task_descriptors: dict[str, tuple] = {}
         self._task_descriptor_from_wms: set[str] = set()
-        self._completion_proofs: dict[str, tuple[int, str]] = {}
+        self._completion_proofs: dict[str, CompletionCertificate] = {}
+        self._terminal_tombstones: dict[
+            tuple[str, int, str], CompletionCertificate
+        ] = {}
+        self._terminal_high_watermarks: dict[str, int] = {}
         self.allocation_compute_ms: list[float] = []
         self.state = ST_IDLE
         self.mode = MODE_P2P
@@ -245,8 +260,10 @@ class AMRBrain:
         self._v3_corridor_waves: dict[int, tuple[Cell, tuple[str, ...]]] = {}
         self._last_catalog_broadcast = -1e9
         self._catalog_cursor = 0
+        self._task_network_healthy_since: float | None = None
         self._last_completion_broadcast = -1e9
         self._completion_cursor = 0
+        self._completion_network_healthy_since: float | None = None
         self._last_heartbeat_broadcast = -1e9
         self._last_heartbeat_signature: tuple | None = None
         self._last_intent_broadcast = -1e9
@@ -400,7 +417,106 @@ class AMRBrain:
             "rejected_task_conflicts": 0,
             "rejected_task_completions": 0,
             "rejected_directed_awards": 0,
+            "completion_certificates_accepted": 0,
+            "completion_certificates_relayed": 0,
+            "task_resurrections_suppressed": 0,
+            "deadline_misses": 0,
         }
+        self._restore_terminal_records(terminal_records or [])
+
+    def _restore_terminal_records(self, records: list[dict]) -> None:
+        """Restore validated terminal facts without performing any filesystem I/O."""
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            certificate = CompletionCertificate.from_mapping(record)
+            if certificate is None:
+                continue
+            self._terminal_tombstones[certificate.key] = certificate
+            current = self._completion_proofs.get(certificate.task_id)
+            if current is None or (
+                    certificate.generation, certificate.auction_epoch,
+                    certificate.owner) > (
+                        current.generation, current.auction_epoch, current.owner):
+                self._completion_proofs[certificate.task_id] = certificate
+            self._terminal_high_watermarks[certificate.task_id] = max(
+                certificate.generation,
+                self._terminal_high_watermarks.get(certificate.task_id, -1),
+            )
+            self.completed_tasks.add(certificate.task_id)
+
+    def export_terminal_records(self) -> list[dict]:
+        """Return deterministic records for a persistence adapter or restart harness."""
+        return [
+            certificate.to_mapping()
+            for _key, certificate in sorted(self._terminal_tombstones.items())
+        ]
+
+    @staticmethod
+    def _task_identity(task: Task) -> tuple[str, int, str]:
+        return task.tid, task.generation, task.descriptor_hash
+
+    @staticmethod
+    def _ensure_task_identity(task: Task) -> None:
+        if not task.descriptor_hash:
+            deadline_s = (
+                task.descriptor_deadline_s
+                if task.descriptor_deadline_s is not None else task.deadline
+            )
+            task.descriptor_deadline_s = deadline_s
+            task.descriptor_hash = task_descriptor_hash(
+                task.tid, task.generation, task.pick, task.drop,
+                task.cargo_type, task.cargo_weight, task.priority, deadline_s,
+            )
+
+    def _is_terminal_identity(self, task_id: str, generation: int,
+                              descriptor_hash: str) -> bool:
+        return (task_id, generation, descriptor_hash) in self._terminal_tombstones
+
+    def _install_terminal_certificate(
+            self, certificate: CompletionCertificate, *, cancel_active: bool) -> bool:
+        """Install one validated terminal fact and purge its transient auction state."""
+        if certificate.key in self._terminal_tombstones:
+            return False
+        current_generation = self._terminal_high_watermarks.get(
+            certificate.task_id, -1)
+        if certificate.generation < current_generation:
+            return False
+        self._terminal_tombstones[certificate.key] = certificate
+        self._terminal_high_watermarks[certificate.task_id] = max(
+            current_generation, certificate.generation)
+        self._completion_proofs[certificate.task_id] = certificate
+        self.completed_tasks.add(certificate.task_id)
+
+        active_matches = (
+            self.task is not None
+            and self._task_identity(self.task) == certificate.key
+        )
+        if cancel_active and active_matches:
+            self._drop_current_task()
+            self._needs_duplicate_vacate = True
+        if (self.future_task is not None
+                and self._task_identity(self.future_task) == certificate.key):
+            self.future_task = None
+            self._future_context = None
+            self._future_bid = None
+            self._future_generation = (
+                self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
+
+        tid = certificate.task_id
+        current = self.open_tasks.get(tid)
+        if current is None or self._task_identity(current) == certificate.key:
+            self.open_tasks.pop(tid, None)
+        self._task_claims.pop(tid, None)
+        self._bids.pop(tid, None)
+        self._bid_opened.pop(tid, None)
+        self._awarded.discard(tid)
+        self._peer_nominations.pop(tid, None)
+        self._peer_future_nominations.pop(tid, None)
+        for key in [key for key in self._bid_seen_t if key[0] == tid]:
+            self._bid_seen_t.pop(key, None)
+        self.stats["completion_certificates_accepted"] += 1
+        return True
 
     # ================================================================== main tick
 
@@ -776,6 +892,10 @@ class AMRBrain:
         if stat <= spec.safety_margin_m * 0.7:
             self.stats["safety_stops"] += 1
             return Actuation(v=0.0, omega=act.omega, safety_stop=True)
+        # Mapped shelves use a conservative crawl cap near the fixture. Rotation from
+        # residual forward speed is separately interlocked in the hold/recovery path;
+        # applying a braking-distance cap to every normal aisle-following tick creates
+        # an unnecessary throughput penalty even when the chassis is centred.
         if stat < 0.5:
             v = min(v, 0.35 * spec.v_max)
         return Actuation(v=v, omega=act.omega, safety_stop=act.safety_stop)
@@ -2400,7 +2520,10 @@ class AMRBrain:
                 str(body["active"]), int(body.get("ae", 0)),
                 int(body.get("bv", 0)))
         entry = (
-            t, source, int(body.get("e", 0)), float(body["cost"]), context)
+            t, source, int(body.get("e", 0)), float(body["cost"]), context,
+            int(body["g"]) if body.get("g") is not None else None,
+            str(body["dh"]) if body.get("dh") is not None else None,
+        )
         self._pending_unknown_bids.setdefault(str(body["task"]), []).append(entry)
         self.stats["deferred_unknown_bids"] += 1
         limit = max(1, self.cfg.traffic.auction_unknown_bid_cache_max)
@@ -2418,10 +2541,15 @@ class AMRBrain:
         if task is None:
             return
         ttl = max(0.0, self.cfg.traffic.auction_unknown_bid_cache_ttl_s)
-        for seen_t, source, epoch, cost, context in self._pending_unknown_bids.pop(
-                tid, []):
+        for (seen_t, source, epoch, cost, context,
+             generation, descriptor_hash) in self._pending_unknown_bids.pop(tid, []):
             if t - seen_t > ttl or not self._safe_incoming_epoch(
                     task.auction_epoch, epoch) or epoch < task.auction_epoch:
+                self.stats["rejected_unknown_bids"] += 1
+                continue
+            if (descriptor_hash is not None
+                    and (generation != task.generation
+                         or descriptor_hash != task.descriptor_hash)):
                 self.stats["rejected_unknown_bids"] += 1
                 continue
             if epoch > task.auction_epoch:
@@ -2578,19 +2706,22 @@ class AMRBrain:
             self.goal = self.task.drop
             self._replan(t, sensors.cell)
         elif self.goal == self.task.drop and self._arrived(sensors, self.task.drop):
-            completed_tid = self.task.tid
-            self.completed.append((self.task.tid, self._task_started_t, t))
+            completed_task = self.task
+            self._ensure_task_identity(completed_task)
+            completed_tid = completed_task.tid
+            if (completed_task.deadline is not None
+                    and t > completed_task.deadline + 1e-9):
+                self.stats["deadline_misses"] += 1
+            self.completed.append((completed_tid, self._task_started_t, t))
+            certificate = CompletionCertificate.create(
+                completed_tid, completed_task.generation,
+                completed_task.descriptor_hash, self.rid,
+                completed_task.auction_epoch, t,
+            )
             outbox.append(msg.task_done(
-                self.rid, self._next_seq(), t, self.task.tid,
-                epoch=self.task.auction_epoch))
-            self._completion_proofs[self.task.tid] = (
-                self.task.auction_epoch, self.rid)
-            self.open_tasks.pop(self.task.tid, None)
-            self.completed_tasks.add(self.task.tid)
-            self._task_claims.pop(self.task.tid, None)
-            self._bids.pop(self.task.tid, None)
-            self._bid_opened.pop(self.task.tid, None)
-            self._awarded.discard(self.task.tid)
+                self.rid, self._next_seq(), t, completed_tid,
+                certificate=certificate))
+            self._install_terminal_certificate(certificate, cancel_active=False)
             self._record_decision(
                 t, "TASK_COMPLETED", f"Completed {completed_tid}",
                 task=completed_tid,
@@ -2818,7 +2949,8 @@ class AMRBrain:
             self._bid_seen_t[(target.tid, target.auction_epoch, self.rid)] = t
             outbox.append(msg.bid(
                 self.rid, self._next_seq(), t, target.tid, cost,
-                epoch=target.auction_epoch))
+                epoch=target.auction_epoch, generation=target.generation,
+                descriptor_hash=target.descriptor_hash))
             self.stats["auction_bids_sent"] += 1
             return
 
@@ -2846,14 +2978,16 @@ class AMRBrain:
                               bid_cost=winner_cost)
             outbox.append(msg.award(
                 self.rid, self._next_seq(), t, target.tid, winner_cost,
-                epoch=target.auction_epoch, lease_until=lease_until))
+                epoch=target.auction_epoch, lease_until=lease_until,
+                generation=target.generation,
+                descriptor_hash=target.descriptor_hash))
 
     def _run_v3_batch_auction(self, t: float, sensors: Sensors,
                               outbox: list[msg.Message]) -> None:
         """Allocate a congestion-safe batch using replicated peer bids.
 
         There is no auctioneer. Every ordinary-auction AMR remains idle-only. In the
-        experimental ``auction_bundle`` mode, a busy AMR with an empty future slot may
+        released ``auction_bundle`` mode, a busy AMR with an empty future slot may
         advertise exactly one bundle-version-bound future bid. Every participant runs the
         same deterministic
         greedy matching over the bid messages it heard. A robot may win at most one
@@ -2943,7 +3077,8 @@ class AMRBrain:
                     context[0], context[1], context[2], cost)
                 outbox.append(msg.bid(
                     self.rid, self._next_seq(), t, task.tid, cost,
-                    epoch=task.auction_epoch,
+                    epoch=task.auction_epoch, generation=task.generation,
+                    descriptor_hash=task.descriptor_hash,
                     active_task=context[0], active_epoch=context[1],
                     bundle_version=context[2]))
                 self.stats["auction_bids_sent"] += 1
@@ -2980,7 +3115,8 @@ class AMRBrain:
                         or self._v6_should_broadcast_bid(t, task, cost)):
                     outbox.append(msg.bid(
                         self.rid, self._next_seq(), t, task.tid, cost,
-                        epoch=task.auction_epoch))
+                        epoch=task.auction_epoch, generation=task.generation,
+                        descriptor_hash=task.descriptor_hash))
                     self.stats["auction_bids_sent"] += 1
             return
 
@@ -3082,7 +3218,7 @@ class AMRBrain:
         used_robots: set[str] = set()
         used_tasks: set[str] = set()
         assignments: list[tuple[str, str, float, int]] = []
-        capacity = max(1, self.cfg.traffic.auction_drop_capacity)
+        capacity = self._auction_drop_capacity()
         anchor_tasks = set(corridor_anchor.values())
 
         # Contract-net winner per task. Do not cascade a task to its second-best
@@ -3197,6 +3333,10 @@ class AMRBrain:
                         self.rid, self._next_seq(), t, tid, cost,
                         epoch=epoch, lease_until=nomination_until,
                         winner=rid,
+                        generation=(task_record.generation
+                                    if task_record is not None else 0),
+                        descriptor_hash=(task_record.descriptor_hash
+                                         if task_record is not None else None),
                         active_task=context[0] if context else None,
                         active_epoch=context[1] if context else 0,
                         bundle_version=context[2] if context else 0))
@@ -3238,6 +3378,7 @@ class AMRBrain:
         outbox.append(msg.award(
             self.rid, self._next_seq(), t, tid, cost,
             epoch=epoch, lease_until=lease_until,
+            generation=task.generation, descriptor_hash=task.descriptor_hash,
             active_task=future_context[0] if future_context else None,
             active_epoch=future_context[1] if future_context else 0,
             bundle_version=future_context[2] if future_context else 0))
@@ -3343,14 +3484,33 @@ class AMRBrain:
     def _task_urgency(self, task: Task, t: float) -> tuple:
         """Stable priority/deadline order shared by every auction participant.
 
-        Priority is the business rule and the earliest hard deadline breaks equal
-        priorities. Cargo does not alter urgency; it changes feasibility and cost.
-        No receiver-local arrival timestamp participates in this order.
+        A hard deadline is a feasibility constraint, whereas priority is a soft
+        business preference.  Earliest-deadline-first therefore orders hard-deadline
+        work before ordinary work; priority breaks ties inside each class.  Reversing
+        those rules can starve a feasible low-priority deadline until every robot must
+        correctly reject it as impossible.  Cargo does not alter urgency; it changes
+        feasibility and cost.  No receiver-local arrival timestamp participates in
+        this order.
         """
         return (
-            -max(1, int(task.priority)),
             task.deadline is None,
             task.deadline if task.deadline is not None else math.inf,
+            -max(1, int(task.priority)),
+        )
+
+    def _auction_drop_capacity(self) -> int:
+        """Return conservative launch capacity or the bounded drain-phase capacity."""
+        known_task_ids = set(self.open_tasks) | set(self.completed_tasks)
+        completion_fraction = (
+            len(self.completed_tasks) / len(known_task_ids)
+            if known_task_ids else 0.0)
+        drain_phase = (
+            completion_fraction
+            >= self.cfg.traffic.auction_drop_drain_completed_fraction)
+        return max(
+            1,
+            (self.cfg.traffic.auction_drop_drain_capacity
+             if drain_phase else self.cfg.traffic.auction_drop_capacity),
         )
 
     def _cargo_factor(self, cargo_type: str) -> float | None:
@@ -3661,7 +3821,10 @@ class AMRBrain:
                 epoch=task.auction_epoch,
                 bid_until=t + self.cfg.traffic.auction_bid_window_s,
                 cargo_type=task.cargo_type, cargo_weight=task.cargo_weight,
-                priority=task.priority, deadline=task.deadline))
+                priority=task.priority, deadline=task.deadline,
+                generation=task.generation,
+                descriptor_hash=task.descriptor_hash,
+                descriptor_deadline_s=task.descriptor_deadline_s))
         self._record_decision(
             t, "FUTURE_RELEASED", f"Released {task.tid}: {reason}",
             future=task.tid, reason=reason)
@@ -3926,6 +4089,7 @@ class AMRBrain:
     def _accept_task(self, t: float, task: Task, here: Cell,
                      lease_until: float | None = None,
                      bid_cost: float | None = None) -> None:
+        self._ensure_task_identity(task)
         self.task = task
         if lease_until is not None:
             if bid_cost is None:
@@ -3988,6 +4152,12 @@ class AMRBrain:
                 target = cell_center(self.path[self.pidx], self.cfg.cell_m)
                 err = angle_diff(bearing(pos, target), sensors.pose[2])
                 if abs(err) > 0.08:
+                    # A hold may begin while the chassis still has forward momentum.
+                    # Steering before braking completes turns the residual translation
+                    # into an arc and can sweep the circular footprint into side racks.
+                    # Stop straight first; only then rotate in place.
+                    if abs(sensors.v) > 0.08:
+                        return Actuation(0.0, 0.0)
                     return Actuation(
                         0.0, clamp(2.2 * err, -spec.omega_max, spec.omega_max))
             return Actuation(0.0, 0.0)
@@ -4242,7 +4412,9 @@ class AMRBrain:
             self.task.tid, (claim[0], claim[1], self.rid, lease_until))
         outbox.append(msg.award(
             self.rid, self._next_seq(), t, self.task.tid, claim[1],
-            epoch=claim[0], lease_until=lease_until))
+            epoch=claim[0], lease_until=lease_until,
+            generation=self.task.generation,
+            descriptor_hash=self.task.descriptor_hash))
 
     def _broadcast_future_lease(self, t: float,
                                 outbox: list[msg.Message]) -> None:
@@ -4263,6 +4435,7 @@ class AMRBrain:
         outbox.append(msg.award(
             self.rid, self._next_seq(), t, task.tid, claim[1],
             epoch=claim[0], lease_until=lease_until,
+            generation=task.generation, descriptor_hash=task.descriptor_hash,
             active_task=active_tid, active_epoch=active_epoch,
             bundle_version=version))
         self._last_future_lease_broadcast = t
@@ -4277,6 +4450,21 @@ class AMRBrain:
         if (self.policy not in V3_AUCTION_POLICIES or not self._auction_enabled()
                 or t - self._last_catalog_broadcast < period):
             return
+        if self.cfg.net.loss <= 0.0 and not self.cfg.net.dead_zones:
+            peers_fresh = all(
+                peer_id in self.peers
+                and t - self.peers[peer_id].last_seen
+                <= self._peer_stale_after_s()
+                for peer_id in self._known_peer_ids
+            )
+            if peers_fresh:
+                if self._task_network_healthy_since is None:
+                    self._task_network_healthy_since = t
+                if (t - self._task_network_healthy_since
+                        >= 2.0 * self._peer_stale_after_s()):
+                    return
+            else:
+                self._task_network_healthy_since = None
         tasks = sorted(
             (task for task in self.open_tasks.values()
              if task.tid not in self.completed_tasks),
@@ -4284,6 +4472,7 @@ class AMRBrain:
         if not tasks:
             return
         task = tasks[self._catalog_cursor % len(tasks)]
+        self._ensure_task_identity(task)
         self._catalog_cursor += 1
         self._last_catalog_broadcast = t
         outbox.append(msg.task_new(
@@ -4292,7 +4481,9 @@ class AMRBrain:
             bid_until=max(task.bid_deadline,
                           t + self.cfg.traffic.auction_bid_window_s),
             cargo_type=task.cargo_type, cargo_weight=task.cargo_weight,
-            priority=task.priority, deadline=task.deadline))
+            priority=task.priority, deadline=task.deadline,
+            generation=task.generation, descriptor_hash=task.descriptor_hash,
+            descriptor_deadline_s=task.descriptor_deadline_s))
 
     def _broadcast_completion_catalog(self, t: float,
                                       outbox: list[msg.Message]) -> None:
@@ -4301,20 +4492,48 @@ class AMRBrain:
                   if self.policy == POLICY_BIOS_PIBT_V6
                   else self.cfg.traffic.completion_gossip_period_s)
         if (self.policy not in V3_AUCTION_POLICIES or not self._auction_enabled()
-                or (self.circulation.enabled and self.cfg.net.loss <= 0.0
-                    and not self.cfg.net.dead_zones)
                 or t - self._last_completion_broadcast < period):
             return
+        reliable_config = self.cfg.net.loss <= 0.0 and not self.cfg.net.dead_zones
+        if reliable_config:
+            peers_fresh = all(
+                peer_id in self.peers
+                and t - self.peers[peer_id].last_seen
+                <= self._peer_stale_after_s()
+                for peer_id in self._known_peer_ids
+            )
+            if peers_fresh:
+                if self._completion_network_healthy_since is None:
+                    self._completion_network_healthy_since = t
+                recovery_grace_s = 2.0 * self._peer_stale_after_s()
+                if (self.circulation.enabled
+                        or t - self._completion_network_healthy_since
+                        >= recovery_grace_s):
+                    return
+            else:
+                # A partition or restart makes at least one known peer stale. Keep
+                # anti-entropy active and, after recovery, retain a two-stale-window
+                # grace so terminal facts sent inside the outage can cross the heal.
+                self._completion_network_healthy_since = None
         completed = sorted(self.completed_tasks)
         if not completed:
             return
         tid = completed[self._completion_cursor % len(completed)]
         self._completion_cursor += 1
         self._last_completion_broadcast = t
-        epoch, owner = self._completion_proofs.get(tid, (0, self.rid))
+        certificate = self._completion_proofs.get(tid)
+        if certificate is None:
+            # Legacy/pre-assigned callers may populate ``completed_tasks`` directly.
+            # Preserve their wire behavior, but only certificates receive the stronger
+            # cross-epoch terminal semantics on ingestion.
+            outbox.append(msg.task_done(
+                self.rid, self._next_seq(), t, tid, epoch=0))
+            return
         outbox.append(msg.task_done(
             self.rid, self._next_seq(), t, tid,
-            epoch=epoch, owner=(owner if owner != self.rid else None)))
+            certificate=certificate))
+        if certificate.owner != self.rid:
+            self.stats["completion_certificates_relayed"] += 1
 
     def _intent_horizon(self, t: float) -> tuple[list[Cell], list[tuple[float, float]]]:
         # A completed task can leave its final waypoint in ``path`` until the next
@@ -4385,12 +4604,29 @@ class AMRBrain:
                     self._v6_ingest_experience(t, m.src, b.get("edges", []))
             elif m.type == msg.TASK_NEW:
                 tid = b["task"]
-                if tid in self.completed_tasks:
-                    continue
                 epoch = int(b.get("e", 0))
+                generation = int(b.get("g", 0))
                 cargo_type = str(b.get("ct", "normal"))
                 cargo_weight = float(b.get("cw", 0.0))
                 task_priority = int(b.get("pr", 1))
+                descriptor_deadline_s = (
+                    None if b.get("dd") is None else float(b["dd"])
+                )
+                descriptor_hash = str(b.get("dh") or task_descriptor_hash(
+                    tid, generation, b["pk"], b["dp"], cargo_type,
+                    cargo_weight, task_priority, descriptor_deadline_s,
+                ))
+                if self._is_terminal_identity(tid, generation, descriptor_hash):
+                    self.stats["task_resurrections_suppressed"] += 1
+                    continue
+                terminal_generation = self._terminal_high_watermarks.get(tid, -1)
+                if generation <= terminal_generation:
+                    # A different descriptor at or below a verified terminal generation
+                    # is neither a retry nor a new WMS job. Never resurrect it.
+                    self.stats["task_resurrections_suppressed"] += 1
+                    continue
+                if generation > terminal_generation:
+                    self.completed_tasks.discard(tid)
                 due = b.get("due")
                 task_deadline = (None if due is None
                                  else t + float(due))
@@ -4405,16 +4641,33 @@ class AMRBrain:
                 else:
                     deadline = t + self.cfg.traffic.auction_bid_window_s
                 current = self.open_tasks.get(tid)
+                if current is not None and generation < current.generation:
+                    continue
+                if current is not None and generation > current.generation:
+                    # A genuinely newer WMS generation has independent auction state.
+                    # No delayed bid, award, or completion from the old generation may
+                    # carry into it.
+                    self._task_claims.pop(tid, None)
+                    self._bids.pop(tid, None)
+                    self._bid_opened.pop(tid, None)
+                    self._awarded.discard(tid)
+                    self._peer_nominations.pop(tid, None)
+                    self._peer_future_nominations.pop(tid, None)
+                    self.completed_tasks.discard(tid)
+                    current = None
                 current_epoch = current.auction_epoch if current is not None else 0
                 if not self._safe_incoming_epoch(current_epoch, epoch):
                     self.stats["rejected_epoch_jumps"] += 1
                     continue
                 incoming_descriptor = (
+                    generation, descriptor_hash,
                     msg.as_cell(b["pk"]), msg.as_cell(b["dp"]),
-                    cargo_type, round(cargo_weight, 6), task_priority)
+                    cargo_type, round(cargo_weight, 6), task_priority,
+                    descriptor_deadline_s)
                 known_descriptor = self._task_descriptors.get(tid)
                 descriptor_conflict = (
                     known_descriptor is not None
+                    and known_descriptor[0] == generation
                     and known_descriptor != incoming_descriptor)
                 if descriptor_conflict and (
                         m.src != "WMS" or tid in self._task_descriptor_from_wms):
@@ -4429,7 +4682,9 @@ class AMRBrain:
                         drop=msg.as_cell(b["dp"]), announced_t=t,
                         auction_epoch=epoch, bid_deadline=float(deadline),
                         cargo_type=cargo_type, cargo_weight=cargo_weight,
-                        priority=task_priority, deadline=task_deadline)
+                        priority=task_priority, deadline=task_deadline,
+                        generation=generation, descriptor_hash=descriptor_hash,
+                        descriptor_deadline_s=descriptor_deadline_s)
                 elif epoch > current.auction_epoch:
                     current.auction_epoch = epoch
                     current.bid_deadline = float(deadline)
@@ -4437,6 +4692,9 @@ class AMRBrain:
                     current.cargo_weight = cargo_weight
                     current.priority = task_priority
                     current.deadline = task_deadline
+                    current.generation = generation
+                    current.descriptor_hash = descriptor_hash
+                    current.descriptor_deadline_s = descriptor_deadline_s
                     self._bids.pop(tid, None)
                     self._bid_opened.pop(tid, None)
                 else:
@@ -4466,6 +4724,9 @@ class AMRBrain:
                     current.cargo_weight = cargo_weight
                     current.priority = task_priority
                     current.deadline = task_deadline
+                    current.generation = generation
+                    current.descriptor_hash = descriptor_hash
+                    current.descriptor_deadline_s = descriptor_deadline_s
                 claim = self._task_claims.get(tid)
                 task_record = self.open_tasks.get(tid)
                 if claim is not None and task_record is not None:
@@ -4478,6 +4739,11 @@ class AMRBrain:
                 task = self.open_tasks.get(tid)
                 if task is None:
                     self._cache_unknown_bid(t, m.src, b)
+                    continue
+                if (b.get("dh") is not None
+                        and (int(b.get("g", 0)) != task.generation
+                             or str(b["dh"]) != task.descriptor_hash)):
+                    self.stats["rejected_task_conflicts"] += 1
                     continue
                 if not self._safe_incoming_epoch(task.auction_epoch, epoch):
                     self.stats["rejected_epoch_jumps"] += 1
@@ -4527,6 +4793,11 @@ class AMRBrain:
                         self._awarded.add(tid)
                     continue
                 if task is None:
+                    continue
+                if (b.get("dh") is not None
+                        and (int(b.get("g", 0)) != task.generation
+                             or str(b["dh"]) != task.descriptor_hash)):
+                    self.stats["rejected_task_conflicts"] += 1
                     continue
                 if not self._safe_incoming_epoch(task.auction_epoch, epoch):
                     self.stats["rejected_epoch_jumps"] += 1
@@ -4585,6 +4856,41 @@ class AMRBrain:
             elif m.type == msg.TASK_DONE:
                 tid = b["task"]
                 task = self.open_tasks.get(tid)
+                if b.get("cv") is not None:
+                    certificate = CompletionCertificate.from_mapping(b)
+                    if certificate is None:
+                        self.stats["rejected_task_completions"] += 1
+                        continue
+                    if certificate.key in self._terminal_tombstones:
+                        continue
+                    direct_owner = (
+                        certificate.owner == m.src and not bool(b.get("relay"))
+                    )
+                    validated_relay = (
+                        bool(b.get("relay"))
+                        and certificate.owner != m.src
+                        and m.src in self._known_peer_ids
+                        and certificate.owner in self._known_peer_ids
+                    )
+                    identity_matches = (
+                        task is not None
+                        and self._task_identity(task) == certificate.key
+                    )
+                    # The ownership proof is self-consistent by construction and the
+                    # authenticated transport binds the direct sender to fleet
+                    # membership. Crucially, the allocation epoch may have advanced:
+                    # completion terminates this immutable generation, not merely one
+                    # transient auction attempt.
+                    if not identity_matches or not (direct_owner or validated_relay):
+                        self.stats["rejected_task_completions"] += 1
+                        continue
+                    self._install_terminal_certificate(
+                        certificate, cancel_active=True)
+                    continue
+
+                # Backward-compatible legacy evidence remains deliberately strict. It
+                # cannot dominate a newer auction because it carries no generation or
+                # immutable descriptor binding.
                 if task is None:
                     continue
                 epoch = int(b.get("e", 0))
@@ -4596,49 +4902,22 @@ class AMRBrain:
                     and m.src in self._known_peer_ids
                     and owner in self._known_peer_ids
                 )
-                valid_completion = (
+                if not (
                     epoch == task.auction_epoch
-                    # Direct self-attestation is required for duplicate-winner
-                    # convergence: partitioned peers can each hold a different
-                    # same-epoch claim, but a completed physical job must not be
-                    # executed again. Transport authentication establishes source
-                    # membership; stale epochs and third-party owner names that do not
-                    # match the locally replicated claim remain rejected. A relay is
-                    # accepted only while it carries that same owner/epoch proof,
-                    # preserving completion convergence under packet loss.
                     and (owner == m.src
                          or (claim is not None and claim[0] == epoch
                              and claim[2] == owner)
                          or validated_relay)
-                )
-                if not valid_completion:
+                ):
                     self.stats["rejected_task_completions"] += 1
                     continue
-                # A partition or asymmetric bid view can briefly create duplicate
-                # winners. Completion is the convergence point: a robot still
-                # executing that same logical task must cancel its stale copy or it
-                # remains live traffic forever and can block unrelated final work.
-                if (self.policy in ENERGY_AUCTION_POLICIES
-                        and self.task is not None and self.task.tid == tid):
-                    self._drop_current_task()
-                    self._needs_duplicate_vacate = True
-                if self.future_task is not None and self.future_task.tid == tid:
-                    self.future_task = None
-                    self._future_context = None
-                    self._future_bid = None
-                    self._future_generation = (
-                        self._future_generation + 1) % msg.MAX_AUCTION_EPOCH
-                self.open_tasks.pop(tid, None)
-                self.completed_tasks.add(tid)
-                self._completion_proofs[tid] = (epoch, owner)
-                self._task_claims.pop(tid, None)
-                self._bids.pop(tid, None)
-                self._bid_opened.pop(tid, None)
-                self._awarded.discard(tid)
-                self._peer_nominations.pop(tid, None)
-                self._peer_future_nominations.pop(tid, None)
-                for key in [key for key in self._bid_seen_t if key[0] == tid]:
-                    self._bid_seen_t.pop(key, None)
+                self._ensure_task_identity(task)
+                legacy_certificate = CompletionCertificate.create(
+                    tid, task.generation, task.descriptor_hash,
+                    owner, epoch, max(0.0, float(m.t)),
+                )
+                self._install_terminal_certificate(
+                    legacy_certificate, cancel_active=True)
             elif m.type == msg.MGR_BEACON:
                 self._mgr_seen = t
             elif m.type in (msg.CLAIM, msg.RELEASE) and b.get("b"):
