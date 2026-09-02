@@ -74,6 +74,22 @@ function hexCss(value) {
 const TEXTURE_LOADER = new THREE.TextureLoader();
 const TEXTURES = {};
 
+/* A status badge: a camera-facing sprite carrying one of the rendered icons.
+ *
+ * Deliberately a Sprite rather than a quad. State is the one thing on this screen
+ * that must be readable from any angle, and a badge that turns edge-on when the
+ * operator orbits is worse than the halo colour it is meant to reinforce.
+ */
+function badge(name, size = .52) {
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texture(name), transparent: true, depthTest: false, sizeAttenuation: true,
+  }));
+  sprite.scale.set(size, size, 1);
+  sprite.renderOrder = 90;
+  sprite.visible = false;
+  return sprite;
+}
+
 function texture(name, {repeat = null, srgb = true} = {}) {
   const key = `${name}|${repeat ? repeat.join('x') : '1'}`;
   if (TEXTURES[key]) return TEXTURES[key];
@@ -663,6 +679,14 @@ export class DigitalTwin {
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(slotX * cell, cell * 1.055, slotZ * cell);
     marker.add(ring);
+    if (delivered) {
+      // Delivered markers already turn green; the badge is what makes "this one
+      // is finished" legible without knowing that green is the code.
+      const done = badge('badge_complete.png', cell * .42);
+      done.position.set(slotX * cell, cell * 1.42, slotZ * cell);
+      done.visible = true;
+      marker.add(done);
+    }
     marker.userData = {
       taskMarker: true, taskId: task.id, delivered, rackCell: rack,
     };
@@ -840,7 +864,20 @@ export class DigitalTwin {
     label.position.y = 1.34;
     label.scale.multiplyScalar(.84);
     group.add(label);
-    group.userData = {robotId: id, colour, halo, selection, label, beacon, wheels, payload};
+    // State badges. The halo already encodes state as colour; these say which
+    // state in words a judge does not have to be taught.
+    // Above the name plate, not level with it: the label is a 2.1 x 0.59 sprite at
+    // y 1.34 with renderOrder 100 and depthTest off, so a badge sharing that
+    // height is simply painted over.
+    const badgeCharging = badge('badge_charging.png', .58);
+    const badgeBlocked = badge('badge_deadlock.png', .58);
+    for (const b of [badgeCharging, badgeBlocked]) {
+      b.position.set(0, 1.96, 0);
+      b.renderOrder = 101;
+      group.add(b);
+    }
+    group.userData = {robotId: id, colour, halo, selection, label, beacon, wheels, payload,
+                      badgeCharging, badgeBlocked};
     this.dynamic.add(group);
     this.robots.set(id, group);
     return group;
@@ -849,47 +886,41 @@ export class DigitalTwin {
   _ensureHuman(id) {
     if (this.humans.has(id)) return this.humans.get(id);
     const group = new THREE.Group();
-    const uniform = new THREE.MeshStandardMaterial({color: 0x24384a, roughness: .78});
-    const vestMaterial = new THREE.MeshStandardMaterial({color: 0xf5b843, roughness: .64});
-    const skin = new THREE.MeshStandardMaterial({color: 0xd9a276, roughness: .82});
+    const index = Math.max(0, (parseInt(id.replace(/\D/g, ''), 10) || 1) - 1);
+
+    /* A cross-billboard, not an articulated figure.
+     *
+     * Two quads at right angles, both carrying a photographed worker, rotated to
+     * the pedestrian's heading. The crossed pair is what keeps it from vanishing:
+     * a single plane disappears edge-on, which for a pedestrian is exactly the
+     * moment they are walking straight at a robot and you most want to see them.
+     *
+     * This trades the old capsule figure's articulated stride for a much better
+     * likeness. It keeps everything else the simulation actually publishes -
+     * heading, the yield ring, and the working pose - and fakes the walk with a
+     * bob, which at the distance a whole warehouse is framed at is what a stride
+     * reads as anyway.
+     */
+    const VESTS = ['worker_hi.png', 'worker_orange.png', 'worker_blue.png'];
+    const map = texture(VESTS[index % VESTS.length]);
+    const figure = new THREE.Group();
+    for (const turn of [0, Math.PI / 2]) {
+      const quad = new THREE.Mesh(
+        new THREE.PlaneGeometry(.86, 1.72),
+        new THREE.MeshBasicMaterial({map, transparent: true, alphaTest: .35,
+                                     side: THREE.DoubleSide, depthWrite: true}),
+      );
+      quad.position.y = .86;
+      quad.rotation.y = turn;
+      figure.add(quad);
+    }
+    group.add(figure);
+
+    // Kept as empty arrays: the update loop drives limbs and arms for the old
+    // figure and a billboard has neither, but the loop should not have to know.
     const limbs = [];
     const arms = [];
-    for (const x of [-.1, .1]) {
-      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.075, .47, 5, 10), uniform);
-      leg.position.set(x, .34, 0);
-      leg.castShadow = true;
-      limbs.push(leg);
-      group.add(leg);
-    }
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(.2, .47, 6, 14), vestMaterial);
-    body.position.y = .97;
-    body.castShadow = true;
-    for (const x of [-.27, .27]) {
-      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(.055, .39, 5, 9), uniform);
-      arm.position.set(x, .96, 0);
-      arm.rotation.z = x < 0 ? -.12 : .12;
-      arm.castShadow = true;
-      limbs.push(arm);
-      arms.push(arm);
-      group.add(arm);
-    }
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(.2, 20, 14),
-      skin,
-    );
-    head.position.y = 1.48;
-    head.castShadow = true;
-    const helmet = new THREE.Mesh(
-      new THREE.SphereGeometry(.215, 20, 10, 0, Math.PI * 2, 0, Math.PI * .58),
-      new THREE.MeshStandardMaterial({color: 0xf2cf45, roughness: .48}),
-    );
-    helmet.position.y = 1.56;
-    const stripe = new THREE.Mesh(
-      new THREE.TorusGeometry(.215, .026, 8, 28),
-      new THREE.MeshBasicMaterial({color: 0xf8ffb5}),
-    );
-    stripe.rotation.x = Math.PI / 2;
-    stripe.position.y = 1.02;
+
     const pauseRing = new THREE.Mesh(
       new THREE.RingGeometry(.42, .5, 36),
       new THREE.MeshBasicMaterial({color: PALETTE.amber, transparent: true, opacity: .72,
@@ -898,6 +929,8 @@ export class DigitalTwin {
     pauseRing.rotation.x = -Math.PI / 2;
     pauseRing.position.y = .025;
     pauseRing.visible = false;
+    group.add(pauseRing);
+
     const workTool = new THREE.Group();
     const tablet = new THREE.Mesh(
       new THREE.BoxGeometry(.30, .38, .045),
@@ -905,21 +938,17 @@ export class DigitalTwin {
     );
     const tabletScreen = new THREE.Mesh(
       new THREE.BoxGeometry(.24, .30, .012),
-      new THREE.MeshBasicMaterial({color: 0x55dfff}),
+      new THREE.MeshStandardMaterial({color: 0x0d4f63, emissive: PALETTE.cyan,
+        emissiveIntensity: .55, roughness: .3}),
     );
-    tabletScreen.position.z = -.029;
+    tabletScreen.position.z = .03;
     workTool.add(tablet, tabletScreen);
-    workTool.position.set(0, 1.02, -.30);
-    workTool.rotation.x = -.34;
+    workTool.position.set(.24, 1.02, .30);
+    workTool.rotation.set(-.5, .3, 0);
     workTool.visible = false;
-    group.add(body, head, helmet, stripe, pauseRing, workTool);
-    // The yellow vest and helmet already communicate the role. A compact ID avoids
-    // the long "WORKER" plaques covering AMR labels when both share a junction.
-    const label = makeLabel(id, '#f5b843', true);
-    label.position.y = 2.02;
-    label.scale.multiplyScalar(.52);
-    group.add(label);
-    group.userData = {limbs, arms, pauseRing, workTool};
+    group.add(workTool);
+
+    group.userData = {limbs, arms, pauseRing, workTool, figure};
     this.dynamic.add(group);
     this.humans.set(id, group);
     return group;
@@ -978,6 +1007,11 @@ export class DigitalTwin {
         : info.state === 'retreat' ? PALETTE.amber
         : group.userData.colour;
       group.userData.halo.material.color.setHex(stateColour);
+      // One badge at a time, and blocked wins: a robot that is both charging and
+      // stuck is a stuck robot, and that is the one worth showing.
+      const blocked = Boolean(info.failed) || info.state === 'blocked';
+      group.userData.badgeBlocked.visible = blocked;
+      group.userData.badgeCharging.visible = !blocked && info.state === 'charging';
       group.userData.halo.material.opacity = .48 + .24 * (1 + Math.sin(simTime * 4)) / 2;
       group.userData.selection.material.opacity = robot.id === this.selectedId ? .95 : 0;
       group.userData.selection.rotation.z = simTime * 1.4;
@@ -1006,6 +1040,13 @@ export class DigitalTwin {
       group.userData.limbs.forEach((limb, index) => {
         limb.rotation.x = index % 2 ? -stride : stride;
       });
+      // The billboard has no legs, so the walk is a bob on the same phase the
+      // stride ran on - two bobs per stride cycle, which is one per footfall.
+      const figure = group.userData.figure;
+      if (figure) {
+        figure.position.y = Math.abs(stride) * .06;
+        figure.rotation.z = stride * .035;
+      }
       const humanMode = human.mode || (human.paused ? 'yielding' : 'walking');
       group.userData.workTool.visible = humanMode === 'working';
       if (humanMode === 'working') {

@@ -39,6 +39,12 @@ SRC = {
     "amr_blue":   "Gemini_Generated_Image_ae4aqbae4aqbae4a.png",
     "floor_dark": "Gemini_Generated_Image_9ngfqc9ngfqc9ngf.png",
     "carton":     "Gemini_Generated_Image_j80itqj80itqj80i.png",
+    "worker_hi":  "Gemini_Generated_Image_o8fl7eo8fl7eo8fl.png",   # yellow vest
+    "worker_org": "Gemini_Generated_Image_3clkrt3clkrt3clk.png",   # orange vest
+    "worker_blu": "Gemini_Generated_Image_5t5wvb5t5wvb5t5w.png",   # blue vest
+    "badge_charge":   "Gemini_Generated_Image_elbqyxelbqyxelbq.png",
+    "badge_complete": "Gemini_Generated_Image_ms3vi0ms3vi0ms3v.png",
+    "badge_deadlock": "Gemini_Generated_Image_ymvg7bymvg7bymvg.png",
 }
 
 
@@ -68,6 +74,59 @@ def key_background(im: Image.Image, box, tolerance=95, sample=(8, 8)) -> Image.I
     dist = np.abs(a - bg).sum(axis=2)
     alpha = np.clip((dist - tolerance) * 6, 0, 255).astype(np.uint8)
     return Image.fromarray(np.dstack([np.asarray(sub, np.uint8), alpha]), "RGBA")
+
+
+def trim(im: Image.Image) -> Image.Image:
+    """Shrink to the non-transparent bounding box."""
+    bb = im.getbbox()
+    return im.crop(bb) if bb else im
+
+
+def drop_plinth(im: Image.Image, fill=0.5) -> Image.Image:
+    """Cut a standing figure off the plinth it was rendered on.
+
+    Keying cannot do it - the plinth is a different grey from the backdrop, so it
+    survives and rides along as a slab under the feet, which on a billboard reads
+    as the worker standing on a doorstep.
+
+    The proportions give it away. On the *untrimmed* crop the plinth spans almost
+    the full width while the legs above it span a quarter of it, so scanning up
+    from the last non-empty row, the first row narrower than half the crop is the
+    ground line. Measuring against the crop rather than against the silhouette is
+    what makes this work on every source: these renders are not one shape - the
+    yellow worker is portrait and the blue one landscape, and a rule written
+    against the figure's own width gets a different answer on each.
+    """
+    a = np.asarray(im.convert("RGBA"))
+    solid = a[..., 3] > 40
+    widths = solid.sum(axis=1)
+    rows = np.nonzero(widths)[0]
+    if not len(rows):
+        return im
+    limit = im.width * fill
+    cut = rows[-1] + 1
+    for y in range(rows[-1], rows[0], -1):
+        if widths[y] < limit:
+            cut = y + 1
+            break
+    return im.crop((0, 0, im.width, cut))
+
+
+def fade_base(im: Image.Image, frac=0.09) -> Image.Image:
+    """Ramp the bottom of a cut-out figure to transparent.
+
+    drop_plinth removes the slab, but what is left underneath differs per render -
+    a hard edge on one, a soft contact shadow tapering over a hundred rows on
+    another - and no single width threshold gets all three. Dissolving the last
+    few percent handles every case and reads as the figure meeting the floor
+    rather than as a sticker sitting on it.
+    """
+    a = np.asarray(im.convert("RGBA")).astype(np.float32)
+    h = a.shape[0]
+    band = max(1, int(h * frac))
+    ramp = np.linspace(0.0, 1.0, band, dtype=np.float32)
+    a[h - band:, :, 3] *= ramp[:, None]
+    return Image.fromarray(a.astype(np.uint8), "RGBA")
 
 
 def desaturate(im: Image.Image, floor=0.30, ceil=1.0) -> Image.Image:
@@ -146,6 +205,38 @@ def bake(source: pathlib.Path, preview: bool) -> None:
     patch = carton.crop((1280, 1240, 1580, 1540)).resize((192, 192), Image.LANCZOS)
     made.append(save(seamless(patch, 256), "carton.jpg"))
     shots.append(("carton", seamless(patch, 256)))
+
+    # --- workers --------------------------------------------------------------
+    # Three vest colours, cut off their plinths. The figure sits in the left
+    # portion of each render with detail insets down the right; the caption is
+    # engraved on the plinth below it, so the crop stops above 0.75H.
+    for key, name in (("worker_hi", "worker_hi.png"),
+                      ("worker_org", "worker_orange.png"),
+                      ("worker_blu", "worker_blue.png")):
+        src = Image.open(source / SRC[key])
+        w, h = src.size
+        fig = fade_base(trim(drop_plinth(
+            key_background(src, (int(w*.13), int(h*.04), int(w*.56), int(h*.78)), tolerance=60))))
+        fig.thumbnail((128, 288), Image.LANCZOS)
+        made.append(save(fig, name))
+        shots.append((name, fig))
+
+    # --- status badges ----------------------------------------------------------
+    # The tile and its bezel, off the plinth. These become markers that float over
+    # a robot, so the state a halo colour was carrying alone becomes readable at a
+    # glance instead of needing the legend.
+    for key, name in (("badge_charge", "badge_charging.png"),
+                      ("badge_complete", "badge_complete.png"),
+                      ("badge_deadlock", "badge_deadlock.png")):
+        src = Image.open(source / SRC[key])
+        w, h = src.size
+        # 0.632H, not lower: the plinth caption is engraved directly beneath the
+        # badge and a taller crop takes the top of the lettering with it.
+        badge = trim(key_background(src, (int(w*.05), int(h*.055), int(w*.71), int(h*.645)),
+                                    tolerance=70))
+        badge.thumbnail((160, 160), Image.LANCZOS)
+        made.append(save(badge, name))
+        shots.append((name, badge))
 
     # --- worker ---------------------------------------------------------------
     # Deliberately NOT baked. The cut-out figure comes out clean, but the twin's
