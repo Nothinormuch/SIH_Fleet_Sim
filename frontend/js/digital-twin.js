@@ -94,6 +94,10 @@ export class DigitalTwin {
     this.robots = new Map();
     this.humans = new Map();
     this.obstacles = new Map();
+    this.taskMarkers = new Map();
+    this.deliveredMarkers = new Map();
+    this.frameTimes = [];
+    this.taskTimeline = [];
     this.deadZones = [];
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -135,11 +139,16 @@ export class DigitalTwin {
     this.robots.clear();
     this.humans.clear();
     this.obstacles.clear();
+    this.taskMarkers.clear();
+    this.deliveredMarkers.clear();
     this.deadZones = [];
     this.map = data.map;
     this.meta = data.meta;
+    this.frameTimes = (data.frames || []).map(frame => frame.t);
+    this.taskTimeline = [];
     this._buildWarehouse();
     this._buildTasks();
+    this.taskTimeline = this._buildTaskTimeline(data.frames || []);
     const first = data.frames[0] || {robots: [], humans: []};
     for (const robot of first.robots) this._ensureRobot(robot.id);
     for (const human of first.humans || []) this._ensureHuman(human.id);
@@ -461,27 +470,99 @@ export class DigitalTwin {
 
   _buildTasks() {
     const catalog = this.meta.tasks_catalog || [];
-    const colours = {normal: 0x5caeff, fragile: 0xc084fc, heavy: 0xf59e0b, hazardous: 0xfb7185};
     for (const task of catalog) {
-      const colour = colours[task.cargo_type] || PALETTE.cyan;
-      const marker = new THREE.Group();
-      marker.position.copy(this._cellToWorld(task.pick[0], task.pick[1], .12));
-      const box = new THREE.Mesh(
-        new THREE.BoxGeometry(.58, .52, .58),
-        new THREE.MeshStandardMaterial({color: colour, roughness: .55, metalness: .08}),
-      );
-      box.position.y = .28;
-      box.castShadow = true;
-      marker.add(box);
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(.42, .49, 32),
-        new THREE.MeshBasicMaterial({color: colour, transparent: true, opacity: .75,
-          side: THREE.DoubleSide, depthWrite: false}),
-      );
-      ring.rotation.x = -Math.PI / 2;
-      marker.add(ring);
-      marker.userData.taskMarker = true;
-      this.world.add(marker);
+      const pickMarker = this._makeCargoMarker(task, false);
+      const deliveredMarker = this._makeCargoMarker(task, true);
+      deliveredMarker.visible = false;
+      this.taskMarkers.set(task.id, pickMarker);
+      this.deliveredMarkers.set(task.id, deliveredMarker);
+      this.world.add(pickMarker);
+      this.dynamic.add(deliveredMarker);
+    }
+  }
+
+  _cargoColour(task) {
+    const colours = {normal: 0x5caeff, fragile: 0xc084fc, heavy: 0xf59e0b, hazardous: 0xfb7185};
+    return colours[task?.cargo_type] || PALETTE.cyan;
+  }
+
+  _makeCargoMarker(task, delivered) {
+    const colour = delivered ? PALETTE.green : this._cargoColour(task);
+    const cell = delivered ? task.drop : task.pick;
+    const marker = new THREE.Group();
+    marker.position.copy(this._cellToWorld(cell[0], cell[1], .12));
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(.58, .52, .58),
+      new THREE.MeshStandardMaterial({color: colour, roughness: .55, metalness: .08}),
+    );
+    box.position.y = .28;
+    box.castShadow = true;
+    marker.add(box);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(.42, .49, 32),
+      new THREE.MeshBasicMaterial({color: colour, transparent: true, opacity: .75,
+        side: THREE.DoubleSide, depthWrite: false}),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    marker.add(ring);
+    if (delivered) {
+      const label = makeLabel(`DONE ${task.id}`, hexCss(colour), true);
+      label.position.y = 1.0;
+      label.scale.multiplyScalar(.72);
+      marker.add(label);
+    }
+    marker.userData.taskMarker = true;
+    marker.userData.taskId = task.id;
+    marker.userData.delivered = delivered;
+    return marker;
+  }
+
+  _buildTaskTimeline(frames) {
+    const completed = new Set();
+    const previousByRobot = new Map();
+    return frames.map(frame => {
+      const active = new Map();
+      for (const info of frame.fleet || []) {
+        const previous = previousByRobot.get(info.id);
+        if (previous && Number(info.done || 0) > Number(previous.done || 0)
+            && previous.task) {
+          completed.add(previous.task);
+        }
+        const decision = info.decision;
+        const decisionTask = decision?.code === 'TASK_COMPLETED'
+          ? decision.details?.task : null;
+        if (decisionTask) completed.add(decisionTask);
+        if (info.task) active.set(info.task, info);
+        previousByRobot.set(info.id, {task: info.task, done: info.done});
+      }
+      return {completed: new Set(completed), active};
+    });
+  }
+
+  _timelineAt(simTime) {
+    if (!this.taskTimeline.length) return {completed: new Set(), active: new Map()};
+    let low = 0;
+    let high = this.frameTimes.length - 1;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      if (this.frameTimes[middle] <= simTime) low = middle + 1;
+      else high = middle - 1;
+    }
+    return this.taskTimeline[Math.max(0, high)] || this.taskTimeline[0];
+  }
+
+  _updateTaskCargo(frame, simTime) {
+    const timeline = this._timelineAt(simTime);
+    const activeByTask = new Map();
+    for (const info of frame.fleet || []) {
+      if (info.task) activeByTask.set(info.task, info);
+    }
+    for (const [taskId, marker] of this.taskMarkers) {
+      const info = activeByTask.get(taskId) || timeline.active.get(taskId);
+      marker.visible = !timeline.completed.has(taskId) && !(info && info.carry);
+    }
+    for (const [taskId, marker] of this.deliveredMarkers) {
+      marker.visible = timeline.completed.has(taskId);
     }
   }
 
@@ -556,6 +637,17 @@ export class DigitalTwin {
       rail.position.set(x, .57, .02);
       group.add(rail);
     }
+    const payload = new THREE.Group();
+    const payloadBox = new THREE.Mesh(
+      new THREE.BoxGeometry(.46, .34, .46),
+      new THREE.MeshStandardMaterial({color: PALETTE.cyan, roughness: .55, metalness: .08}),
+    );
+    payloadBox.position.set(0, .78, -.18);
+    payloadBox.castShadow = true;
+    payload.add(payloadBox);
+    payload.userData = {box: payloadBox};
+    payload.visible = false;
+    group.add(payload);
     const arrow = new THREE.Mesh(
       new THREE.ConeGeometry(.13, .35, 3),
       new THREE.MeshBasicMaterial({color: 0xffffff}),
@@ -583,7 +675,7 @@ export class DigitalTwin {
     label.position.y = 1.34;
     label.scale.multiplyScalar(.84);
     group.add(label);
-    group.userData = {robotId: id, colour, halo, selection, label, beacon, wheels};
+    group.userData = {robotId: id, colour, halo, selection, label, beacon, wheels, payload};
     this.dynamic.add(group);
     this.robots.set(id, group);
     return group;
@@ -710,8 +802,14 @@ export class DigitalTwin {
       group.userData.beacon.material.color.setHex(stateColour);
       group.userData.beacon.scale.setScalar(.82 + .25 * (1 + Math.sin(simTime * 5)) / 2);
       for (const wheel of group.userData.wheels) wheel.rotation.x = -simTime * 4;
+      const carrying = Boolean(robot.carry || info.carry);
+      group.userData.payload.visible = carrying;
+      if (carrying) {
+        group.userData.payload.userData.box.material.color.setHex(this._cargoColour(info));
+      }
       group.visible = true;
     }
+    this._updateTaskCargo(frame, simTime);
     for (const human of frame.humans || []) {
       const group = this._ensureHuman(human.id);
       group.position.copy(this._toWorld(human.x, human.y, 0));
