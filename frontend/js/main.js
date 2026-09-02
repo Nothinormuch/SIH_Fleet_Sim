@@ -1479,10 +1479,14 @@ function updateSummaryProgress(frame) {
  *     dismissed, which on this dashboard means the playback loop and the browser
  *     automation both stop dead; the status line and a toast say the same thing
  *     without freezing anything.
- *   - The HUMAN pool tile is gone. It wrote FREE to the grid and was then
- *     discarded - the custom-scenario API carries stations, docks and starts and
- *     has nowhere to put a pedestrian route. It can come back when the backend
- *     grows one; a control that does nothing is worse than a missing feature.
+ *   - The HUMAN pool tile was dropped in the port and is now back, with the
+ *     backend behind it. It used to write FREE to the grid and then be thrown
+ *     away, because the API had nowhere to put a pedestrian. The reason it took
+ *     a third pass: World.add_human does not take a path, it takes WORK
+ *     LOCATIONS that it expands into a closed rack-safe circuit, and it needs at
+ *     least two of them - so one dropped marker is not enough on its own. It is
+ *     read as a worker's post, paired with the nearest station, which is what a
+ *     warehouse worker's round is.
  *   - Save is refused rather than allowed to fail server-side when the layout
  *     lacks the minimum two AMRs, a pickup station or a charging dock.
  *
@@ -1499,19 +1503,20 @@ const BUILDER = {
   stations: [],
   docks: [],
   starts: [],
+  humans: [],
   tool: 'FREE',
   ready: false,
   painting: false,
 };
 
-const TILE_CODE = {FREE: 0, RACK: 1, STATION: 2, DOCK: 3, AMR: 0};
+const TILE_CODE = {FREE: 0, RACK: 1, STATION: 2, DOCK: 3, AMR: 0, HUMAN: 0};
 /* Builder art, baked from the same sources the twin renders from
    (tools/bake_twin_textures.py) so the tile you paint is a picture of what you
    will actually get. The flat colours these replaced were readable but they were
    a legend you had to learn, and they said nothing about the result. */
 const TILE_ART = {FREE: 'tile_floor.png', RACK: 'tile_rack.png',
                   STATION: 'tile_station.png', DOCK: 'tile_amr_dock.png',
-                  AMR: 'tile_amr.png'};
+                  AMR: 'tile_amr.png', HUMAN: 'tile_human.png'};
 const VALUE_ART = {0: 'FREE', 1: 'RACK', 2: 'STATION', 3: 'DOCK'};
 // Kept as the fallback for the frames before the art loads, and if it 404s.
 const TILE_FILL = {0: '#0d1a26', 1: '#24405a', 2: '#1d5c48', 3: '#5c4a18'};
@@ -1612,6 +1617,7 @@ function resetBuilder() {
   BUILDER.stations = [];
   BUILDER.docks = [];
   BUILDER.starts = [];
+  BUILDER.humans = [];
   selectTool('FREE');
   drawBuilder();
 }
@@ -1627,10 +1633,12 @@ function paint(x, y) {
   BUILDER.stations = without(BUILDER.stations, x, y);
   BUILDER.docks = without(BUILDER.docks, x, y);
   BUILDER.starts = without(BUILDER.starts, x, y);
+  BUILDER.humans = without(BUILDER.humans, x, y);
   BUILDER.grid[y][x] = TILE_CODE[type];
   if (type === 'STATION') BUILDER.stations.push([x, y]);
   if (type === 'DOCK') BUILDER.docks.push([x, y]);
   if (type === 'AMR') BUILDER.starts.push([x, y]);
+  if (type === 'HUMAN') BUILDER.humans.push([x, y]);
   drawBuilder();
 }
 
@@ -1663,6 +1671,25 @@ function drawBuilder() {
   for (let y = 0; y <= BUILDER.rows; y++) {
     ctx.beginPath(); ctx.moveTo(0, y * size + .5); ctx.lineTo(canvas.width, y * size + .5); ctx.stroke();
   }
+  BUILDER.humans.forEach(([x, y], i) => {
+    const art = TILE_IMG.HUMAN;
+    if (artReady(art)) ctx.drawImage(art, x * size, y * size, size, size);
+    else {
+      ctx.fillStyle = '#f5b843';
+      ctx.beginPath();
+      ctx.arc(x * size + size / 2, y * size + size / 2, size * .24, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#050b12';
+    ctx.beginPath();
+    ctx.arc(x * size + size * .78, y * size + size * .78, size * .17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffd07a';
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`W${i + 1}`, x * size + size * .78, y * size + size * .78 + 1);
+  });
   BUILDER.starts.forEach(([x, y], i) => {
     const art = TILE_IMG.AMR;
     if (artReady(art)) ctx.drawImage(art, x * size, y * size, size, size);
@@ -1691,6 +1718,7 @@ function syncBuilderTally() {
   set('tallyStations', BUILDER.stations.length);
   set('tallyDocks', BUILDER.docks.length);
   set('tallyStarts', BUILDER.starts.length);
+  set('tallyHumans', BUILDER.humans.length);
   // Say what is missing before the button is pressed, not after the server says no.
   const problems = [];
   if (BUILDER.starts.length < 2) problems.push('two AMR starts');
@@ -1707,8 +1735,11 @@ function syncBuilderTally() {
     status.textContent = `Place at least ${requirements}.`;
     status.className = 'status';
   } else {
+    const workers = BUILDER.humans.length
+      ? ` · ${BUILDER.humans.length} worker${BUILDER.humans.length === 1 ? '' : 's'}` : '';
     status.textContent = `${BUILDER.starts.length} AMR${BUILDER.starts.length === 1 ? '' : 's'} · `
-      + `${BUILDER.stations.length} station${BUILDER.stations.length === 1 ? '' : 's'} · ready to save.`;
+      + `${BUILDER.stations.length} station${BUILDER.stations.length === 1 ? '' : 's'}${workers}`
+      + ' · ready to save.';
     status.className = 'status ok';
   }
 }
@@ -1744,6 +1775,7 @@ async function saveBuilderScenario() {
         stations: BUILDER.stations,
         docks: BUILDER.docks,
         starts: BUILDER.starts,
+        humans: BUILDER.humans,
         seed: 0,
         duration: 300,
       }),

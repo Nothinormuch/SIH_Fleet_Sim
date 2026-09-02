@@ -231,6 +231,13 @@ def bake_builder_tiles(shots) -> list:
     robot.thumbnail((int(N * .82), int(N * .82)), Image.LANCZOS)
     amr.paste(robot, ((N - robot.width) // 2, (N - robot.height) // 2), robot)
     made.append(out(amr, "tile_amr.png"))
+
+    # human: the existing top-down worker sprite over floor
+    human = floor.copy().convert("RGBA")
+    worker = Image.open(REPO / "frontend" / "assets" / "misc" / "furniture" / "worker_human.png").convert("RGBA")
+    worker.thumbnail((int(N * .74), int(N * .74)), Image.LANCZOS)
+    human.paste(worker, ((N - worker.width) // 2, (N - worker.height) // 2), worker)
+    made.append(out(human, "tile_human.png"))
     return made
 
 

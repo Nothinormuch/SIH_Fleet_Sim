@@ -1614,6 +1614,7 @@ body.builder-open .builder {
 .pool-swatch.station { background-image: url('/assets/twin/builder/tile_station.png'); }
 .pool-swatch.dock    { background-image: url('/assets/twin/builder/tile_amr_dock.png'); }
 .pool-swatch.amr     { background-image: url('/assets/twin/builder/tile_amr.png'); }
+.pool-swatch.human   { background-image: url('/assets/twin/builder/tile_human.png'); }
 
 .builder-hint { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--dim); }
 .builder-tally { display: grid; grid-template-columns: 1fr auto; gap: 0; margin: 0; }

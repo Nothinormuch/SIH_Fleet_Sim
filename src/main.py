@@ -588,6 +588,7 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         # Read injected custom info from the request (set by backend server)
         custom_env = extra.get("_custom_env")
         custom_starts_raw = extra.get("_custom_starts", [])
+        custom_humans = extra.get("_custom_humans", [])
         custom_duration = extra.get("_custom_duration")
         custom_seed = extra.get("_custom_seed", seed)
         starts = [(s[0], s[1]) for s in custom_starts_raw]
@@ -624,12 +625,30 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
             assignments[idx % len(starts)].append(task)
         # Also set unassigned for auction policies
         unassigned = list(tasks)
+        # Pedestrians. World.add_human takes WORK LOCATIONS, not a hand-authored
+        # spline: it expands them into a closed, rack-safe circuit using the same
+        # A* the AMRs plan with, and it requires at least two. A marker dropped in
+        # the builder is one worker's post, and the second waypoint is the station
+        # they walk to and back from - which is what a warehouse worker's round
+        # is, and it means one marker is enough to describe one worker.
+        anchors = stations_list or docks_list
+        human_routes: list[list[Cell]] = []
+        for cell in custom_humans:
+            post = (int(cell[0]), int(cell[1]))
+            candidates = [c for c in anchors if tuple(c) != post]
+            if not candidates:
+                continue
+            target = min(candidates,
+                         key=lambda c: abs(c[0] - post[0]) + abs(c[1] - post[1]))
+            human_routes.append([post, tuple(target)])
+
         sc = Scenario(
             name=custom_env.name,
             env=custom_env,
             starts=starts,
             assignments=assignments,
             unassigned=unassigned,
+            humans=human_routes,
             duration_s=float(custom_duration or 180.0),
             seed=custom_seed,
             use_auction=True,

@@ -434,7 +434,7 @@ class Handler(BaseHTTPRequestHandler):
         except (OSError, TypeError):
             return self._json(400, {"error": "invalid request"})
 
-        # Expect: {"name":"...","width":...,"height":...,"grid":[[...],...],"stations":[[x,y],...],"docks":[[x,y],...],"starts":[[x,y],...],"seed":0,"duration":300}
+        # Expect: {"name":"...","width":...,"height":...,"grid":[[...],...],"stations":[[x,y],...],"docks":[[x,y],...],"starts":[[x,y],...],"humans":[[x,y],...],"seed":0,"duration":300}
         if not isinstance(payload, dict):
             return self._json(400, {"error": "request body must be a JSON object"})
 
@@ -492,6 +492,7 @@ class Handler(BaseHTTPRequestHandler):
             stations = coordinates("stations")
             docks = coordinates("docks")
             starts = coordinates("starts")
+            humans = coordinates("humans")
             if not 1 <= len(stations):
                 raise RequestValidationError("custom floor needs at least one station")
             if not 1 <= len(docks):
@@ -516,6 +517,10 @@ class Handler(BaseHTTPRequestHandler):
                     "docks must exactly match the charging-dock cells in the grid")
             if any(grid[y][x] != FREE for x, y in starts):
                 raise RequestValidationError("every AMR start must be on an empty floor cell")
+            blocked = [(x, y) for x, y in humans if grid[y][x] != FREE]
+            if blocked:
+                raise RequestValidationError(
+                    f"worker at {blocked[0][0]},{blocked[0][1]} is not on an empty floor cell")
 
             raw_seed = payload.get("seed", 0)
             if isinstance(raw_seed, bool) or not isinstance(raw_seed, int):
@@ -557,10 +562,12 @@ class Handler(BaseHTTPRequestHandler):
                 if neighbour not in reachable:
                     reachable.add(neighbour)
                     frontier.append(neighbour)
-        disconnected = [cell for cell in (*starts, *stations, *docks) if cell not in reachable]
+        disconnected = [cell for cell in (*starts, *stations, *docks, *humans)
+                        if cell not in reachable]
         if disconnected:
             return self._json(400, {
-                "error": "all AMR starts, stations and charging docks must be connected",
+                "error": "all AMR starts, stations, charging docks and workers "
+                         "must be connected",
                 "disconnected": [list(cell) for cell in disconnected],
             })
 
@@ -568,6 +575,7 @@ class Handler(BaseHTTPRequestHandler):
         CUSTOM_SCENARIOS[sid] = {
             "env": env,
             "starts": starts,
+            "humans": humans,
             "name": name,
             "seed": raw_seed,
             "duration": duration,
@@ -587,7 +595,7 @@ class Handler(BaseHTTPRequestHandler):
                 "eyebrow": "Custom Builder",
                 "description": f"Custom layout · {data['env'].width}×{data['env'].height}",
                 "robots": len(data.get("starts", [])),
-                "humans": 0,
+                "humans": len(data.get("humans", [])),
                 "seed": data.get("seed", 0),
                 "duration": int(data.get("duration", 300)),
                 "accent": "lime",
@@ -631,6 +639,7 @@ class Handler(BaseHTTPRequestHandler):
             # Pass custom info through to run_for_dashboard by injecting into request
             request["_custom_env"] = custom["env"]
             request["_custom_starts"] = custom.get("starts", [])
+            request["_custom_humans"] = custom.get("humans", [])
             request["_custom_duration"] = float(request.get("duration", custom.get("duration", 180.0)))
             request["_custom_seed"] = int(request.get("seed", custom.get("seed", 0)))
         with _SIM_LOCK:
