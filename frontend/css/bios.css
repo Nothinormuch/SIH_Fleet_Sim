@@ -1692,6 +1692,406 @@ body.builder-open .builder {
   .menu-prompt { right: 14px; bottom: 14px; }
 }
 
+/* ============================================================== TIER 0 · BOOT
+   The power-on self-test. It covers the gap between the page painting and the
+   first run answering - about six seconds of POST /api/run, during which the
+   old page sat there fully drawn and completely empty.
+
+   It is the one screen here that is allowed to be ceremonial, and the reason is
+   that the team is called BIOS: a power-on self-test is not a theme borrowed
+   from somewhere, it is the literal thing. Every line in the readout reports a
+   real stage with its real elapsed time, so the ceremony is also the honest
+   status display it looks like.
+
+   The house rules still hold. No border-radius. The rules above and below the
+   mark fade at both ends and never close a box - a frame around the logo would
+   be the one place on this screen contradicting every other.  Labels are
+   letterspaced small caps in the serif, values are mono.
+   ========================================================================== */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 90;                      /* over the builder (50) and the toast (55) */
+  display: grid;
+  place-items: center;
+  background: var(--void);
+  overflow: hidden;
+  cursor: pointer;                  /* the whole screen is the dismiss target */
+  transition: opacity 640ms var(--ease);
+}
+
+.boot.is-leaving { opacity: 0; pointer-events: none; }
+.boot.is-leaving .boot-stack { transform: scale(1.035); filter: blur(3px); }
+
+/* -------------------------------------------------------------- the field */
+
+.boot-field { position: absolute; inset: 0; pointer-events: none; }
+
+/* The lit ground. Two stops rather than one so the falloff has a shoulder - a
+   single radial-gradient reads as a spotlight, which is a lighting effect;
+   this reads as a room. */
+.boot-field::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 78% at 50% 34%, rgba(53,198,244,.13), transparent 62%),
+    radial-gradient(90% 60% at 50% 96%, rgba(70,211,154,.07), transparent 70%);
+}
+
+/* Scanlines, at the threshold of visibility. Enough to say "this is a display"
+   and not enough to be a texture anyone notices. */
+.boot-field::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(to bottom,
+    rgba(255,255,255,.018) 0 1px, transparent 1px 3px);
+}
+
+/* The warehouse floor, receding. The same grid the twin lays its racks on -
+   which is what this screen is waiting for, so the boot screen is standing on
+   the thing it is building. */
+.boot-grid {
+  position: absolute;
+  left: 50%;
+  bottom: -12%;
+  width: 260%;
+  height: 66%;
+  transform: translateX(-50%) perspective(340px) rotateX(69deg);
+  transform-origin: 50% 100%;
+  background-image:
+    linear-gradient(to right, rgba(53,198,244,.20) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(53,198,244,.20) 1px, transparent 1px);
+  background-size: 58px 58px;
+  -webkit-mask-image: linear-gradient(to top, #000 4%, transparent 74%);
+          mask-image: linear-gradient(to top, #000 4%, transparent 74%);
+  animation: bootGridDrift 5.2s linear infinite;
+}
+
+@keyframes bootGridDrift { to { background-position: 0 58px, 0 58px; } }
+
+/* --------------------------------------------------------------- the stack */
+
+.boot-stack {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 30px;
+  width: min(620px, 88vw);
+  padding: 0 20px;
+  transition: transform 640ms var(--ease), filter 640ms var(--ease);
+}
+
+/* ---------------------------------------------------------------- the mark */
+
+.boot-mark {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  padding: 26px 0;
+}
+
+/* The two hairlines. They fade at both ends, like every other rule on this
+   interface, so the logo is bracketed rather than boxed. */
+.boot-mark::before,
+.boot-mark::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--rule);
+  opacity: 0;
+  animation: bootRule 900ms var(--ease) 260ms forwards;
+}
+.boot-mark::before { top: 0; }
+.boot-mark::after  { bottom: 0; }
+
+@keyframes bootRule {
+  from { opacity: 0; transform: scaleX(.35); }
+  to   { opacity: 1; transform: scaleX(1); }
+}
+
+.boot-logo-wrap { position: relative; display: block; line-height: 0; }
+
+/* The bloom is its own layer behind the logo rather than a filter on it. An
+   animated drop-shadow repaints the whole 556px raster every frame; a scaling
+   radial-gradient is a composite. */
+.boot-logo-wrap::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 116%;
+  height: 132%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side, rgba(53,198,244,.20), transparent 72%);
+  animation: bootBloom 4.6s ease-in-out 1.6s infinite;
+  pointer-events: none;
+}
+
+@keyframes bootBloom {
+  0%, 100% { opacity: .55; transform: translate(-50%, -50%) scale(1); }
+  50%      { opacity: 1;   transform: translate(-50%, -50%) scale(1.06); }
+}
+
+/* Never drawn above its native 556px - it is a 556px asset, and upscaling it is
+   the one thing that would make it look cheap on a projector. The third term is
+   a height budget written as a width: 556/376 is the aspect ratio, so this caps
+   the logo at 44vh without letterboxing it inside a box that stayed 376px tall.
+   Without it the mark alone is taller than a 1280x720 projector has room for
+   once the readout and the prompt are under it, and the prompt falls off. */
+.boot-logo {
+  position: relative;
+  display: block;
+  width: min(556px, 100%, 44vh * 1.4787);
+  height: auto;
+
+  /* Scanned in, left to right. The fleet senses by casting rays, so the logo
+     arriving under a sweep is the project's own mechanism used as an entrance.
+
+     The geometry matters and it is easy to get backwards. The mask is 4x the
+     width of the logo, so the logo only ever sees a quarter of it: at 100% that
+     quarter is the transparent tail (75-100%, against a ramp that finishes by
+     50%) and at 0% it is the opaque head (0-25%, against a ramp that starts at
+     38%). Both ends therefore sit well clear of the ramp, which is what stops a
+     rounding error - or the 100deg tilt, which moves the stops by ~2% at the
+     corners - from leaving a visible seam across the logo.
+
+     Do NOT animate past 0%. Outside a no-repeat mask there is no mask at all,
+     which composites as fully transparent, so overshooting does not "reveal
+     harder" - it hides the logo completely, and it does it in the FINAL state
+     where `forwards` then pins it. That was the first version of this. */
+  -webkit-mask-image: linear-gradient(100deg, #000 0 38%, rgba(0,0,0,.4) 44%, transparent 50%);
+          mask-image: linear-gradient(100deg, #000 0 38%, rgba(0,0,0,.4) 44%, transparent 50%);
+  -webkit-mask-size: 400% 100%;
+          mask-size: 400% 100%;
+  -webkit-mask-position: 100% 0;
+          mask-position: 100% 0;
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+  animation: bootScan 1500ms var(--ease) 180ms forwards,
+             bootRise 1100ms var(--ease) 180ms backwards;
+}
+
+/* The mask is dropped outright once the scan has played, so the logo's resting
+   state does not depend on the arithmetic above being right. boot-screen.js sets
+   this on animationend. Belt and braces, because a logo that fails to appear is
+   the worst thing this screen could do. */
+.boot-logo.is-scanned {
+  -webkit-mask-image: none;
+          mask-image: none;
+}
+
+@keyframes bootScan {
+  to { -webkit-mask-position: 0 0; mask-position: 0 0; }
+}
+
+@keyframes bootRise {
+  from { opacity: 0; transform: scale(1.035); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* The sweep bar rides the same timing as the mask edge, so the logo looks lit
+   into existence by it rather than merely revealed underneath it. */
+.boot-sweep {
+  position: absolute;
+  top: -4%;
+  bottom: -4%;
+  width: 130px;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    transparent, rgba(127,212,245,.10) 32%, rgba(200,240,255,.55) 50%,
+    rgba(127,212,245,.10) 68%, transparent);
+  opacity: 0;
+  animation: bootSweep 1500ms var(--ease) 180ms forwards;
+}
+
+@keyframes bootSweep {
+  0%   { left: -14%; opacity: 0; }
+  12%  { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { left: 102%; opacity: 0; }
+}
+
+/* ------------------------------------------------------------- the readout */
+
+.boot-readout {
+  width: 100%;
+  max-width: 460px;
+  opacity: 0;
+  animation: bootFadeUp 700ms var(--ease) 900ms forwards;
+  transition: box-shadow 220ms var(--ease);
+}
+
+/* Input before the world is ready. A flash on the readout, not a shake on the
+   screen - the answer to "is this frozen?" is to point at the thing that is
+   still working, and the working line is already shimmering. */
+.boot-readout.is-nudged { box-shadow: 0 0 0 1px rgba(53,198,244,.45); }
+
+@keyframes bootFadeUp {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.boot-readout-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--edge-dim);
+  margin-bottom: 11px;
+}
+
+.boot-readout-head b {
+  font: 400 12.5px/1 var(--serif);
+  font-variant: small-caps;
+  letter-spacing: .17em;
+  color: var(--text-hi);
+}
+
+.boot-readout-head span {
+  font: 400 10.5px/1 var(--mono);
+  letter-spacing: .13em;
+  color: var(--dimmer);
+}
+
+.boot-stages { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+
+.boot-stage {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: 400 12px/1 var(--serif);
+  font-variant: small-caps;
+  letter-spacing: .11em;
+  color: var(--dimmer);
+  transition: color var(--t) var(--ease);
+}
+
+.boot-stage b { font-weight: 400; }
+
+/* Square, because nothing on this interface is round. Outline while pending,
+   filled once the stage has actually reported. */
+.boot-stage-pip {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--edge);
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+
+/* The leader is what makes a readout a readout: it ties a name to a number
+   across whatever gap the two happen to leave. */
+.boot-stage-leader {
+  flex: 1 1 auto;
+  height: 1px;
+  min-width: 12px;
+  background: repeating-linear-gradient(90deg,
+    var(--edge-dim) 0 1px, transparent 1px 5px);
+  opacity: .75;
+}
+
+.boot-stage-value {
+  flex: none;
+  font: 400 11px/1 var(--mono);
+  letter-spacing: .05em;
+  color: var(--dimmer);
+  font-variant-numeric: tabular-nums;
+}
+
+.boot-stage.is-working { color: var(--text); }
+.boot-stage.is-working .boot-stage-pip {
+  border-color: var(--accent);
+  animation: bootPip 1.15s ease-in-out infinite;
+}
+.boot-stage.is-working .boot-stage-value { color: var(--rim); }
+
+@keyframes bootPip {
+  0%, 100% { background: transparent; }
+  50%      { background: var(--accent); }
+}
+
+.boot-stage.is-done { color: var(--text); }
+.boot-stage.is-done .boot-stage-pip { background: var(--ok); border-color: var(--ok); }
+.boot-stage.is-done .boot-stage-value { color: var(--dim); }
+
+.boot-stage.is-bad { color: var(--text-hi); }
+.boot-stage.is-bad .boot-stage-pip { background: var(--bad); border-color: var(--bad); }
+.boot-stage.is-bad .boot-stage-value { color: var(--bad); }
+
+/* The bar tracks how far the boot got, weighted by what each stage costs.
+   Unweighted it would sit at 28% through the entire simulation and then jump,
+   which is the behaviour that makes people distrust progress bars. */
+.boot-progress {
+  position: relative;
+  height: 1px;
+  margin-top: 15px;
+  background: var(--edge-dim);
+  overflow: hidden;
+}
+
+/* --fill is deliberately not defined in this stylesheet - boot-screen.js sets it
+   on .boot-progress as each stage reports, exactly as main.js sets --card-accent
+   per scenario card. Both carry a fallback here, and both are the expected
+   answers to the "used but not defined" token sweep in the interface note. */
+.boot-progress i {
+  display: block;
+  height: 100%;
+  width: var(--fill, 0%);
+  background: linear-gradient(90deg, var(--ok), var(--accent));
+  transition: width 620ms var(--ease);
+}
+
+/* -------------------------------------------------------------- the prompt */
+
+.boot-prompt {
+  margin: 0;
+  min-height: 1em;
+  font: 400 11.5px/1 var(--serif);
+  font-variant: small-caps;
+  letter-spacing: .26em;
+  color: var(--dimmer);
+  text-align: center;
+  transition: color var(--t) var(--ease);
+}
+
+.boot.is-armed .boot-prompt {
+  color: var(--rim-lit);
+  animation: bootPrompt 2.4s ease-in-out infinite;
+}
+
+/* Qualified with .boot.is-armed, not left as .boot-prompt.is-bad, because arming
+   is exactly when this state is reachable - a failed stage arms the screen - and
+   the unqualified selector loses the specificity tie to the armed rule above.
+   The symptom is a failure message rendered in the healthy colour. */
+.boot-prompt.is-bad,
+.boot.is-armed .boot-prompt.is-bad { color: var(--warn); animation: none; opacity: 1; }
+
+@keyframes bootPrompt {
+  0%, 100% { opacity: .48; }
+  50%      { opacity: 1; }
+}
+
+@media (max-width: 620px) {
+  .boot-stack { gap: 22px; }
+  .boot-readout { max-width: 100%; }
+  .boot-prompt { letter-spacing: .18em; }
+}
+
+/* 1280x720 is the actual demo target, and a projector is the one screen where
+   nobody can scroll to find the prompt. The logo already has a 44vh cap; this
+   buys the rest of the room back out of the gaps. */
+@media (max-height: 780px) {
+  .boot-stack { gap: 20px; }
+  .boot-mark { padding: 16px 0; }
+  .boot-stages { gap: 5px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }

@@ -65,6 +65,10 @@ async function boot() {
     setCameraMode('follow');
   });
   App.imgs = await loadAssets();
+  // The boot screen is covering all of this. It owns no state and is told, never
+  // asked - every call is a no-op once it has been dismissed, so the reports
+  // below cost nothing on the second and every later run.
+  window.BiosBoot?.stage('sprites');
 
   try {
     const r = await fetch('/api/scenarios');
@@ -75,8 +79,10 @@ async function boot() {
     fill(el('allocationPolicy'), allocation_policies, 'auction_bundle');
     renderScenarioGallery(App.showcase);
     updatePolicyProfile();
+    window.BiosBoot?.stage('library');
   } catch (e) {
     setStatus('Could not reach the server. Is backend/server.py running?', 'err');
+    window.BiosBoot?.fail('library', 'cannot reach the server · press any key to enter');
   }
 
   // Simulation controls
@@ -516,6 +522,7 @@ async function run() {
     });
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+    window.BiosBoot?.stage('simulation');
 
     App.data = payload;
     App.auctionEvents = payload.frames.flatMap(f => f.auction_events || []);
@@ -571,9 +578,16 @@ async function run() {
     Hud.init(App.view, App.imgs, payload);
 
     draw();
+    // The first frame is on the canvas, so there is finally something behind the
+    // boot screen worth revealing. ready() only offers the way in - it holds the
+    // prompt back until its own entrance has finished playing, so a fast machine
+    // gets the same ceremony as a slow one.
+    window.BiosBoot?.stage('warehouse');
+    window.BiosBoot?.ready();
     togglePlay();
   } catch (e) {
     setStatus('Run failed: ' + e.message, 'err');
+    window.BiosBoot?.fail('simulation', 'run failed · press any key to enter');
   } finally {
     el('runBtn').disabled = false;
   }

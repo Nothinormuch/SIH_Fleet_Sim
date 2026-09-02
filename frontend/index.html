@@ -19,8 +19,51 @@
   in the HUD, and if it is not one of five categories it is not a category — it is
   a detail inside one. Everything the old dashboard showed is still here; it is
   just no longer all here at once.
+
+  Ahead of all three sits #boot, which is not a fourth layer - it is what the
+  page shows before there is a world to look at, and it removes itself once
+  there is.
 -->
 <body class="bios">
+
+  <!-- ==================================================== TIER 0 · POWER-ON -->
+  <!--
+    First in the source on purpose. boot() ends with run(), which simulates 320s
+    of Chokepoint before it answers - about six seconds - and until this existed
+    those six seconds were spent looking at a fully painted, completely empty
+    warehouse under a HUD reading 0 / 0. That reads as broken rather than busy,
+    and it is the first thing a judge sees.
+
+    Every line in the readout is a real stage reporting its real elapsed time.
+    Dismissed by any key or any click. Details in js/boot-screen.js.
+  -->
+  <div id="boot" class="boot" role="status" aria-label="Starting the digital twin">
+    <div class="boot-field" aria-hidden="true"><div class="boot-grid"></div></div>
+
+    <div class="boot-stack">
+      <div class="boot-mark">
+        <span class="boot-logo-wrap">
+          <img class="boot-logo" src="/assets/brand/bios-logo.png" width="556" height="376"
+               alt="BIOS — Build, Innovate, Optimize, Solve">
+          <i class="boot-sweep" aria-hidden="true"></i>
+        </span>
+      </div>
+
+      <div class="boot-readout" id="bootReadout">
+        <div class="boot-readout-head"><b>Power-on self-test</b><span>BIOS 6.0</span></div>
+        <ol class="boot-stages">
+          <li class="boot-stage" data-stage="interface"><i class="boot-stage-pip"></i><b>Interface</b><i class="boot-stage-leader"></i><span class="boot-stage-value">····</span></li>
+          <li class="boot-stage" data-stage="sprites"><i class="boot-stage-pip"></i><b>Sprite set</b><i class="boot-stage-leader"></i><span class="boot-stage-value">····</span></li>
+          <li class="boot-stage" data-stage="library"><i class="boot-stage-pip"></i><b>Scenario library</b><i class="boot-stage-leader"></i><span class="boot-stage-value">····</span></li>
+          <li class="boot-stage" data-stage="simulation"><i class="boot-stage-pip"></i><b>Coordination run</b><i class="boot-stage-leader"></i><span class="boot-stage-value">····</span></li>
+          <li class="boot-stage" data-stage="warehouse"><i class="boot-stage-pip"></i><b>Warehouse geometry</b><i class="boot-stage-leader"></i><span class="boot-stage-value">····</span></li>
+        </ol>
+        <div class="boot-progress" id="bootProgress"><i></i></div>
+      </div>
+
+      <p class="boot-prompt" id="bootPrompt">bringing the warehouse online…</p>
+    </div>
+  </div>
 
   <!-- ==================================================== TIER 1 · THE WORLD -->
   <div id="world" class="twin-stage">
@@ -453,6 +496,11 @@
     <button id="exitJuryBtn">Exit presentation</button>
   </div>
 
+  <!-- First, and classic rather than a module, so window.BiosBoot exists before
+       main.js starts reporting stages into it. It also takes the keyboard in the
+       capture phase while it is up, which is what stops the keystroke that
+       dismisses it from also reaching shell.js and toggling playback. -->
+  <script src="/js/boot-screen.js"></script>
   <script src="/js/environment.js"></script>
   <script src="/js/amr.js"></script>
   <script src="/js/hud.js"></script>
