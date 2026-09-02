@@ -675,6 +675,7 @@ export class DigitalTwin {
     const vestMaterial = new THREE.MeshStandardMaterial({color: 0xf5b843, roughness: .64});
     const skin = new THREE.MeshStandardMaterial({color: 0xd9a276, roughness: .82});
     const limbs = [];
+    const arms = [];
     for (const x of [-.1, .1]) {
       const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.075, .47, 5, 10), uniform);
       leg.position.set(x, .34, 0);
@@ -691,6 +692,7 @@ export class DigitalTwin {
       arm.rotation.z = x < 0 ? -.12 : .12;
       arm.castShadow = true;
       limbs.push(arm);
+      arms.push(arm);
       group.add(arm);
     }
     const head = new THREE.Mesh(
@@ -718,14 +720,28 @@ export class DigitalTwin {
     pauseRing.rotation.x = -Math.PI / 2;
     pauseRing.position.y = .025;
     pauseRing.visible = false;
-    group.add(body, head, helmet, stripe, pauseRing);
+    const workTool = new THREE.Group();
+    const tablet = new THREE.Mesh(
+      new THREE.BoxGeometry(.30, .38, .045),
+      new THREE.MeshStandardMaterial({color: 0x172633, roughness: .46}),
+    );
+    const tabletScreen = new THREE.Mesh(
+      new THREE.BoxGeometry(.24, .30, .012),
+      new THREE.MeshBasicMaterial({color: 0x55dfff}),
+    );
+    tabletScreen.position.z = -.029;
+    workTool.add(tablet, tabletScreen);
+    workTool.position.set(0, 1.02, -.30);
+    workTool.rotation.x = -.34;
+    workTool.visible = false;
+    group.add(body, head, helmet, stripe, pauseRing, workTool);
     // The yellow vest and helmet already communicate the role. A compact ID avoids
     // the long "WORKER" plaques covering AMR labels when both share a junction.
     const label = makeLabel(id, '#f5b843', true);
     label.position.y = 2.02;
     label.scale.multiplyScalar(.52);
     group.add(label);
-    group.userData = {limbs, pauseRing};
+    group.userData = {limbs, arms, pauseRing, workTool};
     this.dynamic.add(group);
     this.humans.set(id, group);
     return group;
@@ -800,6 +816,13 @@ export class DigitalTwin {
         limb.rotation.x = index % 2 ? -stride : stride;
       });
       const humanMode = human.mode || (human.paused ? 'yielding' : 'walking');
+      group.userData.workTool.visible = humanMode === 'working';
+      if (humanMode === 'working') {
+        group.userData.arms.forEach((arm, index) => {
+          arm.rotation.x = -.86;
+          arm.rotation.z = index ? -.18 : .18;
+        });
+      }
       group.userData.pauseRing.visible = humanMode !== 'walking';
       group.userData.pauseRing.material.color.setHex(
         humanMode === 'working' ? PALETTE.green : PALETTE.amber,

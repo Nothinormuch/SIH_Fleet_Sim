@@ -70,7 +70,7 @@ def test_jury_showcases_share_the_energy_aware_auction_profile():
             {"normal", "fragile", "heavy", "hazardous"})
 
 
-def test_showcase_pedestrians_are_numerous_and_remain_outside_racks():
+def test_showcase_pedestrians_work_across_the_warehouse_without_entering_racks():
     expected_counts = {"showcase_human": 3, "showcase_grand_challenge": 5}
     for name, expected in expected_counts.items():
         profile = SHOWCASE_SCENARIOS[name]
@@ -89,11 +89,12 @@ def test_showcase_pedestrians_are_numerous_and_remain_outside_racks():
         world = World(scenario.env, DEFAULT, seed=scenario.seed)
         for index, route in enumerate(scenario.humans):
             human = world.add_human(f"H{index + 1}", route)
+            assert not human.uses_apron
             assert not world._human_hits_static(
                 (human.x, human.y), human.radius, human.uses_apron)
 
-        # Walk every route for three minutes without AMRs. This covers the complete
-        # warehouse-wide apron rather than only one short rack-bank patrol.
+        # Walk every route for three minutes without AMRs. This covers multiple shelf
+        # banks and cross-aisles rather than a short decorative patrol.
         for _ in range(int(180 * DEFAULT.rates.world_hz)):
             world.step(1.0 / DEFAULT.rates.world_hz, {})
             for human in world.humans.values():
@@ -104,7 +105,7 @@ def test_showcase_pedestrians_are_numerous_and_remain_outside_racks():
         assert all(human.work_visits >= 2 for human in world.humans.values())
 
 
-def test_grand_challenge_workers_do_not_spawn_in_the_amr_staging_lane():
+def test_grand_challenge_workers_spawn_safely_inside_shared_warehouse_space():
     scenario = SHOWCASE_SCENARIOS["showcase_grand_challenge"]["builder"](
         n_robots=10, seed=1)
     world = World(scenario.env, DEFAULT, seed=scenario.seed)
@@ -124,7 +125,9 @@ def test_grand_challenge_workers_do_not_spawn_in_the_amr_staging_lane():
             math.hypot(human.x - robot.x, human.y - robot.y)
             for robot in world.robots.values()
         ) > protected
-        assert human.uses_apron
+        assert not human.uses_apron
+        assert 0.0 < human.x < scenario.env.width * DEFAULT.cell_m
+        assert 0.0 < human.y < scenario.env.height * DEFAULT.cell_m
 
 
 def test_grand_challenge_finishes_inside_its_dashboard_evidence_window():
@@ -149,7 +152,7 @@ def test_grand_challenge_finishes_inside_its_dashboard_evidence_window():
 
 
 def test_grand_challenge_liveness_does_not_depend_on_pedestrian_interference():
-    """Protected worker routing must not be the perturbation that unsticks the AMRs."""
+    """Mixed worker routing must not be the perturbation that unsticks the AMRs."""
     profile = SHOWCASE_SCENARIOS["showcase_grand_challenge"]
     scenario = replace(
         profile["builder"](
@@ -300,18 +303,16 @@ console.log(JSON.stringify({points, margin: view.apronMarginCells}));
                for value, limit in zip(point, (900, 600)))
 
 
-def test_dashboard_exports_one_shared_pedestrian_apron_geometry():
+def test_dashboard_reports_showcase_workers_on_the_shared_warehouse_floor():
     payload = run_for_dashboard(
         "showcase_human", POLICY_BIOS_PIBT_V6,
         robots=5, seed=7, duration=10,
         allocation_policy=ALLOCATION_AUCTION_BUNDLE,
     )
     warehouse = payload["map"]
-    assert warehouse["pedestrian_apron"]
-    assert warehouse["pedestrian_apron_offset_m"] == pytest.approx(
-        2.5 * payload["meta"]["cell_m"])
-    assert warehouse["pedestrian_apron_width_m"] == pytest.approx(
-        0.86 * payload["meta"]["cell_m"])
+    assert not warehouse["pedestrian_apron"]
+    assert "pedestrian_apron_offset_m" not in warehouse
+    assert "pedestrian_apron_width_m" not in warehouse
 
 
 def test_dashboard_metric_frames_remain_inside_free_map_cells():

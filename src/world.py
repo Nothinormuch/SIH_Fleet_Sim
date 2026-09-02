@@ -141,6 +141,7 @@ class HumanState:
     distance_travelled: float = 0.0
     mode: str = "walking"          # walking | working | yielding
     uses_apron: bool = False
+    avoidance_side: int = 1         # deterministic preferred passing side
 
     def velocity(self) -> Vec:
         if len(self.waypoints) < 2 or self.paused:
@@ -343,6 +344,11 @@ class World:
             hid, pts, speed=speed, radius=pedestrian_radius,
             x=pts[0][0], y=pts[0][1], idx=1 % len(pts),
             work_indices=work_indices, uses_apron=uses_apron,
+            avoidance_side=(1 if sum(map(ord, hid)) % 2 == 0 else -1),
+            # Shift starts represent workers finishing independent shelf checks. They
+            # avoid an artificial frame-zero crowd without hiding anyone off-map.
+            dwell_s=4.0,
+            dwell_remaining_s=2.0 * len(self.humans),
         )
         self.humans[hid] = h
         return h
@@ -429,10 +435,26 @@ class World:
         # the robot stop.  Evaluating both directions lets the worker turn away on the
         # same control tick instead of remaining a stationary obstacle for one tick and
         # repeatedly bouncing between two waypoints.
-        accepted_human_segments: list[tuple[Vec, Vec, float]] = []
+        accepted_human_segments: dict[str, tuple[Vec, Vec, float]] = {}
         for hid in sorted(self.humans):
             h = self.humans[hid]
             start = prev_h[hid]
+            protective_separation = (
+                h.radius + spec.radius_m + spec.omni_stop_m + 0.16
+            )
+            awareness_distance = protective_separation + 1.10
+            nearby_robot = any(
+                dist(start, prev[rid]) < awareness_distance
+                for rid in self.robots
+            )
+            human_awareness = 2 * h.radius + 0.90
+            nearby_human = any(
+                other_id != hid
+                and dist(start, prev_h[other_id]) < human_awareness
+                for other_id in self.humans
+            )
+
+            needs_avoidance = nearby_robot or nearby_human
             base_state = (
                 h.x, h.y, h.idx, h.direction, h.paused, h.theta,
                 h.dwell_remaining_s, h.work_visits,
@@ -443,18 +465,10 @@ class World:
                 (h.x, h.y, h.idx, h.direction, h.paused, h.theta,
                  h.dwell_remaining_s, h.work_visits, h.mode) = state
 
-            protective_separation = (
-                h.radius + spec.radius_m + spec.omni_stop_m + 0.16
-            )
-            awareness_distance = protective_separation + 1.10
-            nearby_robot = any(
-                dist(start, prev[rid]) < awareness_distance
-                for rid in self.robots
-            )
-
-            def candidate_is_clear(candidate: Vec) -> bool:
+            def candidate_clearance(candidate: Vec) -> float | None:
                 if self._human_hits_static(candidate, h.radius, h.uses_apron):
-                    return False
+                    return None
+                nearest = 99.0
                 for rid, robot in self.robots.items():
                     start_distance = dist(start, prev[rid])
                     end_distance = dist(candidate, (robot.x, robot.y))
@@ -465,8 +479,15 @@ class World:
                         and end_distance > start_distance + 1e-6
                     )
                     if clearance < protective_separation and not escaping:
-                        return False
-                for other_start, other_end, other_radius in accepted_human_segments:
+                        return None
+                    nearest = min(nearest, clearance, end_distance)
+                for other_id, other in self.humans.items():
+                    if other_id == hid:
+                        continue
+                    other_start = prev_h[other_id]
+                    _accepted = accepted_human_segments.get(other_id)
+                    other_end = _accepted[1] if _accepted else other_start
+                    other_radius = other.radius
                     threshold = h.radius + other_radius + 0.12
                     start_distance = dist(start, other_start)
                     end_distance = dist(candidate, other_end)
@@ -477,14 +498,15 @@ class World:
                         and end_distance > start_distance + 1e-6
                     )
                     if clearance < threshold and not escaping:
-                        return False
-                return True
+                        return None
+                    nearest = min(nearest, clearance, end_distance)
+                return nearest
 
-            attempts: list[tuple[float, bool, tuple]] = []
-            directions = (False, True) if nearby_robot else (False,)
+            attempts: list[tuple[float, int, bool, tuple]] = []
+            directions = (False, True) if needs_avoidance else (False,)
             for reverse in directions:
                 restore_human()
-                if nearby_robot:
+                if needs_avoidance:
                     # Work pauses are interruptible: a worker secures the aisle before
                     # inspecting a rack, then leaves when an AMR approaches.
                     h.dwell_remaining_s = 0.0
@@ -494,35 +516,68 @@ class World:
                     h.idx = (old_idx - old_direction) % len(h.waypoints)
                 h.step(dt)
                 candidate = (h.x, h.y)
-                if not candidate_is_clear(candidate):
+                clearance = candidate_clearance(candidate)
+                if clearance is None:
                     continue
-                closest_robot = min(
-                    (dist(candidate, (robot.x, robot.y))
-                     for robot in self.robots.values()),
-                    default=99.0,
+                route_bonus = 0.16 if not reverse else 0.0
+                score = (
+                    min(clearance, awareness_distance + 0.50)
+                    + route_bonus
+                    + 0.05 * dist(start, candidate)
                 )
-                attempts.append((closest_robot, not reverse, (
+                attempts.append((score, 0, not reverse, (
                     h.x, h.y, h.idx, h.direction, h.paused, h.theta,
                     h.dwell_remaining_s, h.work_visits,
                     h.mode,
                 )))
 
+            # Forward/reverse route following is not sufficient at a shared crossing:
+            # both choices can remain directly in an AMR's swept path. Sample bounded
+            # side-steps on a deterministic preferred side, then the opposite side.
+            # The route index is retained, so the worker rejoins the mapped work order
+            # as soon as the conflict clears rather than drifting through shelving.
+            if needs_avoidance or not attempts:
+                target = h.waypoints[base_state[2]]
+                desired = math.atan2(target[1] - start[1], target[0] - start[0])
+                step_m = h.speed * dt
+                side_order = (h.avoidance_side, -h.avoidance_side)
+                for side_rank, side in enumerate(side_order):
+                    for degrees in (35.0, 70.0, 105.0):
+                        heading = wrap_angle(desired + side * math.radians(degrees))
+                        candidate = (
+                            start[0] + math.cos(heading) * step_m,
+                            start[1] + math.sin(heading) * step_m,
+                        )
+                        clearance = candidate_clearance(candidate)
+                        if clearance is None:
+                            continue
+                        progress = dist(start, target) - dist(candidate, target)
+                        score = (
+                            min(clearance, awareness_distance + 0.50)
+                            + 0.32 * progress
+                            - 0.04 * abs(angle_diff(heading, desired))
+                            - 0.025 * side_rank
+                        )
+                        attempts.append((score, side, False, (
+                            candidate[0], candidate[1], base_state[2],
+                            base_state[3], False, heading, 0.0,
+                            base_state[7], "yielding",
+                        )))
+
             # If the normal direction is physically blocked, retry away from it even
             # when the blocker was just outside the proactive awareness range.
-            if not attempts and not nearby_robot:
+            if not attempts and not needs_avoidance:
                 restore_human()
                 old_idx, old_direction = base_state[2], base_state[3]
                 h.direction = -old_direction
                 h.idx = (old_idx - old_direction) % len(h.waypoints)
                 h.step(dt)
                 candidate = (h.x, h.y)
-                if candidate_is_clear(candidate):
+                clearance = candidate_clearance(candidate)
+                if clearance is not None:
                     attempts.append((
-                        min(
-                            (dist(candidate, (robot.x, robot.y))
-                             for robot in self.robots.values()),
-                            default=99.0,
-                        ),
+                        min(clearance, awareness_distance + 0.50),
+                        0,
                         False,
                         (
                             h.x, h.y, h.idx, h.direction, h.paused, h.theta,
@@ -532,13 +587,15 @@ class World:
                     ))
 
             if attempts:
-                _, kept_direction, chosen_state = max(
-                    attempts, key=lambda item: (item[0], item[1])
+                _, chosen_side, kept_direction, chosen_state = max(
+                    attempts, key=lambda item: (item[0], item[2])
                 )
                 restore_human(chosen_state)
+                if chosen_side:
+                    h.avoidance_side = chosen_side
                 moved = dist(start, (h.x, h.y))
                 h.distance_travelled += moved
-                if nearby_robot or not kept_direction:
+                if needs_avoidance or not kept_direction:
                     h.mode = "yielding"
                     h.yield_ticks += 1
             else:
@@ -546,8 +603,8 @@ class World:
                 h.paused = True
                 h.mode = "yielding"
                 h.yield_ticks += 1
-            accepted_human_segments.append(
-                (prev_h[hid], (h.x, h.y), h.radius))
+            accepted_human_segments[hid] = (
+                prev_h[hid], (h.x, h.y), h.radius)
 
         self.t += dt
         return self._check_contacts(prev, prev_h)

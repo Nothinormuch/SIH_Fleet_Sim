@@ -2689,13 +2689,12 @@ class AMRBrain:
             blocked=blocked,
             edge_allowed=(lambda a, b: self.circulation.allows(self.env, a, b))
             if self.policy in DIRECTED_POLICIES else None)
-        # A newly blocked aisle can make the normal one-way circulation temporarily
-        # disconnected.  Local physical truth outranks the nominal traffic graph: use
-        # an undirected detour rather than wait forever for a pallet to broadcast.
-        if not path and blocked and self.policy in DIRECTED_POLICIES:
-            path = astar(self.env, start, self.goal,
-                         extra_cost=route_cost, edge_cost=edge_cost,
-                         blocked=blocked)
+        # Never install an undirected fallback into a directed circulation policy.
+        # The traffic gate correctly rejects such an edge, so the old fallback could
+        # leave a robot waiting on ``v2-direction`` forever after a person briefly
+        # occupied its preferred aisle. Dynamic observations expire quickly and the
+        # route loop retries; an empty temporary route is therefore both executable
+        # and more live than a non-empty route the controller can never admit.
         if path and (edge_cost or predictive_cost):
             base_path = astar(
                 self.env, start, self.goal, extra_cost=self.penalty,
@@ -4653,6 +4652,45 @@ class AMRBrain:
 
     # ================================================================== follower
 
+    def _consume_crossed_straight_waypoints(self, pos, current: Cell) -> None:
+        """Advance past a straight waypoint whose centre is already behind us.
+
+        A safety stop can leave the chassis a few centimetres beyond a cell centre.
+        The old follower then treated that centre as an unvisited target, performed a
+        180-degree turn to drive back to it, and performed a second 180-degree turn to
+        continue down the same aisle.  On a straight segment, crossing the centre is
+        sufficient evidence that the waypoint was reached.  Corners deliberately do
+        not use this shortcut because their centre is needed for rack clearance.
+        """
+        while 0 < self.pidx < len(self.path) - 1:
+            target_cell = self.path[self.pidx]
+            if target_cell != current:
+                return
+            previous = self.path[self.pidx - 1]
+            following = self.path[self.pidx + 1]
+            incoming = (
+                target_cell[0] - previous[0],
+                target_cell[1] - previous[1],
+            )
+            outgoing = (
+                following[0] - target_cell[0],
+                following[1] - target_cell[1],
+            )
+            if incoming != outgoing or manhattan(previous, target_cell) != 1:
+                return
+            centre = cell_center(target_cell, self.cfg.cell_m)
+            longitudinal = (
+                (pos[0] - centre[0]) * incoming[0]
+                + (pos[1] - centre[1]) * incoming[1]
+            )
+            lateral = abs(
+                (pos[0] - centre[0]) * incoming[1]
+                - (pos[1] - centre[1]) * incoming[0]
+            )
+            if longitudinal <= 0.04 or lateral > 0.20 * self.cfg.cell_m:
+                return
+            self.pidx += 1
+
     def _follow(self, t: float, sensors: Sensors) -> Actuation:
         """Pure-pursuit-ish waypoint follower. Shared by every policy, on purpose."""
         spec = self.cfg.robot
@@ -4697,6 +4735,9 @@ class AMRBrain:
             return Actuation(0.0, 0.0)
 
         pos = (sensors.pose[0], sensors.pose[1])
+        self._consume_crossed_straight_waypoints(pos, sensors.cell)
+        if self.pidx >= len(self.path):
+            return Actuation(0.0, 0.0)
         target_cell = self.path[self.pidx]
         target = cell_center(target_cell, self.cfg.cell_m)
         if (self.policy in DIRECTED_POLICIES and target_cell != sensors.cell
