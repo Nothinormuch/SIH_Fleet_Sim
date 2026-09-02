@@ -1268,7 +1268,12 @@ export class DigitalTwin {
       this.lastRouteRefresh = simTime;
     }
     this._updateCamera(frame, simTime);
-    this.controls.update();
+    if (this.cameraMode === 'chase' || this.cameraMode === 'pov' || this.cameraMode === 'follow' || this.cameraMode === 'orbit') {
+      // When locked to a robot, OrbitControls would overwrite the placed camera.
+      // Skip its update so the follow/chase/pov placement sticks.
+    } else {
+      this.controls.update();
+    }
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -1334,7 +1339,13 @@ export class DigitalTwin {
       desired.y = .82;
       this.camera.position.lerp(desired, .18);
       this.camera.lookAt(target.clone().addScaledVector(forward, 7).setY(.7));
-    } else {
+    } else if (this.cameraMode === 'chase') {
+      desired = target.clone().addScaledVector(forward, -5.5);
+      desired.y = 3.7;
+      this.camera.position.lerp(desired, .085);
+      const look = target.clone().addScaledVector(forward, 1.25);
+      this.camera.lookAt(look);
+    } else if (this.cameraMode === 'follow' || this.cameraMode === 'orbit') {
       desired = target.clone().addScaledVector(forward, -5.5);
       desired.y = 3.7;
       this.camera.position.lerp(desired, .085);
