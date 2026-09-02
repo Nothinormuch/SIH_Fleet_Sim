@@ -38,7 +38,8 @@ from .amr import (AMRBrain, CENTRAL_POLICIES, POLICIES, POLICY_HIERARCHICAL,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .metrics import PolicyResult, compare, safety_report
-from .scenarios import SCENARIOS, Scenario, workload_fingerprint
+from .scenarios import (SCENARIOS, SEED_99_DEMO_ROBOTS, SEED_99_DEMO_SEED,
+                        Scenario, seed_99_congestion, workload_fingerprint)
 from .settings import Config, DEFAULT
 from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
                                ALLOCATION_HUNGARIAN,
@@ -508,6 +509,60 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
     )
 
 
+def _seed_99_demo_evidence(frames: list[dict]) -> dict:
+    """Measure the six-way opening standstill and the first BIOS release.
+
+    A scripted label saying "deadlock resolved" would prove nothing.  This evidence is
+    derived from the same per-agent state and wait-for owner shown in the Fleet panel.
+    "Opening gridlock broken" means the first frame after a measured 6/6 standstill in
+    which at least one agent has been released; it does not claim that all later route
+    contention has disappeared.
+    """
+    demo_ids = {
+        f"AMR{index + 1:02d}" for index in range(SEED_99_DEMO_ROBOTS)
+    }
+
+    def blocked_ids(frame: dict) -> set[str]:
+        return {
+            robot["id"]
+            for robot in frame.get("fleet", [])
+            if robot.get("id") in demo_ids
+            and (robot.get("blocked_on") is not None
+                 or robot.get("state") in {"blocked", "retreat"})
+        }
+
+    samples = [
+        (float(frame.get("t", 0.0)), blocked_ids(frame))
+        for frame in frames
+    ]
+    peak = max((len(blocked) for _t, blocked in samples), default=0)
+    detected = next(
+        (t for t, blocked in samples if len(blocked) == SEED_99_DEMO_ROBOTS),
+        None,
+    )
+    released = None
+    if detected is not None:
+        released = next(
+            (t for t, blocked in samples
+             if t > detected and len(blocked) < SEED_99_DEMO_ROBOTS),
+            None,
+        )
+    return {
+        "kind": "six_amr_launch_gridlock",
+        "robots": SEED_99_DEMO_ROBOTS,
+        "peak_simultaneously_blocked": peak,
+        "full_gridlock_observed": peak == SEED_99_DEMO_ROBOTS,
+        "full_gridlock_detected_s": (
+            round(detected, 2) if detected is not None else None),
+        "first_release_s": round(released, 2) if released is not None else None,
+        "first_release_latency_s": (
+            round(released - detected, 2)
+            if detected is not None and released is not None else None),
+        "measurement": (
+            "blocked state or non-empty wait-for owner in recorded 10 Hz telemetry"),
+    }
+
+
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
                       seed: int = 0, duration: float | None = None,
                       allocation_policy: str = ALLOCATION_AUCTION_BUNDLE,
@@ -520,16 +575,26 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
     replayed against a different policy, which is what anyone evaluating this actually
     wants to do.
     """
-    kw: dict = {"seed": seed}
-    if robots is not None:
-        kw["n_robots"] = robots
-    sc = SCENARIOS[scenario](**kw)
+    requested_scenario = scenario
+    seed_99_demo = seed == SEED_99_DEMO_SEED
+    if seed_99_demo:
+        # Seed 99 is a presentation-only, fixed workload.  It intentionally does not
+        # alter the builders used by benchmark campaigns, where a seed must remain an
+        # ordinary RNG input.  The dashboard reports both names so this substitution is
+        # visible rather than silently pretending the selected showcase produced it.
+        sc = seed_99_congestion()
+    else:
+        kw: dict = {"seed": seed}
+        if robots is not None:
+            kw["n_robots"] = robots
+        sc = SCENARIOS[scenario](**kw)
     if duration is not None:
         sc.duration_s = float(duration)
 
     frames: list = []
     result = run_scenario(sc, policy, seed=seed, trace=frames,
                           allocation_policy=allocation_policy, policy_model=policy_model)
+    demo_evidence = _seed_99_demo_evidence(frames) if seed_99_demo else None
     map_payload = sc.env.to_json()
     map_payload["pedestrian_apron"] = any(
         bool(human.get("uses_apron"))
@@ -547,6 +612,10 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         "map": map_payload,
         "meta": {
             "scenario": sc.name, "policy": policy,
+            "requested_scenario": requested_scenario,
+            "requested_robots": robots,
+            "requested_duration_s": duration,
+            "seed_99_demo": seed_99_demo,
             "allocation_policy": allocation_policy, "seed": seed,
             "robots": sc.n_robots, "duration_s": sc.duration_s,
             "tasks": len(_announced_tasks(sc, allocation_policy)) or sc.n_tasks,
@@ -579,6 +648,7 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         },
         "frames": frames,
         "summary": result.to_dict(),
+        "demo_evidence": demo_evidence,
     }
 
 

@@ -42,6 +42,14 @@ from .settings import Config, NetSpec
 from .task_allocation import ACTIVE_ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED
 
 
+# Seed 99 is reserved for the jury-facing launch-gridlock demonstration.  It is kept
+# out of the ordinary showcase defaults and benchmark seed ranges: this is a deliberately
+# adversarial, fixed workload used to explain BIOS traffic coordination, not a favorable
+# sample that may be mixed into an aggregate performance claim.
+SEED_99_DEMO_SEED = 99
+SEED_99_DEMO_ROBOTS = 6
+
+
 @dataclass(frozen=True)
 class ObstacleEvent:
     oid: str
@@ -598,6 +606,65 @@ def energy_acceptance(n_robots: int = 8, tasks_per_robot: int = 2,
     return sc
 
 
+def seed_99_congestion(n_robots: int = SEED_99_DEMO_ROBOTS,
+                       seed: int = SEED_99_DEMO_SEED) -> Scenario:
+    """Fixed six-AMR launch gridlock that BIOS must resolve without choreography.
+
+    Each task starts under one chassis, so the decentralized auction naturally gives
+    every AMR its local job without a dispatcher selecting the winners.  The drop
+    points lie on opposite sides of the compact launch cluster.  Once the awards close,
+    all six robots request occupied cells around the same junction and the traffic
+    layer—not a scripted animation—has to establish an order, yield, and drain the jam.
+
+    This workload is intentionally fixed at six robots.  Keeping the fleet, map, task
+    catalog and seed immutable makes the visual proof reproducible and prevents a
+    "Seed 99" result from changing meaning when it is replayed for a judge.
+    """
+    if seed != SEED_99_DEMO_SEED:
+        raise ValueError(
+            f"seed_99_congestion requires seed {SEED_99_DEMO_SEED}")
+    if n_robots != SEED_99_DEMO_ROBOTS:
+        raise ValueError(
+            f"seed_99_congestion requires exactly {SEED_99_DEMO_ROBOTS} robots")
+
+    env = classic_warehouse(name="seed_99_congestion")
+    starts = [
+        (16, 11),  # junction centre
+        (15, 11),  # west arm
+        (17, 11),  # east arm
+        (16, 10),  # north arm
+        (16, 12),  # south arm
+        (14, 11),  # second west approach
+    ]
+    drops = [
+        (0, 10),   # centre chassis initially requests the occupied west arm
+        (30, 10),  # west chassis initially requests the occupied centre
+        (0, 14),   # east chassis initially requests the occupied centre
+        (16, 20),  # north chassis initially requests the occupied centre
+        (16, 0),   # south chassis initially requests the occupied centre
+        (30, 14),  # queued west chassis is blocked by the first two
+    ]
+    tasks = [
+        Task(
+            f"C99_{index + 1:02d}", start, drop, 0.0,
+            cargo_type="normal", cargo_weight=4.0, priority=3,
+        )
+        for index, (start, drop) in enumerate(zip(starts, drops))
+    ]
+    return Scenario(
+        "seed_99_congestion",
+        env,
+        starts,
+        [[] for _ in starts],
+        duration_s=180.0,
+        pose_noise_m=0.0,
+        use_auction=True,
+        unassigned=tasks,
+        initial_battery_fracs=[0.90] * SEED_99_DEMO_ROBOTS,
+        seed=seed,
+    )
+
+
 # ---------------------------------------------------------------- jury showcase profiles
 
 _SHOWCASE_BATTERIES = (0.48, 0.62, 0.74, 0.86, 0.95, 0.56, 0.79, 0.91)
@@ -771,5 +838,6 @@ SCENARIOS = {
     "partition_recovery": partition_recovery,
     "sih_acceptance_overlap": sih_acceptance_overlap,
     "energy_acceptance": energy_acceptance,
+    "seed_99_congestion": seed_99_congestion,
     **{name: profile["builder"] for name, profile in SHOWCASE_SCENARIOS.items()},
 }
