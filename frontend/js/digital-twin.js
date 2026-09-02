@@ -22,7 +22,12 @@ function disposeObject(root) {
     if (obj.material) {
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
       for (const material of materials) {
-        if (material.map) material.map.dispose();
+        // Textures from the shared cache outlive the scene that used them: the
+        // whole world is rebuilt on every run, and disposing a cached map here
+        // would throw away a texture the next build is about to ask for by name
+        // and get handed straight back. Geometry and materials are per-build and
+        // do belong here.
+        if (material.map && !material.map.userData.shared) material.map.dispose();
         material.dispose();
       }
     }
@@ -100,6 +105,7 @@ function texture(name, {repeat = null, srgb = true} = {}) {
     map.repeat.set(repeat[0], repeat[1]);
   }
   map.anisotropy = 8;
+  map.userData.shared = true;
   TEXTURES[key] = map;
   return map;
 }
@@ -527,9 +533,14 @@ export class DigitalTwin {
         matrix.setPosition(centre.x, level, centre.z);
         shelves.setMatrixAt(shelfIndex++, matrix);
       }
-      for (const level of [cell * .3, cell * .76]) {
-        const stagger = (index % 2 ? 1 : -1) * cell * .08;
-        matrix.setPosition(centre.x + stagger, level, centre.z);
+      // The two enclosed beams. The top beam is stocked separately, in
+      // _buildTopStock, because it is the one task cargo also lives on.
+      for (const [tier, level] of [cell * .3, cell * .76].entries()) {
+        const noise = Math.sin((index * 3 + tier) * 12.9898) * 43758.5453;
+        const jitter = noise - Math.floor(noise);
+        const stagger = ((index + tier) % 2 ? 1 : -1) * cell * (.05 + jitter * .06);
+        matrix.makeRotationY((jitter - .5) * .12);
+        matrix.setPosition(centre.x + stagger, level, centre.z + (jitter - .5) * cell * .05);
         cartons.setMatrixAt(cartonIndex++, matrix);
       }
     });
@@ -615,6 +626,56 @@ export class DigitalTwin {
       this.deliveredMarkers.set(task.id, deliveredMarker);
       this.world.add(pickMarker, deliveredMarker);
     }
+    this._buildTopStock(rackUse);
+  }
+
+  /* Stock the top beam of every rack.
+   *
+   * It was bare, and from any camera above the racks that read as empty shelving
+   * rather than as a working warehouse. It cannot simply get another full-width
+   * carton like the two beams below it, because the top beam is the one task
+   * cargo sits on: _selectRackSlot hands out four quadrant slots per rack at
+   * cell * 1.22, and a centred carton would be inside all four of them.
+   *
+   * So this runs after _buildTasks and fills only what tasks did not claim, in
+   * the same quadrant geometry. rackUse counts slots handed out per rack, and
+   * _selectRackSlot assigns them in order, so slots [used, 4) are free.
+   */
+  _buildTopStock(rackUse) {
+    const cell = this.meta.cell_m;
+    const cells = this.rackCells || [];
+    if (!cells.length) return;
+    const stock = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(cell * .34, cell * .26, cell * .34),
+      new THREE.MeshStandardMaterial({
+        map: texture('carton.jpg'), color: 0xcfc5b6, roughness: .9, metalness: .02,
+      }),
+      cells.length * 4,
+    );
+    stock.castShadow = true;
+    stock.receiveShadow = true;
+    const slotOffsets = [[-.19, -.19], [.19, -.19], [-.19, .19], [.19, .19]];
+    const matrix = new THREE.Matrix4();
+    let index = 0;
+    cells.forEach(([x, y], cellIndex) => {
+      const used = rackUse.get(`${x},${y}`) || 0;
+      const centre = this._cellToWorld(x, y, 0);
+      for (let slot = used; slot < slotOffsets.length; slot++) {
+        const [sx, sz] = slotOffsets[slot];
+        // Deterministic, not random: the same run must rebuild identically on
+        // every replay, and four identical boxes squared up on every rack is
+        // exactly the regularity that reads as placeholder.
+        const noise = Math.sin((cellIndex * 4 + slot) * 12.9898) * 43758.5453;
+        const jitter = noise - Math.floor(noise);
+        matrix.makeRotationY((jitter - .5) * .5);
+        matrix.setPosition(centre.x + sx * cell, cell * 1.22, centre.z + sz * cell);
+        stock.setMatrixAt(index++, matrix);
+      }
+    });
+    // Instances past the fill point keep an identity matrix and would all stack
+    // at the origin; trimming the draw count is what keeps them off screen.
+    stock.count = index;
+    this.world.add(stock);
   }
 
   _cargoColour(task) {
