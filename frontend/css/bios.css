@@ -1586,7 +1586,7 @@ body.builder-open .builder {
 .pool-list { display: grid; gap: 4px; }
 .pool-tile {
   display: grid;
-  grid-template-columns: 26px 1fr;
+  grid-template-columns: 34px 1fr;
   grid-template-rows: auto auto;
   align-items: center;
   gap: 0 12px;
@@ -1603,14 +1603,17 @@ body.builder-open .builder {
 .pool-tile.active { border-color: var(--edge); border-left-color: var(--accent); background: rgba(20,62,86,.45); }
 .pool-tile b { font-family: var(--serif); font-size: 13.5px; font-weight: 400; color: var(--text-hi); }
 .pool-tile small { font-size: 9.5px; color: var(--dimmer); }
-.pool-swatch { grid-row: 1 / 3; width: 26px; height: 26px; border: 1px solid var(--edge-dim); }
-/* The swatches are the colours the grid actually paints, so the legend cannot
-   drift from the canvas. */
-.pool-swatch.free    { background: #0d1a26; }
-.pool-swatch.rack    { background: #24405a; }
-.pool-swatch.station { background: #1d5c48; }
-.pool-swatch.dock    { background: #5c4a18; }
-.pool-swatch.amr     { background: radial-gradient(circle at 50% 50%, var(--accent) 38%, transparent 42%), #0d1a26; }
+.pool-swatch { grid-row: 1 / 3; width: 34px; height: 34px; border: 1px solid var(--edge-dim); }
+/* The swatches are the tiles the grid actually paints, baked from the same
+   sources the 3D twin renders from - so the palette, the canvas and the
+   warehouse you end up with cannot drift apart. Flat colours here were a legend
+   you had to learn; these are a preview. */
+.pool-swatch { background-size: cover; background-position: center; background-color: #0d1a26; }
+.pool-swatch.free    { background-image: url('/assets/twin/builder/tile_floor.png'); }
+.pool-swatch.rack    { background-image: url('/assets/twin/builder/tile_rack.png'); }
+.pool-swatch.station { background-image: url('/assets/twin/builder/tile_station.png'); }
+.pool-swatch.dock    { background-image: url('/assets/twin/builder/tile_amr_dock.png'); }
+.pool-swatch.amr     { background-image: url('/assets/twin/builder/tile_amr.png'); }
 
 .builder-hint { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--dim); }
 .builder-tally { display: grid; grid-template-columns: 1fr auto; gap: 0; margin: 0; }
@@ -1637,7 +1640,10 @@ body.builder-open .builder {
   position: fixed;
   pointer-events: none;
   border: 1px solid var(--accent);
-  background: rgba(53,198,244,.2);
+  background-color: rgba(53,198,244,.2);
+  background-size: cover;
+  background-position: center;
+  opacity: .9;
   transform: translate(-50%, -50%);
   display: none;
   z-index: 60;

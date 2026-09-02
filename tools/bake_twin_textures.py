@@ -27,7 +27,7 @@ import pathlib
 import sys
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 OUT = REPO / "frontend" / "assets" / "twin"
@@ -162,6 +162,76 @@ def save(im: Image.Image, name: str) -> pathlib.Path:
     return path
 
 
+BUILDER_OUT = REPO / "frontend" / "assets" / "twin" / "builder"
+
+def bake_builder_tiles(shots) -> list:
+    """Top-down 96px tiles for the scenario builder palette and grid.
+
+    Each one is composited from what the twin actually puts on that cell, so the
+    palette and the 3D result cannot drift apart:
+
+        floor    the warehouse floor texture itself
+        rack     four cartons on a dark frame - a rack from above IS four cartons
+        station  floor plus the blue corner brackets the 3D station inlays
+        dock     floor plus the green alignment cross the 3D dock inlays
+        amr      floor plus the existing top-down robot sprite
+    """
+    BUILDER_OUT.mkdir(parents=True, exist_ok=True)
+    N = 96
+    # A quadrant of the floor texture, away from its centre cross. The full tile
+    # carries a lane marking, and the twin repeats that once per two cells across
+    # the whole floor - one builder tile per cell would put a yellow line through
+    # every square and the grid would read as a road map.
+    floor_src = Image.open(OUT / "floor_panel.jpg").convert("RGB")
+    q = floor_src.width // 2
+    floor = floor_src.crop((14, 14, q - 14, q - 14)).resize((N, N), Image.LANCZOS)
+    carton = Image.open(OUT / "carton.jpg").convert("RGB")
+
+    def out(im, name):
+        path = BUILDER_OUT / name
+        im.convert("RGBA").save(path, "PNG", optimize=True)
+        shots.append((name, im.convert("RGBA")))
+        return path
+
+    made = [out(floor, "tile_floor.png")]
+
+    # rack: dark deck, four cartons in the same quadrants the twin uses
+    rack = Image.new("RGB", (N, N), (26, 34, 46))
+    chip = carton.resize((int(N * .38), int(N * .38)), Image.LANCZOS)
+    for qx in (0.28, 0.72):
+        for qy in (0.28, 0.72):
+            rack.paste(chip, (int(qx * N - chip.width / 2), int(qy * N - chip.height / 2)))
+    d = ImageDraw.Draw(rack)
+    d.rectangle([0, 0, N - 1, N - 1], outline=(58, 84, 112), width=3)
+    made.append(out(rack, "tile_rack.png"))
+
+    # station: the 3D station's corner brackets, same blue
+    station = floor.copy()
+    d = ImageDraw.Draw(station)
+    blue, arm, w = (59, 130, 246), int(N * .26), 5
+    for cx, cy, dx, dy in ((10, 10, 1, 1), (N - 11, 10, -1, 1), (10, N - 11, 1, -1), (N - 11, N - 11, -1, -1)):
+        d.line([cx, cy, cx + dx * arm, cy], fill=blue, width=w)
+        d.line([cx, cy, cx, cy + dy * arm], fill=blue, width=w)
+    made.append(out(station, "tile_station.png"))
+
+    # dock: the 3D dock's alignment cross, same green
+    dock = floor.copy()
+    d = ImageDraw.Draw(dock)
+    green = (70, 211, 154)
+    d.rectangle([N * .5 - 4, N * .16, N * .5 + 4, N * .84], fill=green)
+    d.rectangle([N * .16, N * .5 - 4, N * .84, N * .5 + 4], fill=green)
+    d.rectangle([N * .5 - 11, N * .5 - 11, N * .5 + 11, N * .5 + 11], fill=green)
+    made.append(out(dock, "tile_amr_dock.png"))
+
+    # amr: the existing top-down robot sprite over floor
+    amr = floor.copy().convert("RGBA")
+    robot = Image.open(REPO / "frontend" / "assets" / "robots" / "robot_amr01_base.png").convert("RGBA")
+    robot.thumbnail((int(N * .82), int(N * .82)), Image.LANCZOS)
+    amr.paste(robot, ((N - robot.width) // 2, (N - robot.height) // 2), robot)
+    made.append(out(amr, "tile_amr.png"))
+    return made
+
+
 def bake(source: pathlib.Path, preview: bool) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     missing = [n for n, f in SRC.items() if not (source / f).exists()]
@@ -247,6 +317,13 @@ def bake(source: pathlib.Path, preview: bool) -> None:
     # sprite is a better still and a worse simulation: it would trade all three
     # behaviours for one nicer frame. Revisit if the figure is ever rebuilt as a
     # sprite sheet with those states in it.
+
+    # --- scenario builder palette ---------------------------------------------
+    # Baked from the same sources the twin renders from, so the tile you paint in
+    # the builder is a picture of what you will actually get. The alternative -
+    # hand-picked sprites, or flat colours - drifts the moment either side
+    # changes, and a builder whose preview lies is worse than one with no preview.
+    made += bake_builder_tiles(shots)
 
     total = sum(p.stat().st_size for p in made)
     for p in made:

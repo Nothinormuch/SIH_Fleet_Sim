@@ -1444,8 +1444,32 @@ const BUILDER = {
   painting: false,
 };
 
-const TILE_FILL = {0: '#0d1a26', 1: '#24405a', 2: '#1d5c48', 3: '#5c4a18'};
 const TILE_CODE = {FREE: 0, RACK: 1, STATION: 2, DOCK: 3, AMR: 0};
+/* Builder art, baked from the same sources the twin renders from
+   (tools/bake_twin_textures.py) so the tile you paint is a picture of what you
+   will actually get. The flat colours these replaced were readable but they were
+   a legend you had to learn, and they said nothing about the result. */
+const TILE_ART = {FREE: 'tile_floor.png', RACK: 'tile_rack.png',
+                  STATION: 'tile_station.png', DOCK: 'tile_amr_dock.png',
+                  AMR: 'tile_amr.png'};
+const VALUE_ART = {0: 'FREE', 1: 'RACK', 2: 'STATION', 3: 'DOCK'};
+// Kept as the fallback for the frames before the art loads, and if it 404s.
+const TILE_FILL = {0: '#0d1a26', 1: '#24405a', 2: '#1d5c48', 3: '#5c4a18'};
+const TILE_IMG = {};
+
+function loadBuilderArt(onReady) {
+  let pending = Object.keys(TILE_ART).length;
+  for (const [type, file] of Object.entries(TILE_ART)) {
+    const img = new Image();
+    // Redraw as each one lands rather than waiting for the set: the grid is
+    // usable immediately on the flat fallback and fills in as art arrives.
+    img.onload = img.onerror = () => { if (--pending >= 0) onReady(); };
+    img.src = `/assets/twin/builder/${file}`;
+    TILE_IMG[type] = img;
+  }
+}
+
+const artReady = img => Boolean(img && img.complete && img.naturalWidth);
 
 function initBuilder() {
   const canvas = el('builderGrid');
@@ -1453,6 +1477,7 @@ function initBuilder() {
   BUILDER.ready = true;
   canvas.width = BUILDER.cols * BUILDER.cell;
   canvas.height = BUILDER.rows * BUILDER.cell;
+  loadBuilderArt(() => drawBuilder());
   resetBuilder();
 
   for (const tile of document.querySelectorAll('.pool-tile')) {
@@ -1498,6 +1523,8 @@ function initBuilder() {
     preview.style.top = `${event.clientY}px`;
     preview.style.width = `${BUILDER.cell}px`;
     preview.style.height = `${BUILDER.cell}px`;
+    const file = TILE_ART[BUILDER.tool];
+    preview.style.backgroundImage = file ? `url('/assets/twin/builder/${file}')` : 'none';
   });
   canvas.addEventListener('dragleave', () => { preview.style.display = 'none'; });
   canvas.addEventListener('drop', event => {
@@ -1553,32 +1580,49 @@ function drawBuilder() {
   const ctx = canvas.getContext('2d');
   const size = BUILDER.cell;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = true;
   for (let y = 0; y < BUILDER.rows; y++) {
     for (let x = 0; x < BUILDER.cols; x++) {
       const value = BUILDER.grid[y][x];
-      ctx.fillStyle = TILE_FILL[value] || TILE_FILL[0];
-      ctx.fillRect(x * size, y * size, size - 1, size - 1);
-      if (value === 2 || value === 3) {
-        ctx.fillStyle = value === 2 ? '#7ee8bd' : '#ffd07a';
-        ctx.font = '10px ui-monospace, monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(value === 2 ? 'S' : 'C', x * size + size / 2, y * size + size / 2);
+      const art = TILE_IMG[VALUE_ART[value]];
+      if (artReady(art)) {
+        ctx.drawImage(art, x * size, y * size, size, size);
+      } else {
+        ctx.fillStyle = TILE_FILL[value] || TILE_FILL[0];
+        ctx.fillRect(x * size, y * size, size - 1, size - 1);
       }
     }
   }
-  for (const [x, y] of BUILDER.starts) {
-    ctx.fillStyle = '#35c6f4';
-    ctx.beginPath();
-    ctx.arc(x * size + size / 2, y * size + size / 2, size * .3, 0, Math.PI * 2);
-    ctx.fill();
+  // A grid over the art, because the art alone does not say where a cell ends -
+  // and every placement in this tool is per cell.
+  ctx.strokeStyle = 'rgba(120,163,184,.16)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= BUILDER.cols; x++) {
+    ctx.beginPath(); ctx.moveTo(x * size + .5, 0); ctx.lineTo(x * size + .5, canvas.height); ctx.stroke();
+  }
+  for (let y = 0; y <= BUILDER.rows; y++) {
+    ctx.beginPath(); ctx.moveTo(0, y * size + .5); ctx.lineTo(canvas.width, y * size + .5); ctx.stroke();
+  }
+  BUILDER.starts.forEach(([x, y], i) => {
+    const art = TILE_IMG.AMR;
+    if (artReady(art)) ctx.drawImage(art, x * size, y * size, size, size);
+    else {
+      ctx.fillStyle = '#35c6f4';
+      ctx.beginPath();
+      ctx.arc(x * size + size / 2, y * size + size / 2, size * .3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // The launch order, so a layout with several starts is readable.
     ctx.fillStyle = '#050b12';
+    ctx.beginPath();
+    ctx.arc(x * size + size * .78, y * size + size * .78, size * .17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#7fd4f5';
     ctx.font = '9px ui-monospace, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(BUILDER.starts.findIndex(s => s[0] === x && s[1] === y) + 1),
-                 x * size + size / 2, y * size + size / 2 + 1);
-  }
+    ctx.fillText(String(i + 1), x * size + size * .78, y * size + size * .78 + 1);
+  });
   syncBuilderTally();
 }
 
