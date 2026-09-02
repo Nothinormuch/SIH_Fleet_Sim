@@ -1019,6 +1019,9 @@ class AMRBrain:
         for peer in fresh_peers:
             for cell in peer.intent[:2]:
                 intended_by.setdefault(cell, []).append(peer)
+        dependent_followers = sum(
+            peer.blocked_on == self.rid for peer in fresh_peers
+        )
 
         requested = self._next_cell()
 
@@ -1026,7 +1029,23 @@ class AMRBrain:
         for target in self.env.neighbors(here):
             if target in occupied:
                 continue
-            contenders = intended_by.get(target, [])
+            # In a fan-in queue, a follower that explicitly reports waiting on us
+            # cannot claim the clearance cell beyond our chassis. Treating its
+            # look-ahead intent as an equal contender creates a circular veto: it
+            # cannot advance until we move, while our only separating move is
+            # rejected because its route eventually uses the same cell. Requiring
+            # two dependent followers confines this exception to a structural jam;
+            # occupancy and Layer 0 remain authoritative for physical safety.
+            contenders = [
+                peer for peer in intended_by.get(target, [])
+                if not (
+                    peer.blocked_on == self.rid
+                    and dependent_followers >= 2
+                    and len(peer.intent) >= 2
+                    and peer.intent[0] == here
+                    and peer.intent[1] == target
+                )
+            ]
             if contenders and not (
                 target == requested
                 and all(
@@ -1589,10 +1608,6 @@ class AMRBrain:
             junction = future[1]
             if self.env.degree(junction) < 3:
                 return None
-            approach = (
-                junction[0] - future[0][0],
-                junction[1] - future[0][1],
-            )
             for peer in self.peers.values():
                 if peer.cell == junction and peer.goal is not None:
                     onward = next(
@@ -1601,12 +1616,16 @@ class AMRBrain:
                     )
                     if onward is None:
                         return peer.rid
-                    departure = (
-                        onward[0] - junction[0],
-                        onward[1] - junction[1],
-                    )
-                    if departure != approach:
+                    if onward == future[0]:
+                        # This is a real two-cell swap: the peer intends to enter the
+                        # cell we are entering before we reach its current junction.
                         return peer.rid
+                    # Otherwise the peer is vacating the junction into a different
+                    # cell.  Staging two cells back here creates a reciprocal wait on a
+                    # legal 2x2 circulation: A waits for diagonally placed B, while B
+                    # waits for A, even though their immediate destinations differ.
+                    # Destination-cell leases serialize the next cells and Layer 0
+                    # independently validates the continuous trajectories.
             return None
         if len(future) < 2 or not any(
             self._controlled_block(cell) is not None for cell in future
@@ -2660,6 +2679,8 @@ class AMRBrain:
                                        no_schedule=not self.path_times))
 
         stuck = t - self._last_progress_t
+        if not self.path and self._v6_dynamic_clearance(t, sensors):
+            return
         if not self.path or self.pidx >= len(self.path):
             self._replan(t, sensors.cell)
         elif stuck > self.cfg.traffic.livelock_progress_s:
@@ -2689,13 +2710,12 @@ class AMRBrain:
             blocked=blocked,
             edge_allowed=(lambda a, b: self.circulation.allows(self.env, a, b))
             if self.policy in DIRECTED_POLICIES else None)
-        # A newly blocked aisle can make the normal one-way circulation temporarily
-        # disconnected.  Local physical truth outranks the nominal traffic graph: use
-        # an undirected detour rather than wait forever for a pallet to broadcast.
-        if not path and blocked and self.policy in DIRECTED_POLICIES:
-            path = astar(self.env, start, self.goal,
-                         extra_cost=route_cost, edge_cost=edge_cost,
-                         blocked=blocked)
+        # Never install an undirected fallback into a directed circulation policy.
+        # The traffic gate correctly rejects such an edge, so the old fallback could
+        # leave a robot waiting on ``v2-direction`` forever after a person briefly
+        # occupied its preferred aisle. Dynamic observations expire quickly and the
+        # route loop retries; an empty temporary route is therefore both executable
+        # and more live than a non-empty route the controller can never admit.
         if path and (edge_cost or predictive_cost):
             base_path = astar(
                 self.env, start, self.goal, extra_cost=self.penalty,
@@ -3022,20 +3042,36 @@ class AMRBrain:
                 ), None)
                 if self.policy == POLICY_BIOS_PIBT_V6 else None
             )
+            parking_cancelled_for_clearance = False
+            if self.goal is not None and not self.path:
+                # Parking and one-cell clearance goals are optional. A stopped human or
+                # pallet can invalidate their only directed route after it was selected;
+                # retaining the unreachable goal makes the idle chassis a permanent
+                # wall. Drop it so the bounded lidar clearance below can choose a legal
+                # move away, or simply remain still when no such move exists.
+                self.goal = None
+                self.path_times = []
+                self.pidx = 0
+                self._auction_reposition_target = None
             remaining_parking_route = self.path[self.pidx:]
             if (task_clearance_request is not None
                     and self.goal is not None
-                    and len(remaining_parking_route) > 1):
+                    and (not remaining_parking_route
+                         or len(remaining_parking_route) > 1)):
                 # Parking is optional; a loaded peer's progress is not. An idle AMR
                 # following a long dock route can become one side of an idle-idle
                 # wait cycle while the task owner queues behind it. Cancel only the
-                # long parking trip. A one-cell clearance move already in progress is
-                # allowed to finish, preventing this rule from resetting it every tick.
+                # long parking trip. An empty route is also cancelled: it means a
+                # temporary human/obstacle observation made the optional parking goal
+                # unreachable, while an active task owner is physically waiting behind
+                # this chassis. A one-cell clearance move already in progress is allowed
+                # to finish, preventing this rule from resetting it every tick.
                 self.goal = None
                 self.path = []
                 self.path_times = []
                 self.pidx = 0
                 self._auction_reposition_target = None
+                parking_cancelled_for_clearance = True
             if self._auction_reposition_target is not None:
                 target = self._auction_reposition_target
                 if self._arrived(sensors, target):
@@ -3109,7 +3145,8 @@ class AMRBrain:
                 self._accept_task(t, self.queue.pop(0), sensors.cell)
             elif self.task is None and self._auction_enabled():
                 self._run_auction(t, sensors, outbox)
-            if self.goal is None:
+            if (self.goal is None and not parking_cancelled_for_clearance
+                    and not self._v6_dynamic_clearance(t, sensors)):
                 self._vacate_if_in_the_way(t, sensors)
             return
 
@@ -3226,9 +3263,7 @@ class AMRBrain:
         here = sensors.cell
         blockers_requesting_clearance = [
             p for p in self.peers.values()
-            if (p.goal == here or here in p.intent
-                or (self.policy == POLICY_BIOS_PIBT_V6
-                    and p.blocked_on == self.rid))
+            if p.goal == here or here in p.intent
         ]
         if not blockers_requesting_clearance:
             return
@@ -3247,13 +3282,36 @@ class AMRBrain:
         # it in front of the task owner. The requester continues to hold behind us;
         # every translated step is still revalidated by Layer 0.
         taken = {p.cell for p in self.peers.values()} | {
-            p.goal for p in self.peers.values() if p.goal} | {
+            p.goal for p in self.peers.values()
+            if p.goal and (p.task_id is not None or p.state == ST_CHARGING)} | {
             cell
             for p in self.peers.values()
             if p not in explicit_blockers
             for cell in p.intent
         }
         options = [n for n in self.env.neighbors(here) if n not in taken]
+        if explicit_blockers and options:
+            # A one-cell clearance is faster and less disruptive than sending an idle
+            # AMR across the warehouse to another dock. Idle parking goals are soft:
+            # they do not reserve a cell against an active task owner. Prefer a legal
+            # circulation step, then the cell that opens the largest requester gap.
+            local_target = max(options, key=lambda cell: (
+                int(not self.circulation.enabled
+                    or self.circulation.allows(self.env, here, cell)),
+                min(manhattan(cell, peer.cell) for peer in explicit_blockers),
+                self.env.degree(cell),
+                -manhattan(cell, self.home),
+                tuple(-coordinate for coordinate in cell),
+            ))
+            self.goal = local_target
+            self._record_decision(
+                t, "IDLE_VACATE", "Clearing one cell for an active peer",
+                from_cell=list(here), to_cell=list(local_target),
+                requesting_robots=sorted(p.rid for p in explicit_blockers))
+            self._replan(t, here)
+            if self.path:
+                return
+            self.goal = None
         if (self.policy == POLICY_BIOS_PIBT_V6 and self.circulation.enabled
                 and explicit_blockers):
             # A one-cell sidestep is insufficient when every adjacent cell is part of
@@ -3325,6 +3383,75 @@ class AMRBrain:
                 from_cell=list(here), to_cell=list(self.goal),
                 requesting_robots=sorted(p.rid for p in blockers_requesting_clearance))
             self._replan(t, here)
+
+    def _v6_dynamic_clearance(self, t: float, sensors: Sensors) -> bool:
+        """Move one cell away when a stationary anonymous object erases the route.
+
+        A worker does not publish a task-layer clearance request. If they become boxed
+        between an active AMR and an idle one, task-aware peer yielding alone cannot
+        release either side. BIOS 6 may therefore use its receiver-local, expiring
+        dynamic-obstacle map to make exactly one clearance step. The target is peer-free
+        and strictly farther from all adjacent anonymous cells. Normal traffic admission
+        and Layer 0 remain authoritative, and an active task's goal is never replaced.
+        """
+        if self.policy != POLICY_BIOS_PIBT_V6:
+            return False
+        here = sensors.cell
+        nearby = {
+            cell for cell, expiry in self._dynamic_blocked_until.items()
+            if expiry > t and manhattan(here, cell) <= 1
+        }
+        if not nearby:
+            return False
+
+        fresh_peers = [
+            peer for peer in self.peers.values()
+            if t - peer.last_seen <= self._peer_stale_after_s()
+        ]
+        occupied = {peer.cell for peer in fresh_peers}
+        intended_by = {
+            cell: sum(cell in peer.intent[:2] for peer in fresh_peers)
+            for peer in fresh_peers
+            for cell in peer.intent[:2]
+        }
+        current_clearance = min(manhattan(here, cell) for cell in nearby)
+        candidates = [
+            cell for cell in self.env.neighbors(here)
+            if cell not in occupied and cell not in nearby
+            and min(manhattan(cell, blocked) for blocked in nearby)
+            > current_clearance
+        ]
+        if not candidates:
+            return False
+
+        target = max(candidates, key=lambda cell: (
+            min(manhattan(cell, blocked) for blocked in nearby),
+            -intended_by.get(cell, 0),
+            int(not self.circulation.enabled
+                or self.circulation.allows(self.env, here, cell)),
+            self.env.degree(cell),
+            -manhattan(cell, self.home),
+            tuple(-coordinate for coordinate in cell),
+        ))
+        self.retreat_target = target
+        self._retreat_for = "dynamic-obstacle"
+        self._retreat_block_cid = None
+        self._retreat_origin = here
+        self._retreat_contested = min(nearby)
+        self._retreat_since = t
+        self.state = ST_RETREAT
+        self.path = [here, target]
+        self.path_times = []
+        self.pidx = 1
+        self._cell_repair_target = target
+        self._creep_until = max(self._creep_until, t + 6.0)
+        self.stats["retreats"] += 1
+        self._record_decision(
+            t, "DYNAMIC_CLEARANCE",
+            "AMR cleared space for a stationary local obstacle",
+            from_cell=list(here), to_cell=list(target),
+            observed_cells=[list(cell) for cell in sorted(nearby)])
+        return True
 
     def _route_crosses_radio_dead_zone(self, route: list[Cell]) -> bool:
         """Whether any route cell centre lies inside a configured radio hole."""
@@ -4653,6 +4780,45 @@ class AMRBrain:
 
     # ================================================================== follower
 
+    def _consume_crossed_straight_waypoints(self, pos, current: Cell) -> None:
+        """Advance past a straight waypoint whose centre is already behind us.
+
+        A safety stop can leave the chassis a few centimetres beyond a cell centre.
+        The old follower then treated that centre as an unvisited target, performed a
+        180-degree turn to drive back to it, and performed a second 180-degree turn to
+        continue down the same aisle.  On a straight segment, crossing the centre is
+        sufficient evidence that the waypoint was reached.  Corners deliberately do
+        not use this shortcut because their centre is needed for rack clearance.
+        """
+        while 0 < self.pidx < len(self.path) - 1:
+            target_cell = self.path[self.pidx]
+            if target_cell != current:
+                return
+            previous = self.path[self.pidx - 1]
+            following = self.path[self.pidx + 1]
+            incoming = (
+                target_cell[0] - previous[0],
+                target_cell[1] - previous[1],
+            )
+            outgoing = (
+                following[0] - target_cell[0],
+                following[1] - target_cell[1],
+            )
+            if incoming != outgoing or manhattan(previous, target_cell) != 1:
+                return
+            centre = cell_center(target_cell, self.cfg.cell_m)
+            longitudinal = (
+                (pos[0] - centre[0]) * incoming[0]
+                + (pos[1] - centre[1]) * incoming[1]
+            )
+            lateral = abs(
+                (pos[0] - centre[0]) * incoming[1]
+                - (pos[1] - centre[1]) * incoming[0]
+            )
+            if longitudinal <= 0.04 or lateral > 0.20 * self.cfg.cell_m:
+                return
+            self.pidx += 1
+
     def _follow(self, t: float, sensors: Sensors) -> Actuation:
         """Pure-pursuit-ish waypoint follower. Shared by every policy, on purpose."""
         spec = self.cfg.robot
@@ -4697,6 +4863,9 @@ class AMRBrain:
             return Actuation(0.0, 0.0)
 
         pos = (sensors.pose[0], sensors.pose[1])
+        self._consume_crossed_straight_waypoints(pos, sensors.cell)
+        if self.pidx >= len(self.path):
+            return Actuation(0.0, 0.0)
         target_cell = self.path[self.pidx]
         target = cell_center(target_cell, self.cfg.cell_m)
         if (self.policy in DIRECTED_POLICIES and target_cell != sensors.cell

@@ -1284,8 +1284,13 @@ body.jury-mode .menu-prompt { opacity: 0; pointer-events: none; }
   .messages { display: none; }
   .transport { width: min(320px, 44vw); }
   .split, .split.wide { grid-template-columns: 1fr; grid-template-rows: minmax(0, .9fr) minmax(0, 1.1fr); }
-  .tab { padding: 9px 13px; }
-  .tab span { font-size: 9px; letter-spacing: .18em; }
+  .menu-bar { gap: 12px; }
+  .menu-mark small { display: none; }
+  .menu-mark b { font-size: 14px; }
+  .tab { padding: 9px 10px; }
+  .tab span { font-size: 8px; letter-spacing: .14em; }
+  .menu-close { gap: 0; font-size: 0; }
+  .menu-close kbd { font-size: 9px; }
   .field-grid, .inspector-grid, .keys { grid-template-columns: 1fr; }
   .pip { width: 220px; }
 }

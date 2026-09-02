@@ -21,13 +21,14 @@ from src.assignment import hungarian
 from src.environment import (RACK, chokepoint_warehouse, classic_warehouse,
                              corridors, open_floor)
 from src.fleet_manager import FleetManager
-from src.geometry import (cell_center, manhattan, segments_min_distance, to_cell,
-                          wrap_angle)
+from src.geometry import (cell_center, dist, manhattan, segments_min_distance,
+                          to_cell, wrap_angle)
 from src.messages import (MGR_BEACON, PLAN_RSP, award, bid, decode,
                           decode_packet, encode, experience, heartbeat, intent,
                           task_new)
 from src.metrics import poisson_rate_ci
 from src.planner import Reservations, astar, prioritized_plan
+from src.priority import PriorityKey
 from src.settings import DEFAULT
 from src.task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
                                  ALLOCATION_HUNGARIAN, ALLOCATION_PREASSIGNED)
@@ -104,6 +105,70 @@ def test_v6_prediction_falls_back_to_v5_routes_in_a_dead_zone():
     brain._predicted_cell_cost[(2, 2)] = (5.0, 10.0, "moving-obstacle")
 
     assert brain._v6_prediction_costs(0.0, (0, 2)) == {}
+
+
+def test_follower_does_not_reverse_to_a_crossed_straight_waypoint():
+    """A post-braking overshoot must continue down the aisle, not spin twice."""
+    env = open_floor(8, 8)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    brain.path = [(3, 4), (3, 3), (3, 2), (3, 1)]
+    brain.pidx = 2
+    centre = cell_center((3, 2), DEFAULT.cell_m)
+    sensors = Sensors(
+        t=1.0,
+        pose=(centre[0], centre[1] - 0.24, -math.pi / 2),
+        v=0.0,
+        omega=0.0,
+        battery_frac=1.0,
+        cell=(3, 2),
+        clearance_m=99.0,
+        clearance_omni_m=99.0,
+    )
+
+    act = brain._follow(1.0, sensors)
+
+    assert brain.pidx == 3
+    assert act.v > 0.0
+    assert abs(act.omega) < 0.05
+
+
+def test_follower_keeps_a_crossed_corner_waypoint_for_rack_clearance():
+    """The straight-through optimisation must never cut a planned corner."""
+    env = open_floor(8, 8)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    brain.path = [(3, 3), (3, 2), (4, 2)]
+    brain.pidx = 1
+    centre = cell_center((3, 2), DEFAULT.cell_m)
+    sensors = Sensors(
+        t=1.0,
+        pose=(centre[0], centre[1] - 0.24, -math.pi / 2),
+        v=0.0,
+        omega=0.0,
+        battery_frac=1.0,
+        cell=(3, 2),
+        clearance_m=99.0,
+        clearance_omni_m=99.0,
+    )
+
+    brain._follow(1.0, sensors)
+
+    assert brain.pidx == 1
+
+
+def test_directed_replan_never_installs_an_unexecutable_reverse_edge():
+    """A temporary local obstacle must not create a permanent v2-direction hold."""
+    env = classic_warehouse(width=31, height=21)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    start = (18, 16)
+    brain.goal = (17, 11)
+    brain._dynamic_blocked_until.update({cell: 10.0 for cell in env.neighbors(start)})
+
+    brain._replan(1.0, start)
+
+    assert not brain.path or all(
+        brain.circulation.allows(env, current, following)
+        for current, following in zip(brain.path, brain.path[1:])
+    )
 
 
 def test_v6_degraded_auction_never_caches_an_inferred_remote_winner():
@@ -254,6 +319,39 @@ def test_v6_cluster_unstick_selects_only_a_free_clearance_cell():
     assert brain.path == [here, brain.retreat_target]
     assert brain.state == "retreat"
     assert brain.decision_log[-1]["code"] == "CLEARANCE_UNSTICK"
+
+
+def test_v6_cluster_unstick_ignores_a_follower_waiting_on_this_robot():
+    """A queued follower's look-ahead intent must not veto the leader's escape."""
+    env = open_floor(10, 10)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    here = (4, 4)
+    px, py = cell_center(here, DEFAULT.cell_m)
+    target = (4, 5)
+    brain.goal = (8, 5)
+    brain.path = [here, target]
+    brain.pidx = 1
+    brain.peers = {
+        "B": Peer(
+            "B", cell=(4, 3), last_seen=1.0, intent=[here, target],
+            blocked_on="A", state="blocked",
+            priority_key=PriorityKey(waiting_age=99, robot_id="B"),
+        ),
+        "C": Peer("C", cell=(3, 4), last_seen=1.0, blocked_on="A"),
+        "D": Peer("D", cell=(5, 4), last_seen=1.0),
+    }
+    close_follower = Detection(
+        x=px, y=py - 1.03, r=0.35, range_m=1.03,
+    )
+    sensors = Sensors(
+        t=1.0, pose=(px, py, math.pi / 2), v=0.0, omega=0.0,
+        battery_frac=1.0, cell=here, clearance_m=0.33,
+        clearance_omni_m=0.33, detections=[close_follower],
+    )
+
+    assert brain._v6_clearance_unstick(1.0, sensors)
+    assert brain.retreat_target == target
+    assert brain.path == [here, target]
 
 
 def test_task_protocol_carries_epoch_deadline_and_lease():
@@ -541,6 +639,23 @@ def test_lidar_detections_carry_no_identity():
     dets = w.sense("A").detections
     assert dets
     assert not any(hasattr(d, "rid") or hasattr(d, "id") for d in dets)
+
+
+def test_workers_choose_reciprocal_clearance_in_a_shared_aisle():
+    """Two anonymous workers must not walk through one another on a route crossing."""
+    env = open_floor(10, 8)
+    world = World(env, DEFAULT, seed=0)
+    first = world.add_human("H1", [(2, 4), (7, 4)], speed=1.0)
+    second = world.add_human("H2", [(7, 4), (2, 4)], speed=1.0)
+    minimum = 99.0
+
+    for _ in range(int(20 * DEFAULT.rates.world_hz)):
+        world.step(1.0 / DEFAULT.rates.world_hz, {})
+        minimum = min(minimum, dist((first.x, first.y), (second.x, second.y)))
+
+    assert minimum >= first.radius + second.radius + 0.11
+    assert first.distance_travelled > 2.0
+    assert second.distance_travelled > 2.0
 
 
 # ----------------------------------------------------------------- protocol

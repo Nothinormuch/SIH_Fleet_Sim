@@ -60,6 +60,20 @@ function hexCss(value) {
   return `#${value.toString(16).padStart(6, '0')}`;
 }
 
+function pedestrianEnvelope(map, meta) {
+  const cell = meta.cell_m;
+  const enabled = Boolean(map && map.pedestrian_apron);
+  const offset = enabled
+    ? Number(map.pedestrian_apron_offset_m || cell * 2.5) : 0;
+  const laneWidth = enabled
+    ? Number(map.pedestrian_apron_width_m || cell * .86) : 0;
+  // Include the whole lane and a small visual breathing margin.  Camera fitting that
+  // stops at the AMR map boundary makes an outside worker project directly over a
+  // robot even though their physics positions are metres apart.
+  const margin = enabled ? offset + laneWidth / 2 + cell * .34 : .6;
+  return {enabled, offset, laneWidth, margin};
+}
+
 export class DigitalTwin {
   constructor(canvas, onSelect) {
     this.canvas = canvas;
@@ -82,7 +96,10 @@ export class DigitalTwin {
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.065;
-    this.controls.maxPolarAngle = Math.PI * 0.47;
+    // Do not let Orbit flatten the warehouse into an almost-horizontal strip. At that
+    // angle a worker on the protected perimeter can project on top of an AMR several
+    // metres inside the barrier, which is physically safe but visually misleading.
+    this.controls.maxPolarAngle = Math.PI * 0.35;
     this.controls.minDistance = 5;
     this.controls.maxDistance = 95;
     this.controls.target.set(0, 0, 0);
@@ -94,7 +111,12 @@ export class DigitalTwin {
     this.robots = new Map();
     this.humans = new Map();
     this.obstacles = new Map();
+    this.taskMarkers = new Map();
+    this.deliveredMarkers = new Map();
+    this.frameTimes = [];
+    this.taskTimeline = [];
     this.deadZones = [];
+    this.rackCells = [];
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.selectedId = null;
@@ -135,11 +157,17 @@ export class DigitalTwin {
     this.robots.clear();
     this.humans.clear();
     this.obstacles.clear();
+    this.taskMarkers.clear();
+    this.deliveredMarkers.clear();
     this.deadZones = [];
+    this.rackCells = [];
     this.map = data.map;
     this.meta = data.meta;
+    this.frameTimes = (data.frames || []).map(frame => frame.t);
+    this.taskTimeline = [];
     this._buildWarehouse();
     this._buildTasks();
+    this.taskTimeline = this._buildTaskTimeline(data.frames || []);
     const first = data.frames[0] || {robots: [], humans: []};
     for (const robot of first.robots) this._ensureRobot(robot.id);
     for (const human of first.humans || []) this._ensureHuman(human.id);
@@ -192,6 +220,7 @@ export class DigitalTwin {
     if (!this.map || !this.meta) return;
     const widthM = this.map.width * this.meta.cell_m;
     const depthM = this.map.height * this.meta.cell_m;
+    const envelope = pedestrianEnvelope(this.map, this.meta);
 
     // Elevation and azimuth are chosen, not fitted. 45 degrees up is enough to
     // read the aisles without flattening the racks, and 20 degrees off the short
@@ -206,10 +235,10 @@ export class DigitalTwin {
       Math.cos(elevation) * Math.cos(azimuth));
 
     // Both floor corners and rack-height corners: what has to be in frame is the
-    // volume the warehouse occupies, not the plane it stands on.
+    // complete operational volume, including the protected pedestrian perimeter.
     const corners = [];
-    for (const x of [0, widthM]) {
-      for (const z of [0, depthM]) {
+    for (const x of [-envelope.margin, widthM + envelope.margin]) {
+      for (const z of [-envelope.margin, depthM + envelope.margin]) {
         for (const height of [0, 3]) corners.push(this._toWorld(x, z, height));
       }
     }
@@ -266,10 +295,13 @@ export class DigitalTwin {
       // show is worse than no tactical view.
       const widthM = this.map.width * this.meta.cell_m;
       const depthM = this.map.height * this.meta.cell_m;
+      const envelope = pedestrianEnvelope(this.map, this.meta);
+      const framedWidth = widthM + envelope.margin * 2;
+      const framedDepth = depthM + envelope.margin * 2;
       const vFov = this.camera.fov * Math.PI / 180;
       const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(0.5, this.camera.aspect));
-      const height = Math.max((depthM / 2) / Math.tan(vFov / 2),
-                              (widthM / 2) / Math.tan(hFov / 2)) * 1.02;
+      const height = Math.max((framedDepth / 2) / Math.tan(vFov / 2),
+                              (framedWidth / 2) / Math.tan(hFov / 2)) * 1.02;
       // A few degrees off plumb. Dead vertical flattens the racks into their own
       // footprints and you lose every cue about which way a robot is facing.
       this.camera.position.set(0, height, depthM * .14);
@@ -306,7 +338,8 @@ export class DigitalTwin {
     const cell = this.meta.cell_m;
     const widthM = this.map.width * cell;
     const heightM = this.map.height * cell;
-    const apronMargin = this.map.pedestrian_apron ? cell * 2.5 : .6;
+    const pedestrian = pedestrianEnvelope(this.map, this.meta);
+    const apronMargin = pedestrian.margin;
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(widthM + apronMargin * 2 + .8, .35,
                             heightM + apronMargin * 2 + .8),
@@ -323,12 +356,19 @@ export class DigitalTwin {
     grid.material.opacity = .55;
     this.world.add(grid);
 
-    if (this.map.pedestrian_apron) {
+    if (pedestrian.enabled) {
       const laneMaterial = new THREE.MeshBasicMaterial({
-        color: PALETTE.amber, transparent: true, opacity: .20, depthWrite: false,
+        color: PALETTE.amber, transparent: true, opacity: .38, depthWrite: false,
       });
-      const apronOffset = cell * 2.50;
-      const apronWidth = cell * .62;
+      const bufferMaterial = new THREE.MeshBasicMaterial({
+        color: PALETTE.amber, transparent: true, opacity: .055, depthWrite: false,
+      });
+      const barrierMaterial = new THREE.MeshStandardMaterial({
+        color: PALETTE.amber, roughness: .42, metalness: .58,
+      });
+      const apronOffset = pedestrian.offset;
+      const apronWidth = pedestrian.laneWidth;
+      const bufferDepth = Math.max(cell * .2, apronOffset - apronWidth / 2);
       const horizontal = new THREE.BoxGeometry(
         widthM + apronOffset * 2, .022, apronWidth,
       );
@@ -347,6 +387,56 @@ export class DigitalTwin {
         lane.renderOrder = 2;
         this.world.add(lane);
       }
+
+      // A subdued exclusion buffer plus a physical guard rail makes the semantic
+      // boundary readable from every camera angle. The rail is intentionally visual;
+      // the physics route is already outside the AMR map and never relies on it.
+      const horizontalBuffer = new THREE.BoxGeometry(
+        widthM + apronOffset * 2, .014, bufferDepth,
+      );
+      const verticalBuffer = new THREE.BoxGeometry(
+        bufferDepth, .014, heightM + apronOffset * 2,
+      );
+      for (const sign of [-1, 1]) {
+        const z = sign * (heightM / 2 + bufferDepth / 2);
+        const buffer = new THREE.Mesh(horizontalBuffer, bufferMaterial);
+        buffer.position.set(0, .012, z);
+        buffer.renderOrder = 1;
+        this.world.add(buffer);
+      }
+      for (const sign of [-1, 1]) {
+        const x = sign * (widthM / 2 + bufferDepth / 2);
+        const buffer = new THREE.Mesh(verticalBuffer, bufferMaterial);
+        buffer.position.set(x, .012, 0);
+        buffer.renderOrder = 1;
+        this.world.add(buffer);
+      }
+
+      const addRail = (length, horizontalRail, x, z) => {
+        const railGeometry = horizontalRail
+          ? new THREE.BoxGeometry(length, .07, .07)
+          : new THREE.BoxGeometry(.07, .07, length);
+        for (const y of [.18, .62]) {
+          const rail = new THREE.Mesh(railGeometry, barrierMaterial);
+          rail.position.set(x, y, z);
+          rail.castShadow = true;
+          this.world.add(rail);
+        }
+        const postCount = Math.max(2, Math.ceil(length / (cell * 2)));
+        const postGeometry = new THREE.BoxGeometry(.085, .68, .085);
+        for (let index = 0; index <= postCount; index++) {
+          const along = -length / 2 + length * index / postCount;
+          const post = new THREE.Mesh(postGeometry, barrierMaterial);
+          post.position.set(horizontalRail ? along : x, .34,
+                            horizontalRail ? z : along);
+          post.castShadow = true;
+          this.world.add(post);
+        }
+      };
+      addRail(widthM + .16, true, 0, heightM / 2 + .10);
+      addRail(widthM + .16, true, 0, -heightM / 2 - .10);
+      addRail(heightM + .16, false, widthM / 2 + .10, 0);
+      addRail(heightM + .16, false, -widthM / 2 - .10, 0);
     }
 
     const rackCells = [];
@@ -355,6 +445,7 @@ export class DigitalTwin {
         if (this.map.grid[y][x] === 1) rackCells.push([x, y]);
       }
     }
+    this.rackCells = rackCells;
     // Build recognisable industrial shelving instead of opaque rack-shaped blocks.
     // Instancing keeps the richer geometry inexpensive even on a large warehouse.
     const uprightGeometry = new THREE.BoxGeometry(cell * .055, cell * 1.18, cell * .055);
@@ -461,27 +552,132 @@ export class DigitalTwin {
 
   _buildTasks() {
     const catalog = this.meta.tasks_catalog || [];
-    const colours = {normal: 0x5caeff, fragile: 0xc084fc, heavy: 0xf59e0b, hazardous: 0xfb7185};
+    const rackUse = new Map();
     for (const task of catalog) {
-      const colour = colours[task.cargo_type] || PALETTE.cyan;
-      const marker = new THREE.Group();
-      marker.position.copy(this._cellToWorld(task.pick[0], task.pick[1], .12));
-      const box = new THREE.Mesh(
-        new THREE.BoxGeometry(.58, .52, .58),
-        new THREE.MeshStandardMaterial({color: colour, roughness: .55, metalness: .08}),
-      );
-      box.position.y = .28;
-      box.castShadow = true;
-      marker.add(box);
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(.42, .49, 32),
-        new THREE.MeshBasicMaterial({color: colour, transparent: true, opacity: .75,
-          side: THREE.DoubleSide, depthWrite: false}),
-      );
-      ring.rotation.x = -Math.PI / 2;
-      marker.add(ring);
-      marker.userData.taskMarker = true;
-      this.world.add(marker);
+      const pickMarker = this._makeCargoMarker(task, false, rackUse);
+      const deliveredMarker = this._makeCargoMarker(task, true, rackUse);
+      if (!pickMarker || !deliveredMarker) continue;
+      deliveredMarker.visible = false;
+      this.taskMarkers.set(task.id, pickMarker);
+      this.deliveredMarkers.set(task.id, deliveredMarker);
+      this.world.add(pickMarker, deliveredMarker);
+    }
+  }
+
+  _cargoColour(task) {
+    const colours = {normal: 0x5caeff, fragile: 0xc084fc, heavy: 0xf59e0b, hazardous: 0xfb7185};
+    return colours[task?.cargo_type] || PALETTE.cyan;
+  }
+
+  _selectRackSlot(anchor, rackUse) {
+    const rackKey = ([x, y]) => `${x},${y}`;
+    let candidates = [
+      [anchor[0] - 1, anchor[1]], [anchor[0] + 1, anchor[1]],
+      [anchor[0], anchor[1] - 1], [anchor[0], anchor[1] + 1],
+    ].filter(([x, y]) => this.map.grid?.[y]?.[x] === 1);
+    if (!candidates.length) {
+      candidates = [...this.rackCells].sort((a, b) => {
+        const ad = Math.abs(a[0] - anchor[0]) + Math.abs(a[1] - anchor[1]);
+        const bd = Math.abs(b[0] - anchor[0]) + Math.abs(b[1] - anchor[1]);
+        return ad - bd || a[1] - b[1] || a[0] - b[0];
+      }).slice(0, 8);
+    }
+    candidates.sort((a, b) =>
+      (rackUse.get(rackKey(a)) || 0) - (rackUse.get(rackKey(b)) || 0)
+      || a[1] - b[1] || a[0] - b[0]);
+    const rack = candidates[0];
+    if (!rack) return null;
+    const key = rackKey(rack);
+    const slot = rackUse.get(key) || 0;
+    rackUse.set(key, slot + 1);
+    return {rack, slot};
+  }
+
+  _makeCargoMarker(task, delivered, rackUse) {
+    const colour = delivered ? PALETTE.green : this._cargoColour(task);
+    const anchor = delivered ? task.drop : task.pick;
+    const placement = this._selectRackSlot(anchor, rackUse);
+    if (!placement) return null;
+    const {rack, slot} = placement;
+    const slotOffsets = [[-.19, -.19], [.19, -.19], [-.19, .19], [.19, .19]];
+    const [slotX, slotZ] = slotOffsets[slot % slotOffsets.length];
+    const cell = this.meta.cell_m;
+    const marker = new THREE.Group();
+    marker.position.copy(this._cellToWorld(rack[0], rack[1], 0));
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(cell * .34, cell * .26, cell * .34),
+      new THREE.MeshStandardMaterial({color: colour, roughness: .48, metalness: .12,
+        emissive: colour, emissiveIntensity: delivered ? .16 : .08}),
+    );
+    box.position.set(slotX * cell, cell * 1.22, slotZ * cell);
+    box.castShadow = true;
+    marker.add(box);
+    const strap = new THREE.Mesh(
+      new THREE.BoxGeometry(cell * .055, cell * .272, cell * .35),
+      new THREE.MeshStandardMaterial({color: 0xe8f2f8, roughness: .45, metalness: .18}),
+    );
+    strap.position.copy(box.position);
+    marker.add(strap);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(cell * .25, cell * .29, 32),
+      new THREE.MeshBasicMaterial({color: colour, transparent: true, opacity: .75,
+        side: THREE.DoubleSide, depthWrite: false}),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(slotX * cell, cell * 1.055, slotZ * cell);
+    marker.add(ring);
+    marker.userData = {
+      taskMarker: true, taskId: task.id, delivered, rackCell: rack,
+    };
+    return marker;
+  }
+
+  _buildTaskTimeline(frames) {
+    const completed = new Set();
+    const previousByRobot = new Map();
+    return frames.map(frame => {
+      const active = new Map();
+      for (const info of frame.fleet || []) {
+        const previous = previousByRobot.get(info.id);
+        if (previous && Number(info.done || 0) > Number(previous.done || 0)
+            && previous.task) {
+          completed.add(previous.task);
+        }
+        const decision = info.decision;
+        const decisionTask = decision?.code === 'TASK_COMPLETED'
+          ? decision.details?.task : null;
+        if (decisionTask) completed.add(decisionTask);
+        if (info.task) active.set(info.task, info);
+        previousByRobot.set(info.id, {task: info.task, done: info.done});
+      }
+      return {completed: new Set(completed), active};
+    });
+  }
+
+  _timelineAt(simTime) {
+    if (!this.taskTimeline.length) return {completed: new Set(), active: new Map()};
+    let low = 0;
+    let high = this.frameTimes.length - 1;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      if (this.frameTimes[middle] <= simTime) low = middle + 1;
+      else high = middle - 1;
+    }
+    return this.taskTimeline[Math.max(0, high)] || this.taskTimeline[0];
+  }
+
+  _updateTaskCargo(frame, simTime) {
+    const timeline = this._timelineAt(simTime);
+    const activeByTask = new Map();
+    for (const info of frame.fleet || []) {
+      if (info.task) activeByTask.set(info.task, info);
+    }
+    for (const [taskId, marker] of this.taskMarkers) {
+      const info = activeByTask.get(taskId) || timeline.active.get(taskId);
+      marker.visible = !timeline.completed.has(taskId) && !(info && info.carry);
+    }
+    for (const [taskId, marker] of this.deliveredMarkers) {
+      marker.visible = timeline.completed.has(taskId);
     }
   }
 
@@ -556,6 +752,17 @@ export class DigitalTwin {
       rail.position.set(x, .57, .02);
       group.add(rail);
     }
+    const payload = new THREE.Group();
+    const payloadBox = new THREE.Mesh(
+      new THREE.BoxGeometry(.46, .34, .46),
+      new THREE.MeshStandardMaterial({color: PALETTE.cyan, roughness: .55, metalness: .08}),
+    );
+    payloadBox.position.set(0, .78, -.18);
+    payloadBox.castShadow = true;
+    payload.add(payloadBox);
+    payload.userData = {box: payloadBox};
+    payload.visible = false;
+    group.add(payload);
     const arrow = new THREE.Mesh(
       new THREE.ConeGeometry(.13, .35, 3),
       new THREE.MeshBasicMaterial({color: 0xffffff}),
@@ -583,7 +790,7 @@ export class DigitalTwin {
     label.position.y = 1.34;
     label.scale.multiplyScalar(.84);
     group.add(label);
-    group.userData = {robotId: id, colour, halo, selection, label, beacon, wheels};
+    group.userData = {robotId: id, colour, halo, selection, label, beacon, wheels, payload};
     this.dynamic.add(group);
     this.robots.set(id, group);
     return group;
@@ -596,6 +803,7 @@ export class DigitalTwin {
     const vestMaterial = new THREE.MeshStandardMaterial({color: 0xf5b843, roughness: .64});
     const skin = new THREE.MeshStandardMaterial({color: 0xd9a276, roughness: .82});
     const limbs = [];
+    const arms = [];
     for (const x of [-.1, .1]) {
       const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.075, .47, 5, 10), uniform);
       leg.position.set(x, .34, 0);
@@ -612,6 +820,7 @@ export class DigitalTwin {
       arm.rotation.z = x < 0 ? -.12 : .12;
       arm.castShadow = true;
       limbs.push(arm);
+      arms.push(arm);
       group.add(arm);
     }
     const head = new THREE.Mesh(
@@ -639,14 +848,28 @@ export class DigitalTwin {
     pauseRing.rotation.x = -Math.PI / 2;
     pauseRing.position.y = .025;
     pauseRing.visible = false;
-    group.add(body, head, helmet, stripe, pauseRing);
+    const workTool = new THREE.Group();
+    const tablet = new THREE.Mesh(
+      new THREE.BoxGeometry(.30, .38, .045),
+      new THREE.MeshStandardMaterial({color: 0x172633, roughness: .46}),
+    );
+    const tabletScreen = new THREE.Mesh(
+      new THREE.BoxGeometry(.24, .30, .012),
+      new THREE.MeshBasicMaterial({color: 0x55dfff}),
+    );
+    tabletScreen.position.z = -.029;
+    workTool.add(tablet, tabletScreen);
+    workTool.position.set(0, 1.02, -.30);
+    workTool.rotation.x = -.34;
+    workTool.visible = false;
+    group.add(body, head, helmet, stripe, pauseRing, workTool);
     // The yellow vest and helmet already communicate the role. A compact ID avoids
     // the long "WORKER" plaques covering AMR labels when both share a junction.
     const label = makeLabel(id, '#f5b843', true);
     label.position.y = 2.02;
     label.scale.multiplyScalar(.52);
     group.add(label);
-    group.userData = {limbs, pauseRing};
+    group.userData = {limbs, arms, pauseRing, workTool};
     this.dynamic.add(group);
     this.humans.set(id, group);
     return group;
@@ -693,6 +916,7 @@ export class DigitalTwin {
     this.selectedId = selectedId || null;
     if (cameraMode !== this.cameraMode) this.setCameraMode(cameraMode);
     const fleetById = new Map((frame.fleet || []).map(item => [item.id, item]));
+    const denseFleet = fleetById.size >= 9;
     for (const robot of frame.robots || []) {
       const group = this._ensureRobot(robot.id);
       group.position.copy(this._toWorld(robot.x, robot.y, 0));
@@ -707,11 +931,23 @@ export class DigitalTwin {
       group.userData.halo.material.opacity = .48 + .24 * (1 + Math.sin(simTime * 4)) / 2;
       group.userData.selection.material.opacity = robot.id === this.selectedId ? .95 : 0;
       group.userData.selection.rotation.z = simTime * 1.4;
+      // At ten-plus AMRs, ten permanent billboards obscure the exact traffic that the
+      // audience is trying to inspect. Keep labels for the selected robot and genuine
+      // exceptions; the fleet panel and stable colour still identify every chassis.
+      group.userData.label.visible = !denseFleet || robot.id === this.selectedId
+        || info.failed || info.state === 'blocked' || info.state === 'retreat'
+        || cameraMode === 'chase' || cameraMode === 'pov';
       group.userData.beacon.material.color.setHex(stateColour);
       group.userData.beacon.scale.setScalar(.82 + .25 * (1 + Math.sin(simTime * 5)) / 2);
       for (const wheel of group.userData.wheels) wheel.rotation.x = -simTime * 4;
+      const carrying = Boolean(robot.carry || info.carry);
+      group.userData.payload.visible = carrying;
+      if (carrying) {
+        group.userData.payload.userData.box.material.color.setHex(this._cargoColour(info));
+      }
       group.visible = true;
     }
+    this._updateTaskCargo(frame, simTime);
     for (const human of frame.humans || []) {
       const group = this._ensureHuman(human.id);
       group.position.copy(this._toWorld(human.x, human.y, 0));
@@ -721,6 +957,13 @@ export class DigitalTwin {
         limb.rotation.x = index % 2 ? -stride : stride;
       });
       const humanMode = human.mode || (human.paused ? 'yielding' : 'walking');
+      group.userData.workTool.visible = humanMode === 'working';
+      if (humanMode === 'working') {
+        group.userData.arms.forEach((arm, index) => {
+          arm.rotation.x = -.86;
+          arm.rotation.z = index ? -.18 : .18;
+        });
+      }
       group.userData.pauseRing.visible = humanMode !== 'walking';
       group.userData.pauseRing.material.color.setHex(
         humanMode === 'working' ? PALETTE.green : PALETTE.amber,

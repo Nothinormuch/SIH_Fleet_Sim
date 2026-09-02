@@ -267,37 +267,72 @@ def _place_pedestrian_walks(env: Warehouse, robot_starts: list[Cell],
 
 def _showcase_pedestrian_walks(env: Warehouse, robot_starts: list[Cell],
                                seed: int, grand: bool = False) -> list[list[Cell]]:
-    """Build a deterministic, warehouse-wide pedestrian inspection loop.
+    """Build seeded work orders through the same rack aisles used by the AMRs.
 
-    The inner-perimeter cells are semantic workstations; ``World.add_human`` maps this
-    complete four-sided circuit onto the separately rendered pedestrian apron outside
-    the AMR traffic floor. This replaces the old fake offset that moved row-1 people
-    directly onto row 0. Every worker receives a seeded phase on the same one-way loop,
-    preventing head-on pedestrian conflicts while making the crew visibly roam around
-    the full warehouse.
+    These are semantic shelf-inspection stops, not animation splines.  A* expands each
+    order into a rack-safe walking route in :meth:`World.add_human`.  The anchor order
+    changes with the scenario seed, but remains reproducible so safety and completion
+    evidence can be compared run-for-run.
     """
     rng = random.Random((seed + 1) * 104729 + (17 if grand else 0))
-    mid_x = env.width // 2
-    mid_y = env.height // 2
-    loop = [
-        (1, 1),
-        (mid_x, 1),
-        (env.width - 2, 1),
-        (env.width - 2, mid_y),
-        (env.width - 2, env.height - 2),
-        (mid_x, env.height - 2),
-        (1, env.height - 2),
-        (1, mid_y),
+
+    def beside_rack(cell: Cell) -> bool:
+        return any(
+            env.in_bounds(neighbour)
+            and env.grid[neighbour[1]][neighbour[0]] == RACK
+            for neighbour in (
+                (cell[0] + 1, cell[1]), (cell[0] - 1, cell[1]),
+                (cell[0], cell[1] + 1), (cell[0], cell[1] - 1),
+            )
+        )
+
+    # Discover the long shelf aisles from map geometry instead of baking coordinates
+    # into the animation. Pair neighbouring aisles into five non-overlapping work
+    # zones. A worker repeatedly enters rack rows, performs an inspection, returns via
+    # a cross-aisle, and never has to cross the entire fleet floor for the next stop.
+    aisle_columns = [
+        x for x in range(1, env.width - 1)
+        if sum(
+            env.passable((x, y)) and beside_rack((x, y))
+            for y in range(1, env.height - 1)
+        ) >= max(4, (env.height - 2) // 2)
     ]
-    if any(not env.passable(cell) for cell in loop):
-        raise ValueError("showcase warehouse has no valid inner-perimeter worker loop")
+    aisle_pairs = list(zip(aisle_columns[::2], aisle_columns[1::2]))
+    worker_count = 5 if grand else 3
+    if len(aisle_pairs) < worker_count:
+        raise ValueError("showcase warehouse has too few paired shelf aisles")
+
+    # First three workers cover left, centre, and right. Grand Challenge adds the two
+    # intermediate zones. This keeps all five people visible across the warehouse
+    # without overlapping their primary rack assignments.
+    pair_order = [0, len(aisle_pairs) // 2, len(aisle_pairs) - 1]
+    pair_order.extend(
+        index for index in range(len(aisle_pairs)) if index not in pair_order
+    )
     specs: list[tuple[Cell, ...]] = []
-    phases = list(range(len(loop)))
-    rng.shuffle(phases)
-    for index in range(5 if grand else 3):
-        rotation = phases[index % len(phases)]
-        circuit = loop[rotation:] + loop[:rotation]
-        specs.append(tuple(circuit))
+    for pair_index in pair_order[:worker_count]:
+        left, right = aisle_pairs[pair_index]
+        rack_rows = [
+            y for y in range(1, env.height - 1)
+            if (env.passable((left, y)) and env.passable((right, y))
+                and beside_rack((left, y)) and beside_rack((right, y)))
+        ]
+        runs: list[list[int]] = []
+        for y in rack_rows:
+            if not runs or y != runs[-1][-1] + 1:
+                runs.append([y])
+            else:
+                runs[-1].append(y)
+        work_rows = [run[len(run) // 2] for run in runs]
+        if len(work_rows) < 3:
+            raise ValueError("showcase shelf aisle has too few inspection levels")
+        route = (
+            [(left, y) for y in work_rows]
+            + [(right, y) for y in reversed(work_rows)]
+        )
+        if rng.random() < 0.5:
+            route.reverse()
+        specs.append(tuple(route))
     return _place_pedestrian_walks(env, robot_starts, specs)
 
 
@@ -656,7 +691,7 @@ def showcase_dead_zone(n_robots: int = 6, tasks_per_robot: int = 1,
         "showcase_dead_zone")
 
 
-def showcase_grand_challenge(n_robots: int = 8, tasks_per_robot: int = 2,
+def showcase_grand_challenge(n_robots: int = 10, tasks_per_robot: int = 2,
                              seed: int = 1) -> Scenario:
     """A deterministic jury story: traffic, humans, radio degradation and blockage."""
     base = dense_aisles(n_robots, tasks_per_robot, seed)
@@ -704,8 +739,8 @@ SHOWCASE_SCENARIOS = {
     },
     "showcase_human": {
         "builder": showcase_human, "title": "Human Interaction",
-        "eyebrow": "Segregated operations",
-        "description": "Three workers inspect eight perimeter stations on a protected one-way pedestrian apron while AMRs retain independent local safety.",
+        "eyebrow": "Cooperative mixed traffic",
+        "description": "Three workers follow seeded shelf-inspection orders between rack aisles while people and AMRs independently yield and re-route.",
         "robots": 5, "humans": 3, "seed": 7, "duration": 520, "accent": "violet",
     },
     "showcase_dead_zone": {
@@ -717,8 +752,8 @@ SHOWCASE_SCENARIOS = {
     "showcase_grand_challenge": {
         "builder": showcase_grand_challenge, "title": "Grand Challenge",
         "eyebrow": "The full BIOS story",
-        "description": "Open traffic, protected worker operations, chokepoints, a blocked aisle, mixed cargo, a dead zone and robot recovery.",
-        "robots": 8, "humans": 5, "seed": 1, "duration": 800, "accent": "lime",
+        "description": "Open traffic, shared human work aisles, chokepoints, a blocked aisle, mixed cargo, a dead zone and robot recovery.",
+        "robots": 10, "humans": 5, "seed": 1, "duration": 800, "accent": "lime",
     },
 }
 

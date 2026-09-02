@@ -95,6 +95,7 @@ class View {
     this.baseOy = 0;
     this.map = null;
     this.metersPerCell = 1;
+    this.apronMarginCells = 0;
     this.cameraMode = 'overview'; // 'overview' | 'follow' | 'pov'
     this.targetId = null;
     this.zoom = 2.8;
@@ -119,13 +120,28 @@ class View {
     if (!this.map) return;
 
     const pad = 26;
+    const apronOffsetCells = this.map.pedestrian_apron
+      ? Number(this.map.pedestrian_apron_offset_m || this.metersPerCell * 2.5)
+        / this.metersPerCell
+      : 0;
+    const apronWidthCells = this.map.pedestrian_apron
+      ? Number(this.map.pedestrian_apron_width_m || this.metersPerCell * .86)
+        / this.metersPerCell
+      : 0;
+    this.apronMarginCells = this.map.pedestrian_apron
+      ? apronOffsetCells + apronWidthCells / 2 + .34
+      : 0;
+    const fittedWidth = this.map.width + this.apronMarginCells * 2;
+    const fittedHeight = this.map.height + this.apronMarginCells * 2;
     this.baseCell = Math.max(
       8,
-      Math.floor(Math.min((box.width - pad * 2) / this.map.width,
-                          (box.height - pad * 2) / this.map.height))
+      Math.floor(Math.min((box.width - pad * 2) / fittedWidth,
+                          (box.height - pad * 2) / fittedHeight))
     );
-    this.baseOx = (box.width - this.map.width * this.baseCell) / 2;
-    this.baseOy = (box.height - this.map.height * this.baseCell) / 2;
+    this.baseOx = (box.width - fittedWidth * this.baseCell) / 2
+      + this.apronMarginCells * this.baseCell;
+    this.baseOy = (box.height - fittedHeight * this.baseCell) / 2
+      + this.apronMarginCells * this.baseCell;
     this.updateCameraTransform();
   }
 
@@ -316,15 +332,21 @@ function renderStaticFloor(ctx, view, map, imgs) {
   drawRacks(ctx, view, map, imgs);
 
   if (map.pedestrian_apron) {
-    const [left, top] = view.cellToScreen(0, map.height);
-    const [right, bottom] = view.cellToScreen(map.width, 0);
+    const offset = Number(map.pedestrian_apron_offset_m || view.metersPerCell * 2.5)
+      / view.metersPerCell;
+    const laneWidth = Number(map.pedestrian_apron_width_m || view.metersPerCell * .86)
+      / view.metersPerCell;
+    const [left, top] = view.cellToScreen(-offset, map.height + offset);
+    const [right, bottom] = view.cellToScreen(map.width + offset, -offset);
     ctx.save();
-    ctx.strokeStyle = 'rgba(245,184,67,.52)';
-    ctx.lineWidth = Math.max(4, view.cell * .28);
-    ctx.setLineDash([Math.max(5, view.cell * .5), Math.max(4, view.cell * .3)]);
-    ctx.strokeRect(left - ctx.lineWidth, top - ctx.lineWidth,
-                   right - left + ctx.lineWidth * 2,
-                   bottom - top + ctx.lineWidth * 2);
+    ctx.strokeStyle = 'rgba(245,184,67,.38)';
+    ctx.lineWidth = Math.max(5, view.cell * laneWidth);
+    ctx.strokeRect(left, top, right - left, bottom - top);
+    ctx.strokeStyle = 'rgba(245,184,67,.92)';
+    ctx.lineWidth = Math.max(2, view.cell * .10);
+    ctx.setLineDash([Math.max(5, view.cell * .42), Math.max(4, view.cell * .24)]);
+    ctx.strokeRect(view.ox, view.oy,
+                   map.width * view.cell, map.height * view.cell);
     ctx.restore();
   }
 

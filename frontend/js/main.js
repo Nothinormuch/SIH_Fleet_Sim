@@ -94,6 +94,8 @@ async function boot() {
     setPlaybackState(false);
     App.simTime = frameTime(parseInt(e.target.value, 10));
     draw();
+    if (App.simTime >= endTime()) announceVerdict();
+    else window.Shell?.clearVerdict();
   });
 
   // Camera Toolbar Controls
@@ -761,6 +763,8 @@ function step(direction) {
   const [, , , idx] = bracket(App.simTime);
   App.simTime = frameTime(idx + direction);
   draw();
+  if (App.simTime >= endTime()) announceVerdict();
+  else window.Shell?.clearVerdict();
 }
 
 /* The run verdict. Deliberately restricted to the end of playback - a full-screen

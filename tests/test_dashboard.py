@@ -21,7 +21,7 @@ from backend.server import Handler, RequestValidationError, parse_run_request
 from src.scenarios import SHOWCASE_SCENARIOS
 from src.settings import DEFAULT
 from src.task_allocation import ALLOCATION_AUCTION_BUNDLE
-from src.world import World
+from src.world import HUMAN_ROUTE_DEVIATION_M, Actuation, World
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -70,7 +70,7 @@ def test_jury_showcases_share_the_energy_aware_auction_profile():
             {"normal", "fragile", "heavy", "hazardous"})
 
 
-def test_showcase_pedestrians_are_numerous_and_remain_outside_racks():
+def test_showcase_pedestrians_work_across_the_warehouse_without_entering_racks():
     expected_counts = {"showcase_human": 3, "showcase_grand_challenge": 5}
     for name, expected in expected_counts.items():
         profile = SHOWCASE_SCENARIOS[name]
@@ -89,11 +89,12 @@ def test_showcase_pedestrians_are_numerous_and_remain_outside_racks():
         world = World(scenario.env, DEFAULT, seed=scenario.seed)
         for index, route in enumerate(scenario.humans):
             human = world.add_human(f"H{index + 1}", route)
+            assert not human.uses_apron
             assert not world._human_hits_static(
                 (human.x, human.y), human.radius, human.uses_apron)
 
-        # Walk every route for three minutes without AMRs. This covers the complete
-        # warehouse-wide apron rather than only one short rack-bank patrol.
+        # Walk every route for three minutes without AMRs. This covers multiple shelf
+        # banks and cross-aisles rather than a short decorative patrol.
         for _ in range(int(180 * DEFAULT.rates.world_hz)):
             world.step(1.0 / DEFAULT.rates.world_hz, {})
             for human in world.humans.values():
@@ -104,7 +105,26 @@ def test_showcase_pedestrians_are_numerous_and_remain_outside_racks():
         assert all(human.work_visits >= 2 for human in world.humans.values())
 
 
-def test_grand_challenge_workers_do_not_spawn_in_the_amr_staging_lane():
+def test_worker_avoidance_stays_attached_to_its_mapped_route():
+    """Repeated side-steps must not accumulate into an invented AMR-lane route."""
+    scenario = SHOWCASE_SCENARIOS["showcase_grand_challenge"]["builder"](
+        n_robots=10, seed=1)
+    world = World(scenario.env, DEFAULT, seed=scenario.seed)
+    human = world.add_human("H-test", scenario.humans[3])
+    # Put a stationary chassis on the next work-route segment. The worker must turn,
+    # wait, or take a bounded local side-step without drifting away across the floor.
+    robot_cell = scenario.humans[3][1]
+    world.add_robot("AMR-test", robot_cell, 0.0)
+
+    for _ in range(int(45 * DEFAULT.rates.world_hz)):
+        world.step(1.0 / DEFAULT.rates.world_hz,
+                   {"AMR-test": Actuation(v=0.0, omega=0.0)})
+        assert human.distance_from_route() <= HUMAN_ROUTE_DEVIATION_M + 1e-9
+
+    assert not any(event.kind == "robot-human" for event in world.contacts)
+
+
+def test_grand_challenge_workers_spawn_safely_inside_shared_warehouse_space():
     scenario = SHOWCASE_SCENARIOS["showcase_grand_challenge"]["builder"](
         n_robots=10, seed=1)
     world = World(scenario.env, DEFAULT, seed=scenario.seed)
@@ -124,7 +144,9 @@ def test_grand_challenge_workers_do_not_spawn_in_the_amr_staging_lane():
             math.hypot(human.x - robot.x, human.y - robot.y)
             for robot in world.robots.values()
         ) > protected
-        assert human.uses_apron
+        assert not human.uses_apron
+        assert 0.0 < human.x < scenario.env.width * DEFAULT.cell_m
+        assert 0.0 < human.y < scenario.env.height * DEFAULT.cell_m
 
 
 def test_grand_challenge_finishes_inside_its_dashboard_evidence_window():
@@ -141,7 +163,7 @@ def test_grand_challenge_finishes_inside_its_dashboard_evidence_window():
     )
 
     assert result.completed_all
-    assert result.tasks_completed == result.tasks_announced == 16
+    assert result.tasks_completed == result.tasks_announced == 20
     assert result.makespan_s < profile["duration"]
     assert result.contacts_robot_robot == 0
     assert result.contacts_robot_human == 0
@@ -149,7 +171,7 @@ def test_grand_challenge_finishes_inside_its_dashboard_evidence_window():
 
 
 def test_grand_challenge_liveness_does_not_depend_on_pedestrian_interference():
-    """Protected worker routing must not be the perturbation that unsticks the AMRs."""
+    """Mixed worker routing must not be the perturbation that unsticks the AMRs."""
     profile = SHOWCASE_SCENARIOS["showcase_grand_challenge"]
     scenario = replace(
         profile["builder"](
@@ -163,7 +185,7 @@ def test_grand_challenge_liveness_does_not_depend_on_pedestrian_interference():
     )
 
     assert result.completed_all
-    assert result.tasks_completed == result.tasks_announced == 16
+    assert result.tasks_completed == result.tasks_announced == 20
     assert result.contacts_robot_robot == 0
     assert result.contacts_robot_rack == 0
 
@@ -172,7 +194,7 @@ def test_loaded_robot_preempts_idle_parking_cycle_in_grand_challenge():
     """Seed 4 previously left one loaded AMR behind two optional parking trips."""
     profile = SHOWCASE_SCENARIOS["showcase_grand_challenge"]
     scenario = replace(
-        profile["builder"](n_robots=8, seed=4),
+        profile["builder"](n_robots=10, seed=4),
         duration_s=float(profile["duration"]),
     )
 
@@ -182,7 +204,28 @@ def test_loaded_robot_preempts_idle_parking_cycle_in_grand_challenge():
     )
 
     assert result.completed_all
-    assert result.tasks_completed == result.tasks_announced == 16
+    assert result.tasks_completed == result.tasks_announced == 20
+    assert result.contacts_robot_robot == 0
+    assert result.contacts_robot_human == 0
+    assert result.contacts_robot_rack == 0
+
+
+def test_ten_amr_mixed_traffic_clears_directed_corner_and_human_latches():
+    """Seed 0 covers the 2x2 corner cycle and the last-task dock-clearance tail."""
+    profile = SHOWCASE_SCENARIOS["showcase_grand_challenge"]
+    scenario = replace(
+        profile["builder"](n_robots=10, seed=0),
+        duration_s=float(profile["duration"]),
+    )
+
+    result = run_scenario(
+        scenario, POLICY_BIOS_PIBT_V6, seed=0,
+        allocation_policy=ALLOCATION_AUCTION_BUNDLE,
+    )
+
+    assert result.completed_all
+    assert result.tasks_completed == result.tasks_announced == 20
+    assert result.makespan_s < profile["duration"]
     assert result.contacts_robot_robot == 0
     assert result.contacts_robot_human == 0
     assert result.contacts_robot_rack == 0
@@ -258,6 +301,96 @@ console.log(JSON.stringify({screen, centre}));
     )
     result = json.loads(completed.stdout)
     assert result["screen"] == result["centre"]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required for the 3D cargo unit test")
+def test_3d_cargo_lifecycle_tracks_pickup_carry_and_delivery():
+    """Playback scrubbing must reconstruct cargo state without mutating simulation data."""
+    script = r"""
+const {DigitalTwin} = await import('./frontend/js/digital-twin.js');
+const frames = [
+  {t: 0, fleet: [{id: 'AMR01', task: 'T1', done: 0, carry: null}]},
+  {t: 1, fleet: [{id: 'AMR01', task: 'T1', done: 0, carry: 'T1'}]},
+  {t: 2, fleet: [{id: 'AMR01', task: null, done: 1, carry: null,
+    decision: {code: 'TASK_COMPLETED', details: {task: 'T1'}}}]},
+];
+const pick = {visible: null};
+const delivered = {visible: null};
+const fake = {
+  frameTimes: frames.map(frame => frame.t),
+  taskMarkers: new Map([['T1', pick]]),
+  deliveredMarkers: new Map([['T1', delivered]]),
+  _timelineAt: DigitalTwin.prototype._timelineAt,
+};
+fake.taskTimeline = DigitalTwin.prototype._buildTaskTimeline.call(fake, frames);
+const states = frames.map(frame => {
+  DigitalTwin.prototype._updateTaskCargo.call(fake, frame, frame.t);
+  return [pick.visible, delivered.visible];
+});
+if (JSON.stringify(states) !== JSON.stringify([
+  [true, false], [false, false], [false, true],
+])) process.exit(2);
+console.log(JSON.stringify(states));
+"""
+    completed = subprocess.run(
+        [NODE, "--no-warnings", "--input-type=module", "-e", script],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+    assert json.loads(completed.stdout) == [
+        [True, False], [False, False], [False, True],
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required for the canvas unit test")
+def test_canvas_fits_the_real_pedestrian_apron_instead_of_clipping_workers():
+    """The fallback camera must frame the worker route, not only the AMR grid."""
+    script = r"""
+global.window = {devicePixelRatio: 1};
+const {View} = require('./frontend/js/environment.js');
+const ctx = {setTransform() {}, clearRect() {}};
+const canvas = {
+  getContext() { return ctx; },
+  getBoundingClientRect() { return {width: 900, height: 600}; },
+};
+const map = {
+  width: 31,
+  height: 21,
+  pedestrian_apron: true,
+  pedestrian_apron_offset_m: 3.5,
+  pedestrian_apron_width_m: 1.204,
+};
+const view = new View(canvas);
+view.resize(map, 1.4);
+const points = [
+  view.worldToScreen(-3.5, -3.5),
+  view.worldToScreen(31 * 1.4 + 3.5, 21 * 1.4 + 3.5),
+];
+for (const [x, y] of points) {
+  if (!(x >= 0 && x <= 900 && y >= 0 && y <= 600)) process.exit(2);
+}
+if (!(view.apronMarginCells > 2.5)) process.exit(3);
+console.log(JSON.stringify({points, margin: view.apronMarginCells}));
+"""
+    completed = subprocess.run(
+        [NODE, "-e", script], cwd=ROOT, check=True,
+        capture_output=True, text=True,
+    )
+    result = json.loads(completed.stdout)
+    assert result["margin"] > 2.5
+    assert all(0 <= value <= limit for point in result["points"]
+               for value, limit in zip(point, (900, 600)))
+
+
+def test_dashboard_reports_showcase_workers_on_the_shared_warehouse_floor():
+    payload = run_for_dashboard(
+        "showcase_human", POLICY_BIOS_PIBT_V6,
+        robots=5, seed=7, duration=10,
+        allocation_policy=ALLOCATION_AUCTION_BUNDLE,
+    )
+    warehouse = payload["map"]
+    assert not warehouse["pedestrian_apron"]
+    assert "pedestrian_apron_offset_m" not in warehouse
+    assert "pedestrian_apron_width_m" not in warehouse
 
 
 def test_dashboard_metric_frames_remain_inside_free_map_cells():

@@ -294,6 +294,13 @@ battery state and cargo-aware energy admission. A WMS injects tasks; it never se
 winner. Each AMR admits a bid only when the task, cargo factor and post-task charger return
 remain above the protected reserve.
 
+Grand Challenge now defaults to 10 AMRs, five mapped workers and 20 tasks. Its coloured
+cargo is rendered on the adjacent blocked rack cell instead of on the pickup travel cell,
+so the floor remains visually and physically readable. The checked five-seed acceptance
+gate completes 100/100 tasks with zero observed robot-robot, robot-human or robot-rack
+contacts; see [`docs/HUMAN_FLOW_AUDIT.md`](docs/HUMAN_FLOW_AUDIT.md) for the exact boundary
+and per-seed results.
+
 The previous checked-in acceptance campaign remains BIOS 5 versus stop-and-wait evidence;
 it must not be relabelled as BIOS 6 evidence. The final BIOS 6 three-seed showcase matrix
 records zero observed robot/robot, robot/human and robot/rack contacts in 10.019 candidate
@@ -322,10 +329,11 @@ looks the same whether it is coordinating or getting lucky:
 - **task allocation** — `TASK_NEW`, `BID`, `AWARD` and `TASK_DONE` messages for the
   peer auction, or directed manager awards for Hungarian allocation
 - **mapped human workers** — three in Human Interaction and five in Grand Challenge,
-  phased around a protected one-way perimeter apron with eight inspection stations,
-  recurring work dwell, high-visibility 3D PPE models and explicit work/yield state.
-  Generic mixed-aisle tests remain available for local-safety validation; workers
-  publish nothing and never participate in fleet negotiation
+  assigned to seeded two-aisle rack work zones across the complete warehouse. Workers
+  walk mapped A* routes, pause for shelf inspections, side-step or reverse under local
+  reciprocal avoidance, and show explicit walking/working/yielding state. They publish
+  nothing and never participate in fleet negotiation; every AMR detects them through
+  its independent onboard safety model
 
 The run endpoint is POST-only, size- and workload-bounded, and protected by strict
 request validation and browser security headers. Playback rather than a live socket:
