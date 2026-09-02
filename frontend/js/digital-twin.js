@@ -60,6 +60,34 @@ function hexCss(value) {
   return `#${value.toString(16).padStart(6, '0')}`;
 }
 
+/* Textures for the twin.
+ *
+ * One loader so every map gets the same treatment: SRGB colour space (a texture
+ * loaded as linear reads washed out under ACES tone mapping), and anisotropy so
+ * the floor does not turn to mush at grazing angles - which is most of the frame
+ * when the camera sits at 45 degrees.
+ *
+ * These are baked from the render drop, not the renders themselves: the sources
+ * are 7 MB presentation shots with plinths and labels in them. See
+ * tools/bake_twin_textures.py for how each one was cut.
+ */
+const TEXTURE_LOADER = new THREE.TextureLoader();
+const TEXTURES = {};
+
+function texture(name, {repeat = null, srgb = true} = {}) {
+  const key = `${name}|${repeat ? repeat.join('x') : '1'}`;
+  if (TEXTURES[key]) return TEXTURES[key];
+  const map = TEXTURE_LOADER.load(`/assets/twin/${name}`);
+  if (srgb) map.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) {
+    map.wrapS = map.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(repeat[0], repeat[1]);
+  }
+  map.anisotropy = 8;
+  TEXTURES[key] = map;
+  return map;
+}
+
 function pedestrianEnvelope(map, meta) {
   const cell = meta.cell_m;
   const enabled = Boolean(map && map.pedestrian_apron);
@@ -340,10 +368,17 @@ export class DigitalTwin {
     const heightM = this.map.height * cell;
     const pedestrian = pedestrianEnvelope(this.map, this.meta);
     const apronMargin = pedestrian.margin;
+    // One texture tile per two cells: fine enough to read as panelling from the
+    // orbit camera, coarse enough that it does not shimmer at the far edge.
+    const floorMap = texture('floor_panel.jpg', [
+      Math.max(1, Math.round(this.map.width / 2)),
+      Math.max(1, Math.round(this.map.height / 2)),
+    ]);
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(widthM + apronMargin * 2 + .8, .35,
                             heightM + apronMargin * 2 + .8),
-      new THREE.MeshStandardMaterial({color: PALETTE.floor, roughness: .88, metalness: .08}),
+      new THREE.MeshStandardMaterial({map: floorMap, color: 0xb9c4d2,
+                                      roughness: .82, metalness: .12}),
     );
     floor.position.y = -.22;
     floor.receiveShadow = true;
@@ -453,7 +488,9 @@ export class DigitalTwin {
     const cartonGeometry = new THREE.BoxGeometry(cell * .62, cell * .24, cell * .64);
     const rackMaterial = new THREE.MeshStandardMaterial({color: PALETTE.steel, roughness: .32, metalness: .76});
     const shelfMaterial = new THREE.MeshStandardMaterial({color: PALETTE.rack, roughness: .38, metalness: .64});
-    const cartonMaterial = new THREE.MeshStandardMaterial({color: 0xb47a43, roughness: .84, metalness: .02});
+    const cartonMaterial = new THREE.MeshStandardMaterial({
+      map: texture('carton.jpg'), color: 0xd8cfc2, roughness: .88, metalness: .02,
+    });
     const uprights = new THREE.InstancedMesh(uprightGeometry, rackMaterial, rackCells.length * 4);
     const shelves = new THREE.InstancedMesh(shelfGeometry, shelfMaterial, rackCells.length * 3);
     const cartons = new THREE.InstancedMesh(cartonGeometry, cartonMaterial, rackCells.length * 2);
@@ -695,9 +732,18 @@ export class DigitalTwin {
     base.castShadow = true;
     base.userData.robotId = id;
     group.add(base);
+    // Six materials, one per box face, so the baked top-down view lands on +Y and
+    // nowhere else - it is the face the orbit and tactical cameras actually see.
+    // The map is greyscale and the robot's identity colour is the tint, which is
+    // how one texture serves all ten liveries. See tools/bake_twin_textures.py.
+    const deckSide = new THREE.MeshStandardMaterial({color: 0x10202c, roughness: .28, metalness: .68});
+    const deckTop = new THREE.MeshStandardMaterial({
+      map: texture('amr_deck.png'), color: colour,
+      roughness: .42, metalness: .34, transparent: true,
+    });
     const top = new THREE.Mesh(
       new THREE.BoxGeometry(.68, .22, .66),
-      new THREE.MeshStandardMaterial({color: 0x10202c, roughness: .28, metalness: .68}),
+      [deckSide, deckSide, deckTop, deckSide, deckSide, deckSide],
     );
     top.position.y = .43;
     top.castShadow = true;
@@ -753,9 +799,13 @@ export class DigitalTwin {
       group.add(rail);
     }
     const payload = new THREE.Group();
+    // Textured, but the material colour is still the channel that says what the
+    // cargo is - _cargoColour rewrites it every frame. A map multiplies the tint
+    // rather than replacing it, so the carton reads as card AND stays colour-coded.
     const payloadBox = new THREE.Mesh(
       new THREE.BoxGeometry(.46, .34, .46),
-      new THREE.MeshStandardMaterial({color: PALETTE.cyan, roughness: .55, metalness: .08}),
+      new THREE.MeshStandardMaterial({map: texture('carton.jpg'), color: PALETTE.cyan,
+                                      roughness: .7, metalness: .06}),
     );
     payloadBox.position.set(0, .78, -.18);
     payloadBox.castShadow = true;
