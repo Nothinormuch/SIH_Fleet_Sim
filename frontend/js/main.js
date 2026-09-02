@@ -142,10 +142,20 @@ async function boot() {
     cycleCameraMode,
     setCameraMode,
     cycleTargetRobot,
+    selectRobot,
     adjustZoom,
     togglePresentationMode,
     toggleFullscreen,
     step,
+  };
+  // The right-hand rail draws a slot per robot, so it needs the same colour the
+  // twin and the roster use, and the fleet state at the moment it renders rather
+  // than at frame zero. Both are read-only.
+  App.robotColour = id => robotColour(id);
+  App.currentFrame = () => {
+    if (!App.data || !App.data.frames.length) return null;
+    const [f0, f1, u] = bracket(App.simTime);
+    return interpolate(f0, f1, u);
   };
 
   window.addEventListener('resize', () => {
@@ -495,6 +505,10 @@ async function run() {
     el('clockEnd').textContent = (n ? payload.frames[n - 1].t : 0).toFixed(1);
 
     window.Shell?.clearVerdict();
+    // Fleet, Coordination and Evidence are greyed on the rail until a run exists;
+    // this is the moment they stop being empty.
+    window.Shell?.syncRail();
+    window.Shell?.renderQuick();
     renderSummary(payload.summary, payload.meta);
     renderCollectiveIntelligence(payload.frames[0]);
     setStatus(`${n} frames · ${payload.meta.robots} AMRs · seed ${payload.meta.seed} · energy gate active`);
