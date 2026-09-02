@@ -181,6 +181,7 @@
           <div class="scroller">
             <div id="scenarioGallery" class="scenario-gallery"></div>
             <select id="scenario" hidden aria-hidden="true"></select>
+            <button id="builderBtn" class="build-button"><i>▦</i><span>Build a floor</span><small>Draw your own warehouse and run it</small></button>
           </div>
         </div>
         <div class="col">
@@ -390,6 +391,42 @@
 
       </div>
     </div>
+
+
+  <!-- The scenario builder. Its own overlay because a grid you paint on wants the
+       whole screen; it sits above the sheet that launched it. -->
+  <div id="builder" class="builder" aria-hidden="true">
+    <header class="builder-head">
+      <div><span class="eyebrow">Deployment</span><h2>Build a floor</h2></div>
+      <div class="builder-head-actions">
+        <button id="builderSaveBtn" class="ghost-btn primary">Save and select</button>
+        <button id="builderCloseBtn" class="sheet-close"><kbd>Esc</kbd> Cancel</button>
+      </div>
+    </header>
+    <div class="builder-body">
+      <aside class="builder-pool" aria-label="Components">
+        <h4>Components</h4>
+        <div id="builderPool" class="pool-list">
+          <button class="pool-tile active" draggable="true" data-type="FREE"><i class="pool-swatch free"></i><b>Floor</b><small>Passable</small></button>
+          <button class="pool-tile" draggable="true" data-type="RACK"><i class="pool-swatch rack"></i><b>Rack</b><small>Never passable</small></button>
+          <button class="pool-tile" draggable="true" data-type="STATION"><i class="pool-swatch station"></i><b>Station</b><small>Pick and drop</small></button>
+          <button class="pool-tile" draggable="true" data-type="DOCK"><i class="pool-swatch dock"></i><b>Charger</b><small>Charge pad</small></button>
+          <button class="pool-tile" draggable="true" data-type="AMR"><i class="pool-swatch amr"></i><b>AMR start</b><small>One robot</small></button>
+        </div>
+        <p class="builder-hint">Drag a component onto the floor, or click to paint. Click a rack again to clear it.</p>
+        <dl class="builder-tally">
+          <dt>Stations</dt><dd id="tallyStations">0</dd>
+          <dt>Chargers</dt><dd id="tallyDocks">0</dd>
+          <dt>AMRs</dt><dd id="tallyStarts">0</dd>
+        </dl>
+        <p class="status" id="builderStatus">Place at least one AMR and one station.</p>
+      </aside>
+      <div class="builder-stage">
+        <canvas id="builderGrid"></canvas>
+      </div>
+    </div>
+    <div id="builderPreview" class="builder-preview" aria-hidden="true"></div>
+  </div>
 
   <!-- ================================================ ceremonial + narrative -->
 

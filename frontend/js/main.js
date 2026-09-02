@@ -147,6 +147,8 @@ async function boot() {
     togglePresentationMode,
     toggleFullscreen,
     step,
+    openBuilder,
+    closeBuilder,
   };
   // The right-hand rail draws a slot per robot, so it needs the same colour the
   // twin and the roster use, and the fleet state at the moment it renders rather
@@ -167,6 +169,8 @@ async function boot() {
     Hud.resize(App.data.map);
     draw();
   });
+
+  initBuilder();
 
   requestAnimationFrame(tick);
   run();
@@ -1401,6 +1405,267 @@ function updateSummaryProgress(frame) {
   if (timeElement) {
     timeElement.textContent = `t = ${frame.t.toFixed(1)} s`;
   }
+}
+
+/* ------------------------------------------------------------ the builder
+ *
+ * Merged from feat/scenario-builder. The behaviour is the branch's: paint a
+ * grid, POST it to /api/scenarios/custom, run the layout that comes back. What
+ * changed in the port:
+ *
+ *   - It hangs off Deployment instead of a toolbar button, and draws in the
+ *     shell's palette rather than the old one's.
+ *   - alert() is gone. A modal dialog blocks every event in the page until it is
+ *     dismissed, which on this dashboard means the playback loop and the browser
+ *     automation both stop dead; the status line and a toast say the same thing
+ *     without freezing anything.
+ *   - The HUMAN pool tile is gone. It wrote FREE to the grid and was then
+ *     discarded - the custom-scenario API carries stations, docks and starts and
+ *     has nowhere to put a pedestrian route. It can come back when the backend
+ *     grows one; a control that does nothing is worse than a missing feature.
+ *   - Save is refused rather than allowed to fail server-side when the layout
+ *     has no AMR or nowhere to carry anything to.
+ *
+ * The tile encoding is not arbitrary: 0/1/2/3 are FREE/RACK/STATION/DOCK from
+ * src/environment.py, and the server feeds this grid straight into Warehouse().
+ * Changing a number here silently builds a different warehouse.
+ */
+
+const BUILDER = {
+  cols: 22,
+  rows: 14,
+  cell: 28,
+  grid: null,
+  stations: [],
+  docks: [],
+  starts: [],
+  tool: 'FREE',
+  ready: false,
+  painting: false,
+};
+
+const TILE_FILL = {0: '#0d1a26', 1: '#24405a', 2: '#1d5c48', 3: '#5c4a18'};
+const TILE_CODE = {FREE: 0, RACK: 1, STATION: 2, DOCK: 3, AMR: 0};
+
+function initBuilder() {
+  const canvas = el('builderGrid');
+  if (!canvas || BUILDER.ready) return;
+  BUILDER.ready = true;
+  canvas.width = BUILDER.cols * BUILDER.cell;
+  canvas.height = BUILDER.rows * BUILDER.cell;
+  resetBuilder();
+
+  for (const tile of document.querySelectorAll('.pool-tile')) {
+    tile.addEventListener('click', () => selectTool(tile.dataset.type));
+    tile.addEventListener('dragstart', event => {
+      selectTool(tile.dataset.type);
+      event.dataTransfer.setData('text/plain', tile.dataset.type);
+    });
+  }
+
+  const cellAt = event => {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((event.clientX - rect.left) / (rect.width / BUILDER.cols));
+    const y = Math.floor((event.clientY - rect.top) / (rect.height / BUILDER.rows));
+    return (x < 0 || x >= BUILDER.cols || y < 0 || y >= BUILDER.rows) ? null : [x, y];
+  };
+
+  // Click to place, drag to paint a run of cells - laying an aisle one click at a
+  // time is the kind of thing that makes a builder feel like a chore.
+  canvas.addEventListener('pointerdown', event => {
+    const at = cellAt(event);
+    if (!at) return;
+    BUILDER.painting = true;
+    canvas.setPointerCapture(event.pointerId);
+    paint(at[0], at[1]);
+  });
+  canvas.addEventListener('pointermove', event => {
+    if (!BUILDER.painting) return;
+    const at = cellAt(event);
+    if (at) paint(at[0], at[1]);
+  });
+  const stop = () => { BUILDER.painting = false; };
+  canvas.addEventListener('pointerup', stop);
+  canvas.addEventListener('pointercancel', stop);
+
+  const preview = el('builderPreview');
+  canvas.addEventListener('dragover', event => {
+    event.preventDefault();
+    const at = cellAt(event);
+    if (!at) { preview.style.display = 'none'; return; }
+    preview.style.display = 'block';
+    preview.style.left = `${event.clientX}px`;
+    preview.style.top = `${event.clientY}px`;
+    preview.style.width = `${BUILDER.cell}px`;
+    preview.style.height = `${BUILDER.cell}px`;
+  });
+  canvas.addEventListener('dragleave', () => { preview.style.display = 'none'; });
+  canvas.addEventListener('drop', event => {
+    event.preventDefault();
+    preview.style.display = 'none';
+    const at = cellAt(event);
+    if (at) paint(at[0], at[1]);
+  });
+
+  el('builderBtn')?.addEventListener('click', openBuilder);
+  el('builderCloseBtn')?.addEventListener('click', closeBuilder);
+  el('builderSaveBtn')?.addEventListener('click', saveBuilderScenario);
+}
+
+function selectTool(type) {
+  if (!TILE_CODE.hasOwnProperty(type)) return;
+  BUILDER.tool = type;
+  for (const tile of document.querySelectorAll('.pool-tile')) {
+    tile.classList.toggle('active', tile.dataset.type === type);
+  }
+}
+
+function resetBuilder() {
+  BUILDER.grid = Array.from({length: BUILDER.rows}, () => Array(BUILDER.cols).fill(0));
+  BUILDER.stations = [];
+  BUILDER.docks = [];
+  BUILDER.starts = [];
+  selectTool('FREE');
+  drawBuilder();
+}
+
+const without = (list, x, y) => list.filter(([px, py]) => px !== x || py !== y);
+
+function paint(x, y) {
+  const type = BUILDER.tool;
+  // A cell is one thing at a time, so every placement clears whatever the cell
+  // was on all three lists first. Without this, painting floor over a station
+  // leaves the station in the payload and the server builds a warehouse whose
+  // stations sit inside racks.
+  BUILDER.stations = without(BUILDER.stations, x, y);
+  BUILDER.docks = without(BUILDER.docks, x, y);
+  BUILDER.starts = without(BUILDER.starts, x, y);
+  BUILDER.grid[y][x] = TILE_CODE[type];
+  if (type === 'STATION') BUILDER.stations.push([x, y]);
+  if (type === 'DOCK') BUILDER.docks.push([x, y]);
+  if (type === 'AMR') BUILDER.starts.push([x, y]);
+  drawBuilder();
+}
+
+function drawBuilder() {
+  const canvas = el('builderGrid');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const size = BUILDER.cell;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < BUILDER.rows; y++) {
+    for (let x = 0; x < BUILDER.cols; x++) {
+      const value = BUILDER.grid[y][x];
+      ctx.fillStyle = TILE_FILL[value] || TILE_FILL[0];
+      ctx.fillRect(x * size, y * size, size - 1, size - 1);
+      if (value === 2 || value === 3) {
+        ctx.fillStyle = value === 2 ? '#7ee8bd' : '#ffd07a';
+        ctx.font = '10px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(value === 2 ? 'S' : 'C', x * size + size / 2, y * size + size / 2);
+      }
+    }
+  }
+  for (const [x, y] of BUILDER.starts) {
+    ctx.fillStyle = '#35c6f4';
+    ctx.beginPath();
+    ctx.arc(x * size + size / 2, y * size + size / 2, size * .3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#050b12';
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(BUILDER.starts.findIndex(s => s[0] === x && s[1] === y) + 1),
+                 x * size + size / 2, y * size + size / 2 + 1);
+  }
+  syncBuilderTally();
+}
+
+function syncBuilderTally() {
+  const set = (id, value) => { const node = el(id); if (node) node.textContent = value; };
+  set('tallyStations', BUILDER.stations.length);
+  set('tallyDocks', BUILDER.docks.length);
+  set('tallyStarts', BUILDER.starts.length);
+  // Say what is missing before the button is pressed, not after the server says no.
+  const problems = [];
+  if (!BUILDER.starts.length) problems.push('one AMR start');
+  if (!BUILDER.stations.length) problems.push('one station');
+  const status = el('builderStatus');
+  const save = el('builderSaveBtn');
+  if (save) save.disabled = problems.length > 0;
+  if (!status) return;
+  if (problems.length) {
+    status.textContent = `Place at least ${problems.join(' and ')}.`;
+    status.className = 'status';
+  } else {
+    status.textContent = `${BUILDER.starts.length} AMR${BUILDER.starts.length === 1 ? '' : 's'} · `
+      + `${BUILDER.stations.length} station${BUILDER.stations.length === 1 ? '' : 's'} · ready to save.`;
+    status.className = 'status ok';
+  }
+}
+
+function openBuilder() {
+  initBuilder();
+  document.body.classList.add('builder-open');
+  el('builder').setAttribute('aria-hidden', 'false');
+  drawBuilder();
+}
+
+function closeBuilder() {
+  document.body.classList.remove('builder-open');
+  el('builder')?.setAttribute('aria-hidden', 'true');
+}
+
+async function saveBuilderScenario() {
+  const save = el('builderSaveBtn');
+  const status = el('builderStatus');
+  save.disabled = true;
+  status.textContent = 'Saving…';
+  status.className = 'status busy';
+  try {
+    const stamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    const res = await fetch('/api/scenarios/custom', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: `Custom floor ${stamp}`,
+        width: BUILDER.cols,
+        height: BUILDER.rows,
+        grid: BUILDER.grid,
+        stations: BUILDER.stations,
+        docks: BUILDER.docks,
+        starts: BUILDER.starts,
+        seed: 0,
+        duration: 300,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    // Re-read the library rather than splicing the new entry in by hand: the
+    // server already returns custom scenarios inside `showcase`, so one fetch
+    // keeps the gallery, the hidden select and App.showcase consistent by
+    // construction. The branch maintained all three separately and had to keep
+    // re-syncing them.
+    await refreshScenarioLibrary(body.id);
+    closeBuilder();
+    window.Shell?.toast('Floor saved', body.name || 'Custom scenario');
+  } catch (e) {
+    status.textContent = `Save failed: ${e.message}`;
+    status.className = 'status err';
+    save.disabled = false;
+  }
+}
+
+/* Re-fetch the scenario library and re-render the gallery. Custom scenarios come
+   back inside `showcase` alongside the five built-in ones, so they need no
+   separate list, no separate gallery and no separate selection path. */
+async function refreshScenarioLibrary(selectId) {
+  const { scenarios, showcase } = await fetch('/api/scenarios').then(r => r.json());
+  App.showcase = showcase || [];
+  fill(el('scenario'), scenarios, el('scenario').value || OPENING_SCENARIO);
+  renderScenarioGallery(App.showcase);
+  if (selectId) selectScenarioProfile(selectId);
 }
 
 boot();

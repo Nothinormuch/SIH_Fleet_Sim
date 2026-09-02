@@ -1485,6 +1485,164 @@ body.jury-mode .mission { bottom: auto; top: 76px; }
 body.pip-open .menu-prompt { bottom: 250px; }
 body.jury-mode .menu-prompt { opacity: 0; pointer-events: none; }
 
+
+/* ------------------------------------------------------- the scenario builder
+ *
+ * Merged from feat/scenario-builder, restyled. The branch drew it in the old
+ * shell's idiom - rounded corners, its own palette literals, a stylesheet that
+ * no longer exists - so what came across is the behaviour, not the surface.
+ *
+ * It is an overlay rather than a category: painting a grid wants the whole
+ * screen, and the builder is a detail inside Deployment (it is how you make a
+ * floor to deploy onto), not a sixth thing in the rail.
+ */
+
+.build-button {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 1px 14px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 13px 16px;
+  text-align: left;
+  border: 1px dashed var(--edge-dim);
+  background: rgba(19,30,43,.35);
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.build-button:hover { border-color: var(--accent); background: rgba(20,62,86,.45); }
+.build-button i {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  font-style: normal;
+  font-size: 15px;
+  color: var(--rim);
+  border: 1px solid var(--edge-dim);
+}
+.build-button:hover i { color: var(--accent); border-color: var(--edge); }
+.build-button span { font-family: var(--serif); font-size: 15px; color: var(--text-hi); }
+.build-button small { font-size: 10.5px; color: var(--dimmer); }
+
+.builder {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: linear-gradient(180deg, #0c1520, #050b12);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--t) var(--ease), visibility 0s linear var(--t);
+}
+body.builder-open .builder {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--t) var(--ease), visibility 0s;
+}
+
+.builder-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 30px 16px;
+  border-bottom: 1px solid var(--edge-dim);
+}
+.builder-head h2 {
+  margin: 4px 0 0;
+  font-family: var(--serif);
+  font-size: 23px;
+  font-weight: 400;
+  letter-spacing: .12em;
+  color: var(--text-hi);
+}
+.builder-head-actions { display: flex; align-items: center; gap: 16px; }
+.ghost-btn.primary { border-color: var(--edge); color: var(--accent); }
+.ghost-btn.primary:hover { border-color: var(--accent); background: rgba(20,62,86,.5); }
+.ghost-btn:disabled { opacity: .4; cursor: not-allowed; border-color: var(--edge-dim); color: var(--dimmer); }
+
+.builder-body {
+  display: grid;
+  grid-template-columns: 268px 1fr;
+  gap: 26px;
+  min-height: 0;
+  padding: 22px 30px 26px;
+}
+
+.builder-pool { display: grid; grid-template-rows: auto auto auto auto 1fr; gap: 14px; align-content: start; min-height: 0; }
+.builder-pool h4 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.pool-list { display: grid; gap: 4px; }
+.pool-tile {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 12px;
+  padding: 8px 11px;
+  text-align: left;
+  cursor: grab;
+  border: 1px solid transparent;
+  border-left: 2px solid var(--edge-dim);
+  background: rgba(19,30,43,.45);
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.pool-tile:active { cursor: grabbing; }
+.pool-tile:hover { background: rgba(32,52,72,.6); }
+.pool-tile.active { border-color: var(--edge); border-left-color: var(--accent); background: rgba(20,62,86,.45); }
+.pool-tile b { font-family: var(--serif); font-size: 13.5px; font-weight: 400; color: var(--text-hi); }
+.pool-tile small { font-size: 9.5px; color: var(--dimmer); }
+.pool-swatch { grid-row: 1 / 3; width: 26px; height: 26px; border: 1px solid var(--edge-dim); }
+/* The swatches are the colours the grid actually paints, so the legend cannot
+   drift from the canvas. */
+.pool-swatch.free    { background: #0d1a26; }
+.pool-swatch.rack    { background: #24405a; }
+.pool-swatch.station { background: #1d5c48; }
+.pool-swatch.dock    { background: #5c4a18; }
+.pool-swatch.amr     { background: radial-gradient(circle at 50% 50%, var(--accent) 38%, transparent 42%), #0d1a26; }
+
+.builder-hint { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--dim); }
+.builder-tally { display: grid; grid-template-columns: 1fr auto; gap: 0; margin: 0; }
+.builder-tally dt { padding: 7px 0; font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid rgba(30,58,77,.5); }
+.builder-tally dd { margin: 0; padding: 7px 0; font-family: var(--mono); font-size: 13px; color: var(--text-hi); text-align: right; border-bottom: 1px solid rgba(30,58,77,.5); }
+
+.builder-stage {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--edge-dim);
+  background:
+    linear-gradient(rgba(30,58,77,.16) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, rgba(30,58,77,.16) 1px, transparent 1px) 0 0 / 28px 28px,
+    #070f18;
+}
+#builderGrid { display: block; border: 1px solid var(--edge); cursor: crosshair; }
+
+/* Follows the pointer during a drag so you can see which cell you are about to
+   land on before you let go. */
+.builder-preview {
+  position: fixed;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background: rgba(53,198,244,.2);
+  transform: translate(-50%, -50%);
+  display: none;
+  z-index: 60;
+}
+
 /* ------------------------------------------------------------ responsive */
 
 @media (max-width: 1180px) {

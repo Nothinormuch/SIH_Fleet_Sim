@@ -288,10 +288,17 @@ const Shell = (() => {
     const typing = isTyping(event.target);
 
     if (event.key === 'Escape') {
+      // Innermost thing first. The builder sits above everything, so it is what
+      // Esc means while it is open.
+      if (body.classList.contains('builder-open')) { event.preventDefault(); bios.closeBuilder?.(); return; }
       if (body.classList.contains('jury-mode')) { bios.togglePresentationMode?.(); return; }
       if (isMenuOpen()) { event.preventDefault(); back(); }
       return;
     }
+
+    // Nothing below applies while the builder owns the screen: it is a modal task
+    // with its own controls, and summoning the menu behind it would be nonsense.
+    if (body.classList.contains('builder-open')) return;
 
     // Tab is the menu key. Inside a field it stays a focus key, so a form is
     // still navigable; everywhere else it summons and dismisses.

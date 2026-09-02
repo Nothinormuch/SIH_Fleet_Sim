@@ -51,6 +51,7 @@ from src.bios4 import MAX_MODEL_BYTES, ModelError, model_from_json  # noqa: E402
 from src.evolve import TrainConfig, evolve         # noqa: E402
 from src.main import run_for_dashboard            # noqa: E402
 from src.scenarios import SCENARIOS, SHOWCASE_SCENARIOS  # noqa: E402
+from src.environment import Warehouse, FREE, RACK, STATION, DOCK  # noqa: E402
 from src.task_allocation import ALLOCATION_POLICIES  # noqa: E402
 
 # Simulations are CPU-bound and a long one takes a while; serialise them so a reloading
@@ -72,6 +73,7 @@ _JOBS_LOCK = threading.Lock()
 _MODELS: dict[str, object] = {}                    # model id -> PolicyNet
 _MODEL_ORDER: list[str] = []
 MAX_MODELS = 16                                    # a dev tool, not a model registry
+CUSTOM_SCENARIOS: dict[str, dict] = {}
 
 # Bounds, not suggestions - the same reasoning as the run endpoint's. An unbounded
 # population on a CPU-bound endpoint is a denial of service against your own laptop
@@ -172,7 +174,11 @@ def parse_run_request(payload: object) -> dict[str, object]:
         "stop-and-wait(Competition)": POLICY_STOP_WAIT_COMPETITION,
     }.get(policy, policy)
     allocation_policy = str(scalar("allocation_policy", "auction_bundle"))
-    if scenario not in SCENARIOS:
+    is_custom = scenario.startswith("custom_")
+    if is_custom:
+        if scenario not in CUSTOM_SCENARIOS:
+            raise RequestValidationError(f"unknown custom scenario {scenario!r}")
+    elif scenario not in SCENARIOS:
         raise RequestValidationError(f"unknown scenario {scenario!r}")
     if policy not in POLICIES:
         raise RequestValidationError(f"unknown policy {policy!r}")
@@ -309,6 +315,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_train_cancel(parse_qs(parsed.query))
             if route == "/api/model":
                 return self._api_model_upload()
+            if route == "/api/scenarios/custom" and self.command == "POST":
+                return self._api_scenarios_custom()
             if route != "/api/run":
                 return self._json(404, {"error": f"not found: {route}"})
             content_type = self.headers.get_content_type()
@@ -397,16 +405,80 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ endpoints
 
+    def _api_scenarios_custom(self) -> None:
+        try:
+            raw_length = self.headers.get("Content-Length")
+            if raw_length is None:
+                return self._json(411, {"error": "Content-Length is required"})
+            length = int(raw_length)
+            if length < 0 or length > MAX_REQUEST_BYTES:
+                return self._json(413, {"error": "request body is too large"})
+            body = self.rfile.read(length)
+            self._body_read = True
+            try:
+                payload = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                return self._json(400, {"error": "request body must be valid JSON"})
+        except Exception:
+            return self._json(400, {"error": "invalid request"})
+
+        # Expect: {"name":"...","width":...,"height":...,"grid":[[...],...],"stations":[[x,y],...],"docks":[[x,y],...],"starts":[[x,y],...],"seed":0,"duration":300}
+        try:
+            width = int(payload.get("width", 20))
+            height = int(payload.get("height", 20))
+            grid_raw = payload.get("grid", [])
+            if not isinstance(grid_raw, list) or len(grid_raw) != height:
+                return self._json(400, {"error": "grid must match height"})
+            grid = []
+            for row in grid_raw:
+                if not isinstance(row, list) or len(row) != width:
+                    return self._json(400, {"error": f"each grid row must have width {width}"})
+                grid.append([int(v) for v in row])
+            stations = [tuple(s) for s in payload.get("stations", []) if isinstance(s, list) and len(s) == 2]
+            docks = [tuple(s) for s in payload.get("docks", []) if isinstance(s, list) and len(s) == 2]
+            starts = [tuple(s) for s in payload.get("starts", []) if isinstance(s, list) and len(s) == 2]
+        except Exception as exc:
+            return self._json(400, {"error": f"invalid grid data: {exc}"})
+
+        try:
+            env = Warehouse(width, height, tuple(tuple(row) for row in grid), tuple(stations), tuple(docks), payload.get("name", "custom"))
+        except Exception as exc:
+            return self._json(400, {"error": f"cannot build warehouse: {exc}"})
+
+        sid = "custom_" + str(uuid.uuid4().hex[:8])
+        CUSTOM_SCENARIOS[sid] = {
+            "env": env,
+            "starts": starts,
+            "name": payload.get("name", "custom"),
+            "seed": int(payload.get("seed", 0)),
+            "duration": float(payload.get("duration", 300.0)),
+        }
+        self._json(200, {"id": sid, "name": payload.get("name", "custom"), "width": width, "height": height})
+
     def _api_scenarios(self) -> None:
         showcase = []
+        custom_scenarios = []
+        for sid, data in CUSTOM_SCENARIOS.items():
+            custom_scenarios.append({
+                "id": sid,
+                "title": data.get("name", "Custom Scenario"),
+                "eyebrow": "Custom Builder",
+                "description": f"Custom layout · {data['env'].width}×{data['env'].height}",
+                "robots": len(data.get("starts", [])),
+                "humans": 0,
+                "seed": data.get("seed", 0),
+                "duration": int(data.get("duration", 300)),
+                "accent": "lime",
+            })
         for scenario_id, profile in SHOWCASE_SCENARIOS.items():
             showcase.append({
                 "id": scenario_id,
                 **{key: value for key, value in profile.items() if key != "builder"},
             })
+        all_showcase = showcase + custom_scenarios
         self._json(200, {
-            "scenarios": [item["id"] for item in showcase],
-            "showcase": showcase,
+            "scenarios": [item["id"] for item in all_showcase],
+            "showcase": all_showcase,
             "policies": sorted(POLICIES),
             "allocation_policies": sorted(ALLOCATION_POLICIES),
         })
@@ -429,6 +501,16 @@ class Handler(BaseHTTPRequestHandler):
                     "hint": "models are held in memory and are lost across restarts - "
                             "upload the .json again"})
 
+        is_custom = request["scenario"].startswith("custom_")
+        if is_custom:
+            custom = CUSTOM_SCENARIOS.get(request["scenario"])
+            if custom is None:
+                return self._json(404, {"error": f"unknown custom scenario {request['scenario']!r}"})
+            # Pass custom info through to run_for_dashboard by injecting into request
+            request["_custom_env"] = custom["env"]
+            request["_custom_starts"] = custom.get("starts", [])
+            request["_custom_duration"] = float(request.get("duration", custom.get("duration", 180.0)))
+            request["_custom_seed"] = int(request.get("seed", custom.get("seed", 0)))
         with _SIM_LOCK:
             result = run_for_dashboard(policy_model=model, **request)
         self._json(200, result)
