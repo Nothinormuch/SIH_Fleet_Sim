@@ -303,6 +303,44 @@ console.log(JSON.stringify({screen, centre}));
     assert result["screen"] == result["centre"]
 
 
+@pytest.mark.skipif(NODE is None, reason="Node is required for the 3D cargo unit test")
+def test_3d_cargo_lifecycle_tracks_pickup_carry_and_delivery():
+    """Playback scrubbing must reconstruct cargo state without mutating simulation data."""
+    script = r"""
+const {DigitalTwin} = await import('./frontend/js/digital-twin.js');
+const frames = [
+  {t: 0, fleet: [{id: 'AMR01', task: 'T1', done: 0, carry: null}]},
+  {t: 1, fleet: [{id: 'AMR01', task: 'T1', done: 0, carry: 'T1'}]},
+  {t: 2, fleet: [{id: 'AMR01', task: null, done: 1, carry: null,
+    decision: {code: 'TASK_COMPLETED', details: {task: 'T1'}}}]},
+];
+const pick = {visible: null};
+const delivered = {visible: null};
+const fake = {
+  frameTimes: frames.map(frame => frame.t),
+  taskMarkers: new Map([['T1', pick]]),
+  deliveredMarkers: new Map([['T1', delivered]]),
+  _timelineAt: DigitalTwin.prototype._timelineAt,
+};
+fake.taskTimeline = DigitalTwin.prototype._buildTaskTimeline.call(fake, frames);
+const states = frames.map(frame => {
+  DigitalTwin.prototype._updateTaskCargo.call(fake, frame, frame.t);
+  return [pick.visible, delivered.visible];
+});
+if (JSON.stringify(states) !== JSON.stringify([
+  [true, false], [false, false], [false, true],
+])) process.exit(2);
+console.log(JSON.stringify(states));
+"""
+    completed = subprocess.run(
+        [NODE, "--no-warnings", "--input-type=module", "-e", script],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+    assert json.loads(completed.stdout) == [
+        [True, False], [False, False], [False, True],
+    ]
+
+
 @pytest.mark.skipif(NODE is None, reason="Node is required for the canvas unit test")
 def test_canvas_fits_the_real_pedestrian_apron_instead_of_clipping_workers():
     """The fallback camera must frame the worker route, not only the AMR grid."""
