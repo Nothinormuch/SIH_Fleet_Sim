@@ -294,6 +294,13 @@ battery state and cargo-aware energy admission. A WMS injects tasks; it never se
 winner. Each AMR admits a bid only when the task, cargo factor and post-task charger return
 remain above the protected reserve.
 
+Grand Challenge now defaults to 10 AMRs, five mapped workers and 20 tasks. Its coloured
+cargo is rendered on the adjacent blocked rack cell instead of on the pickup travel cell,
+so the floor remains visually and physically readable. The checked five-seed acceptance
+gate completes 100/100 tasks with zero observed robot-robot, robot-human or robot-rack
+contacts; see [`docs/HUMAN_FLOW_AUDIT.md`](docs/HUMAN_FLOW_AUDIT.md) for the exact boundary
+and per-seed results.
+
 The previous checked-in acceptance campaign remains BIOS 5 versus stop-and-wait evidence;
 it must not be relabelled as BIOS 6 evidence. The final BIOS 6 three-seed showcase matrix
 records zero observed robot/robot, robot/human and robot/rack contacts in 10.019 candidate

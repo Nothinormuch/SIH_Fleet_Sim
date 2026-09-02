@@ -71,7 +71,7 @@ On the same 8-AMR, seed-1 Grand Challenge input before the shared-worker redesig
 Remaining turns correspond to route corners, yielding, parking, or recovery and are not
 removed merely for visual smoothness.
 
-### Final shared-worker acceptance campaign
+### Earlier 8-AMR shared-worker acceptance campaign
 
 Configuration: BIOS 6, `auction_bundle`, 8 AMRs, 5 workers, 16 tasks, 800 s evidence
 window, Grand Challenge seeds 0-4.
@@ -89,6 +89,27 @@ contacts, with a mean makespan of 427.60 s. This supports completion and safety 
 for the defined deterministic campaign; it does not establish universal completion or
 physical certification.
 
+### Current 10-AMR jury acceptance campaign
+
+Configuration: BIOS 6, `auction_bundle`, 10 AMRs, 5 workers, 20 tasks, 800 s evidence
+window, Grand Challenge seeds 0-4.
+
+| Seed | Completion | Makespan | Closest separation | All contacts |
+|---:|---:|---:|---:|---:|
+| 0 | 20/20 | 464.20 s | 0.926 m | 0 |
+| 1 | 20/20 | 317.74 s | 0.857 m | 0 |
+| 2 | 20/20 | 372.24 s | 0.912 m | 0 |
+| 3 | 20/20 | 292.54 s | 0.920 m | 0 |
+| 4 | 20/20 | 474.82 s | 0.934 m | 0 |
+
+Campaign result: 100/100 tasks, zero observed robot-robot, robot-human, and robot-rack
+contacts, 384.31 s mean makespan and 474.82 s worst makespan. The fixes exercised by
+this campaign bound pedestrian side-steps to their mapped routes, release legal 2x2
+directed rotations, let a route-less AMR clear a stationary local obstacle by one
+Layer-0-validated cell, and make idle parking yield locally to active task traffic.
+This remains deterministic simulation evidence, not a universal completion theorem or
+physical safety certification.
+
 ## Regression gates
 
 The codebase includes targeted tests for:
@@ -97,13 +118,17 @@ The codebase includes targeted tests for:
 - retaining a crossed corner waypoint for rack clearance;
 - rejecting unexecutable reverse edges in directed replans;
 - reciprocal worker clearance in a shared aisle;
+- bounded worker-route deviation and anonymous-obstacle clearance;
+- legal directed 2x2 rotations without reciprocal staging;
+- active-task preemption of optional idle parking;
 - warehouse-wide worker coverage, rack safety, safe spawn placement, work visits, and
   no hidden pedestrian apron in showcase telemetry;
-- complete Grand Challenge execution with and without workers.
+- complete 10-AMR Grand Challenge execution with and without workers, including the
+  seed-0 mixed-traffic and seed-4 parking-tail regressions.
 
 ## Remaining validation boundary
 
-Eight AMRs are the defined showcase acceptance fleet. Ten-AMR mixed-traffic runs are a
-higher-density overload stress case and must be reported separately until their own
-multi-seed completion gate passes. No universal 100% completion or certified human
-safety claim should be made from this simulation.
+Ten AMRs are the defined Grand Challenge showcase fleet. The five-seed campaign above is
+the acceptance boundary; fleets, maps, seeds and faults outside it remain stress tests.
+No universal 100% completion or certified human-safety claim should be made from this
+simulation.

@@ -691,7 +691,7 @@ def showcase_dead_zone(n_robots: int = 6, tasks_per_robot: int = 1,
         "showcase_dead_zone")
 
 
-def showcase_grand_challenge(n_robots: int = 8, tasks_per_robot: int = 2,
+def showcase_grand_challenge(n_robots: int = 10, tasks_per_robot: int = 2,
                              seed: int = 1) -> Scenario:
     """A deterministic jury story: traffic, humans, radio degradation and blockage."""
     base = dense_aisles(n_robots, tasks_per_robot, seed)
@@ -753,7 +753,7 @@ SHOWCASE_SCENARIOS = {
         "builder": showcase_grand_challenge, "title": "Grand Challenge",
         "eyebrow": "The full BIOS story",
         "description": "Open traffic, shared human work aisles, chokepoints, a blocked aisle, mixed cargo, a dead zone and robot recovery.",
-        "robots": 8, "humans": 5, "seed": 1, "duration": 800, "accent": "lime",
+        "robots": 10, "humans": 5, "seed": 1, "duration": 800, "accent": "lime",
     },
 }
 

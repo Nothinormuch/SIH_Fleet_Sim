@@ -21,7 +21,7 @@ from backend.server import Handler, RequestValidationError, parse_run_request
 from src.scenarios import SHOWCASE_SCENARIOS
 from src.settings import DEFAULT
 from src.task_allocation import ALLOCATION_AUCTION_BUNDLE
-from src.world import World
+from src.world import HUMAN_ROUTE_DEVIATION_M, Actuation, World
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -105,6 +105,25 @@ def test_showcase_pedestrians_work_across_the_warehouse_without_entering_racks()
         assert all(human.work_visits >= 2 for human in world.humans.values())
 
 
+def test_worker_avoidance_stays_attached_to_its_mapped_route():
+    """Repeated side-steps must not accumulate into an invented AMR-lane route."""
+    scenario = SHOWCASE_SCENARIOS["showcase_grand_challenge"]["builder"](
+        n_robots=10, seed=1)
+    world = World(scenario.env, DEFAULT, seed=scenario.seed)
+    human = world.add_human("H-test", scenario.humans[3])
+    # Put a stationary chassis on the next work-route segment. The worker must turn,
+    # wait, or take a bounded local side-step without drifting away across the floor.
+    robot_cell = scenario.humans[3][1]
+    world.add_robot("AMR-test", robot_cell, 0.0)
+
+    for _ in range(int(45 * DEFAULT.rates.world_hz)):
+        world.step(1.0 / DEFAULT.rates.world_hz,
+                   {"AMR-test": Actuation(v=0.0, omega=0.0)})
+        assert human.distance_from_route() <= HUMAN_ROUTE_DEVIATION_M + 1e-9
+
+    assert not any(event.kind == "robot-human" for event in world.contacts)
+
+
 def test_grand_challenge_workers_spawn_safely_inside_shared_warehouse_space():
     scenario = SHOWCASE_SCENARIOS["showcase_grand_challenge"]["builder"](
         n_robots=10, seed=1)
@@ -144,7 +163,7 @@ def test_grand_challenge_finishes_inside_its_dashboard_evidence_window():
     )
 
     assert result.completed_all
-    assert result.tasks_completed == result.tasks_announced == 16
+    assert result.tasks_completed == result.tasks_announced == 20
     assert result.makespan_s < profile["duration"]
     assert result.contacts_robot_robot == 0
     assert result.contacts_robot_human == 0
@@ -166,7 +185,7 @@ def test_grand_challenge_liveness_does_not_depend_on_pedestrian_interference():
     )
 
     assert result.completed_all
-    assert result.tasks_completed == result.tasks_announced == 16
+    assert result.tasks_completed == result.tasks_announced == 20
     assert result.contacts_robot_robot == 0
     assert result.contacts_robot_rack == 0
 
@@ -175,7 +194,7 @@ def test_loaded_robot_preempts_idle_parking_cycle_in_grand_challenge():
     """Seed 4 previously left one loaded AMR behind two optional parking trips."""
     profile = SHOWCASE_SCENARIOS["showcase_grand_challenge"]
     scenario = replace(
-        profile["builder"](n_robots=8, seed=4),
+        profile["builder"](n_robots=10, seed=4),
         duration_s=float(profile["duration"]),
     )
 
@@ -185,7 +204,28 @@ def test_loaded_robot_preempts_idle_parking_cycle_in_grand_challenge():
     )
 
     assert result.completed_all
-    assert result.tasks_completed == result.tasks_announced == 16
+    assert result.tasks_completed == result.tasks_announced == 20
+    assert result.contacts_robot_robot == 0
+    assert result.contacts_robot_human == 0
+    assert result.contacts_robot_rack == 0
+
+
+def test_ten_amr_mixed_traffic_clears_directed_corner_and_human_latches():
+    """Seed 0 covers the 2x2 corner cycle and the last-task dock-clearance tail."""
+    profile = SHOWCASE_SCENARIOS["showcase_grand_challenge"]
+    scenario = replace(
+        profile["builder"](n_robots=10, seed=0),
+        duration_s=float(profile["duration"]),
+    )
+
+    result = run_scenario(
+        scenario, POLICY_BIOS_PIBT_V6, seed=0,
+        allocation_policy=ALLOCATION_AUCTION_BUNDLE,
+    )
+
+    assert result.completed_all
+    assert result.tasks_completed == result.tasks_announced == 20
+    assert result.makespan_s < profile["duration"]
     assert result.contacts_robot_robot == 0
     assert result.contacts_robot_human == 0
     assert result.contacts_robot_rack == 0

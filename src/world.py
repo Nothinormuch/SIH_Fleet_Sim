@@ -24,8 +24,8 @@ import random
 from dataclasses import dataclass, field
 
 from .environment import RACK, Warehouse
-from .geometry import (Vec, Cell, angle_diff, clamp, dist, segments_min_distance,
-                       to_cell, wrap_angle)
+from .geometry import (Vec, Cell, angle_diff, clamp, dist, segment_point_distance,
+                       segments_min_distance, to_cell, wrap_angle)
 from .planner import astar
 from .settings import Config
 
@@ -38,6 +38,10 @@ from .settings import Config
 PEDESTRIAN_APRON_OFFSET_CELLS = 2.50
 PEDESTRIAN_APRON_WIDTH_CELLS = 0.86
 PEDESTRIAN_APRON_BOUND_CELLS = 2.98
+# A worker may step aside at an open junction, but must remain attached to the mapped
+# work route.  Without this bound, repeated collision-avoidance side-steps can add up
+# over hundreds of ticks and turn a person into a new, unintended warehouse route.
+HUMAN_ROUTE_DEVIATION_M = 0.42
 
 
 @dataclass
@@ -152,6 +156,19 @@ class HumanState:
         if d < 1e-9:
             return (0.0, 0.0)
         return (dx / d * self.speed, dy / d * self.speed)
+
+    def distance_from_route(self, point: Vec | None = None) -> float:
+        """Shortest distance from a point to this worker's closed mapped route."""
+        if not self.waypoints:
+            return 0.0
+        target = point or (self.x, self.y)
+        if len(self.waypoints) == 1:
+            return dist(target, self.waypoints[0])
+        return min(
+            segment_point_distance(
+                start, self.waypoints[(index + 1) % len(self.waypoints)], target)
+            for index, start in enumerate(self.waypoints)
+        )
 
     def step(self, dt: float) -> None:
         if len(self.waypoints) < 2:
@@ -548,6 +565,12 @@ class World:
                             start[0] + math.cos(heading) * step_m,
                             start[1] + math.sin(heading) * step_m,
                         )
+                        # Side-steps are local passing manoeuvres, not permission to
+                        # invent a new pedestrian path.  Keeping the worker inside a
+                        # narrow tube around the rack-safe route prevents accumulated
+                        # avoidance drift from occupying an unrelated one-way AMR lane.
+                        if h.distance_from_route(candidate) > HUMAN_ROUTE_DEVIATION_M:
+                            continue
                         clearance = candidate_clearance(candidate)
                         if clearance is None:
                             continue

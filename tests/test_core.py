@@ -28,6 +28,7 @@ from src.messages import (MGR_BEACON, PLAN_RSP, award, bid, decode,
                           task_new)
 from src.metrics import poisson_rate_ci
 from src.planner import Reservations, astar, prioritized_plan
+from src.priority import PriorityKey
 from src.settings import DEFAULT
 from src.task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
                                  ALLOCATION_HUNGARIAN, ALLOCATION_PREASSIGNED)
@@ -318,6 +319,39 @@ def test_v6_cluster_unstick_selects_only_a_free_clearance_cell():
     assert brain.path == [here, brain.retreat_target]
     assert brain.state == "retreat"
     assert brain.decision_log[-1]["code"] == "CLEARANCE_UNSTICK"
+
+
+def test_v6_cluster_unstick_ignores_a_follower_waiting_on_this_robot():
+    """A queued follower's look-ahead intent must not veto the leader's escape."""
+    env = open_floor(10, 10)
+    brain = AMRBrain("A", env, DEFAULT, policy=POLICY_BIOS_PIBT_V6)
+    here = (4, 4)
+    px, py = cell_center(here, DEFAULT.cell_m)
+    target = (4, 5)
+    brain.goal = (8, 5)
+    brain.path = [here, target]
+    brain.pidx = 1
+    brain.peers = {
+        "B": Peer(
+            "B", cell=(4, 3), last_seen=1.0, intent=[here, target],
+            blocked_on="A", state="blocked",
+            priority_key=PriorityKey(waiting_age=99, robot_id="B"),
+        ),
+        "C": Peer("C", cell=(3, 4), last_seen=1.0, blocked_on="A"),
+        "D": Peer("D", cell=(5, 4), last_seen=1.0),
+    }
+    close_follower = Detection(
+        x=px, y=py - 1.03, r=0.35, range_m=1.03,
+    )
+    sensors = Sensors(
+        t=1.0, pose=(px, py, math.pi / 2), v=0.0, omega=0.0,
+        battery_frac=1.0, cell=here, clearance_m=0.33,
+        clearance_omni_m=0.33, detections=[close_follower],
+    )
+
+    assert brain._v6_clearance_unstick(1.0, sensors)
+    assert brain.retreat_target == target
+    assert brain.path == [here, target]
 
 
 def test_task_protocol_carries_epoch_deadline_and_lease():

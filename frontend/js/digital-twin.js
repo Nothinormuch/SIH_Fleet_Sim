@@ -112,6 +112,7 @@ export class DigitalTwin {
     this.humans = new Map();
     this.obstacles = new Map();
     this.deadZones = [];
+    this.rackCells = [];
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.selectedId = null;
@@ -153,6 +154,7 @@ export class DigitalTwin {
     this.humans.clear();
     this.obstacles.clear();
     this.deadZones = [];
+    this.rackCells = [];
     this.map = data.map;
     this.meta = data.meta;
     this._buildWarehouse();
@@ -434,6 +436,7 @@ export class DigitalTwin {
         if (this.map.grid[y][x] === 1) rackCells.push([x, y]);
       }
     }
+    this.rackCells = rackCells;
     // Build recognisable industrial shelving instead of opaque rack-shaped blocks.
     // Instancing keeps the richer geometry inexpensive even on a large warehouse.
     const uprightGeometry = new THREE.BoxGeometry(cell * .055, cell * 1.18, cell * .055);
@@ -541,25 +544,55 @@ export class DigitalTwin {
   _buildTasks() {
     const catalog = this.meta.tasks_catalog || [];
     const colours = {normal: 0x5caeff, fragile: 0xc084fc, heavy: 0xf59e0b, hazardous: 0xfb7185};
+    const rackUse = new Map();
+    const rackKey = ([x, y]) => `${x},${y}`;
+    const adjacentRacks = ([x, y]) => [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]
+      .filter(([rx, ry]) => this.map.grid?.[ry]?.[rx] === 1);
     for (const task of catalog) {
       const colour = colours[task.cargo_type] || PALETTE.cyan;
+      let candidates = adjacentRacks(task.pick);
+      if (!candidates.length) {
+        candidates = [...this.rackCells].sort((a, b) => {
+          const ad = Math.abs(a[0] - task.pick[0]) + Math.abs(a[1] - task.pick[1]);
+          const bd = Math.abs(b[0] - task.pick[0]) + Math.abs(b[1] - task.pick[1]);
+          return ad - bd || a[1] - b[1] || a[0] - b[0];
+        }).slice(0, 4);
+      }
+      candidates.sort((a, b) => (rackUse.get(rackKey(a)) || 0) - (rackUse.get(rackKey(b)) || 0)
+        || a[1] - b[1] || a[0] - b[0]);
+      const rack = candidates[0];
+      if (!rack) continue;
+      const key = rackKey(rack);
+      const slot = rackUse.get(key) || 0;
+      rackUse.set(key, slot + 1);
+      const slotOffsets = [[-.19, -.19], [.19, -.19], [-.19, .19], [.19, .19]];
+      const [slotX, slotZ] = slotOffsets[slot % slotOffsets.length];
+      const cell = this.meta.cell_m;
       const marker = new THREE.Group();
-      marker.position.copy(this._cellToWorld(task.pick[0], task.pick[1], .12));
+      marker.position.copy(this._cellToWorld(rack[0], rack[1], 0));
       const box = new THREE.Mesh(
-        new THREE.BoxGeometry(.58, .52, .58),
-        new THREE.MeshStandardMaterial({color: colour, roughness: .55, metalness: .08}),
+        new THREE.BoxGeometry(cell * .34, cell * .26, cell * .34),
+        new THREE.MeshStandardMaterial({color: colour, roughness: .48, metalness: .12,
+          emissive: colour, emissiveIntensity: .08}),
       );
-      box.position.y = .28;
+      box.position.set(slotX * cell, cell * 1.22, slotZ * cell);
       box.castShadow = true;
       marker.add(box);
+      const strap = new THREE.Mesh(
+        new THREE.BoxGeometry(cell * .055, cell * .272, cell * .35),
+        new THREE.MeshStandardMaterial({color: 0xe8f2f8, roughness: .45, metalness: .18}),
+      );
+      strap.position.copy(box.position);
+      marker.add(strap);
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(.42, .49, 32),
+        new THREE.RingGeometry(cell * .25, cell * .29, 32),
         new THREE.MeshBasicMaterial({color: colour, transparent: true, opacity: .75,
           side: THREE.DoubleSide, depthWrite: false}),
       );
       ring.rotation.x = -Math.PI / 2;
+      ring.position.set(slotX * cell, cell * 1.055, slotZ * cell);
       marker.add(ring);
-      marker.userData.taskMarker = true;
+      marker.userData = {taskMarker: true, taskId: task.id, rackCell: rack};
       this.world.add(marker);
     }
   }
@@ -788,6 +821,7 @@ export class DigitalTwin {
     this.selectedId = selectedId || null;
     if (cameraMode !== this.cameraMode) this.setCameraMode(cameraMode);
     const fleetById = new Map((frame.fleet || []).map(item => [item.id, item]));
+    const denseFleet = fleetById.size >= 9;
     for (const robot of frame.robots || []) {
       const group = this._ensureRobot(robot.id);
       group.position.copy(this._toWorld(robot.x, robot.y, 0));
@@ -802,6 +836,12 @@ export class DigitalTwin {
       group.userData.halo.material.opacity = .48 + .24 * (1 + Math.sin(simTime * 4)) / 2;
       group.userData.selection.material.opacity = robot.id === this.selectedId ? .95 : 0;
       group.userData.selection.rotation.z = simTime * 1.4;
+      // At ten-plus AMRs, ten permanent billboards obscure the exact traffic that the
+      // audience is trying to inspect. Keep labels for the selected robot and genuine
+      // exceptions; the fleet panel and stable colour still identify every chassis.
+      group.userData.label.visible = !denseFleet || robot.id === this.selectedId
+        || info.failed || info.state === 'blocked' || info.state === 'retreat'
+        || cameraMode === 'chase' || cameraMode === 'pov';
       group.userData.beacon.material.color.setHex(stateColour);
       group.userData.beacon.scale.setScalar(.82 + .25 * (1 + Math.sin(simTime * 5)) / 2);
       for (const wheel of group.userData.wheels) wheel.rotation.x = -simTime * 4;
