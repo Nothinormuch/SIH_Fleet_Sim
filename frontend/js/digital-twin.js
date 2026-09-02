@@ -550,7 +550,7 @@ export class DigitalTwin {
       this.world.add(this._makePad(x, y, 0x3b82f6, 'PICK / DROP'));
     }
     for (const [x, y] of this.map.docks || []) {
-      this.world.add(this._makePad(x, y, 0x22c55e, 'CHARGE'));
+      this.world.add(this._makeChargeDock(x, y));
     }
 
     for (const zone of this.meta.dead_zones || []) {
@@ -589,26 +589,144 @@ export class DigitalTwin {
     this.world.add(boundary);
   }
 
+  /* A pick / drop station.
+   *
+   * The same plinth-and-deck construction as the charge dock, minus the post -
+   * these are floor stations, not equipment. It gets the upgrade because leaving
+   * it as the old flat disc next to a modelled dock would have made it look
+   * worse than it did before the dock existed.
+   *
+   * The inlay is corner brackets rather than the dock's cross: a target to place
+   * into, not a spot to line up on.
+   */
   _makePad(x, y, colour, labelText) {
     const cell = this.meta.cell_m;
     const group = new THREE.Group();
-    group.position.copy(this._cellToWorld(x, y, .02));
-    const pad = new THREE.Mesh(
-      new THREE.CylinderGeometry(cell * .42, cell * .42, .08, 32),
-      new THREE.MeshStandardMaterial({color: colour, emissive: colour, emissiveIntensity: .28,
-        roughness: .45, metalness: .35}),
-    );
-    pad.receiveShadow = true;
-    group.add(pad);
+    group.position.copy(this._cellToWorld(x, y, 0));
+
+    const dark = new THREE.MeshStandardMaterial({color: 0x1b2836, roughness: .5, metalness: .6});
+    const steel = new THREE.MeshStandardMaterial({color: 0x53657a, roughness: .34, metalness: .78});
+    const glow = new THREE.MeshStandardMaterial({
+      color: 0x0a1c2b, emissive: colour, emissiveIntensity: 1.1, roughness: .3,
+    });
+
+    const add = (geometry, material, px, py, pz) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(px, py, pz);
+      mesh.receiveShadow = true;
+      mesh.castShadow = true;
+      group.add(mesh);
+      return mesh;
+    };
+
+    add(new THREE.BoxGeometry(cell * .92, .07, cell * .92), dark, 0, .035, 0);
+    add(new THREE.BoxGeometry(cell * .76, .05, cell * .76), steel, 0, .095, 0);
+
+    // Four corner brackets, each an L of two bars.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        add(new THREE.BoxGeometry(cell * .22, .012, cell * .045), glow,
+            sx * cell * .21, .126, sz * cell * .30);
+        add(new THREE.BoxGeometry(cell * .045, .012, cell * .22), glow,
+            sx * cell * .30, .126, sz * cell * .21);
+      }
+    }
+
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(cell * .35, .025, 8, 40),
-      new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: .72}),
+      new THREE.RingGeometry(cell * .48, cell * .53, 40),
+      new THREE.MeshBasicMaterial({color: colour, transparent: true, opacity: .34,
+        side: THREE.DoubleSide, depthWrite: false}),
     );
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = .07;
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = .012;
     group.add(ring);
+
     const label = makeLabel(labelText, hexCss(colour), true);
     label.position.y = 1.15;
+    label.scale.multiplyScalar(.58);
+    group.add(label);
+    return group;
+  }
+
+  /* A charging dock, modelled rather than textured.
+   *
+   * The drop has a "Charging" badge and a glowing platform render, and neither
+   * survives being used here: the badge is an icon on a plinth, and the platform
+   * is cropped at both image edges so its top face cannot be flattened out of the
+   * render. The repo's own charge tile is drawn with a baked perspective for the
+   * 2D view and stretches when laid flat.
+   *
+   * Which is fine, because the thing that made the old pad look like a
+   * placeholder was not its texture - it was being a disc. Volume, a post at
+   * standing height and emissive inlay do the work instead.
+   */
+  _makeChargeDock(x, y) {
+    const cell = this.meta.cell_m;
+    const green = PALETTE.green;
+    const group = new THREE.Group();
+    group.position.copy(this._cellToWorld(x, y, 0));
+
+    const steel = new THREE.MeshStandardMaterial({color: 0x53657a, roughness: .34, metalness: .78});
+    const dark = new THREE.MeshStandardMaterial({color: 0x1b2836, roughness: .5, metalness: .6});
+    const glow = new THREE.MeshStandardMaterial({
+      color: 0x0d2b22, emissive: green, emissiveIntensity: 1.25, roughness: .3,
+    });
+
+    const add = (geometry, material, px, py, pz) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(px, py, pz);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+      return mesh;
+    };
+
+    // Plinth and deck: two plates, so the dock has an edge that catches light
+    // instead of reading as a decal on the floor.
+    add(new THREE.BoxGeometry(cell * .92, .07, cell * .92), dark, 0, .035, 0);
+    add(new THREE.BoxGeometry(cell * .76, .05, cell * .76), steel, 0, .095, 0);
+
+    // Emissive inlay - a cross with a centre pad, which is what says "line up
+    // here" without a caption.
+    add(new THREE.BoxGeometry(cell * .60, .012, cell * .05), glow, 0, .126, 0);
+    add(new THREE.BoxGeometry(cell * .05, .012, cell * .60), glow, 0, .126, 0);
+    add(new THREE.BoxGeometry(cell * .17, .014, cell * .17), glow, 0, .127, 0);
+
+    // Corner studs.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        add(new THREE.BoxGeometry(cell * .07, .05, cell * .07), steel,
+            sx * cell * .33, .13, sz * cell * .33);
+      }
+    }
+
+    // The post, set on the back edge so an AMR can drive onto the deck from the
+    // other three sides.
+    const postZ = -cell * .40;
+    add(new THREE.BoxGeometry(cell * .17, .10, cell * .17), dark, 0, .12, postZ);
+    add(new THREE.BoxGeometry(cell * .13, 1.02, cell * .13), steel, 0, .63, postZ);
+    // Charge-level strip up the front face.
+    add(new THREE.BoxGeometry(cell * .045, .74, .012), glow, 0, .60, postZ + cell * .068);
+
+    // Emitter head, tilted down toward the deck.
+    const head = add(new THREE.BoxGeometry(cell * .30, .17, cell * .20), dark, 0, 1.18, postZ + .04);
+    head.rotation.x = .34;
+    const lens = add(new THREE.BoxGeometry(cell * .21, .09, .02), glow, 0, 1.14, postZ + cell * .12);
+    lens.rotation.x = .34;
+
+    // A soft ring on the floor, so the dock still reads from directly above where
+    // the post is foreshortened to nothing.
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(cell * .48, cell * .53, 40),
+      new THREE.MeshBasicMaterial({color: green, transparent: true, opacity: .38,
+        side: THREE.DoubleSide, depthWrite: false}),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = .012;
+    group.add(ring);
+
+    const label = makeLabel('CHARGE', hexCss(green), true);
+    label.position.y = 1.62;
     label.scale.multiplyScalar(.58);
     group.add(label);
     return group;
