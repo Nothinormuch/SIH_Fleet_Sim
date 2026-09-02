@@ -164,9 +164,20 @@ button { cursor: pointer; background: none; border: 0; }
   pointer-events: none;
   transition: opacity var(--t) var(--ease);
 }
-#hud > * { pointer-events: auto; }
+/* The children opt back in through :where(), which contributes NO specificity -
+   and that is the whole point. Written the obvious way, `#hud > *` carries ID
+   weight that no class-level rule can outrank, so every "step aside" rule below
+   lost to it silently: `opacity: 0` applied, `pointer-events: none` did not, and
+   the cluster went invisible while still swallowing the clicks meant for the
+   menu underneath it. Invisible and clickable is the worst of both. Keep the
+   :where() - the bug it fixes leaves no trace on screen. */
+:where(#hud) > * { pointer-events: auto; }
 
-body.hud-hidden #hud { opacity: 0; pointer-events: none; }
+/* Switching the parent off is not enough on its own: a child that says `auto`
+   is hit-testable inside a `none` parent, so the states that hide the whole HUD
+   have to name the children too. */
+body.hud-hidden #hud { opacity: 0; }
+body.hud-hidden #hud, body.hud-hidden #hud > * { pointer-events: none; }
 body.hud-hidden .vignette { opacity: .3; }
 
 /* Stage one keeps the HUD up. In the reference the health bars and the compass
@@ -180,7 +191,8 @@ body.menu-open .perspective,
 body.menu-open .link-state,
 body.menu-open .pip,
 body.menu-open .menu-prompt { opacity: 0; pointer-events: none; }
-body.sheet-open #hud { opacity: 0; pointer-events: none; }
+body.sheet-open #hud { opacity: 0; }
+body.sheet-open #hud, body.sheet-open #hud > * { pointer-events: none; }
 
 /* --- vitals, top left. The HP/FP/Stamina stack, in the same order of
        importance: what the fleet achieved, what it has left, how safe it was. */
@@ -706,9 +718,13 @@ body.menu-open #menu {
   bottom: 0;
   display: flex;
   flex-direction: column;
-  pointer-events: auto;
+  /* Same reasoning as .sheet above: #menu goes `pointer-events: none` when it
+     closes, but a child that says `auto` is still hit-testable inside it, so the
+     rails kept catching clicks meant for the world after the menu was dismissed. */
+  pointer-events: none;
   transition: opacity var(--t) var(--ease);
 }
+body.menu-open .rail { pointer-events: auto; }
 .rail-left {
   left: 0;
   width: 330px;
@@ -907,7 +923,15 @@ body.menu-open .rail-right { animation: rail-in-right var(--t) var(--ease) both;
   height: 78vh;
   display: grid;
   grid-template-rows: auto 1fr;
-  pointer-events: auto;
+  /* Closed panels must not be clickable, and this must NOT be left to the
+     `visibility` transition below. That transition is delayed (`0s linear var(--t)`)
+     so the panel stays hit-testable through the fade - and if it fails to land, the
+     panel stays hit-testable forever: invisible, `opacity: 0`, and still swallowing
+     every click aimed at the rails underneath it. That is exactly the bug where
+     opening a category and pressing Esc left the mouse dead and only the arrow keys
+     working. `pointer-events` is not transitioned, so it flips with the class and
+     cannot get stuck. Drive hit-testing from the state, never from the animation. */
+  pointer-events: none;
   border: 1px solid var(--edge);
   background: linear-gradient(180deg, rgba(12,21,32,.97), rgba(5,11,18,.98));
   box-shadow: 0 30px 90px rgba(0,0,0,.72);
@@ -919,6 +943,7 @@ body.menu-open .rail-right { animation: rail-in-right var(--t) var(--ease) both;
 body.sheet-open .sheet {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
   transform: translate(-50%, -50%) scale(1);
   transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), visibility 0s;
 }
