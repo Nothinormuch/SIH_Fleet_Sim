@@ -8,7 +8,7 @@ benchmark harness for decentralized AMR priority and path-conflict resolution.
 
 > ## 📖 Full documentation: **[`docs/README.md`](docs/README.md)**
 >
-> A seventeen-document set written against the problem statement, spined on a
+> An eighteen-document set written against the problem statement, spined on a
 > [requirements traceability matrix](docs/01-REQUIREMENTS-TRACEABILITY.md) that maps all
 > 20 requirements to code, tests and measured evidence.
 >
