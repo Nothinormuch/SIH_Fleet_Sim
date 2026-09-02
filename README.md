@@ -301,6 +301,17 @@ gate completes 100/100 tasks with zero observed robot-robot, robot-human or robo
 contacts; see [`docs/HUMAN_FLOW_AUDIT.md`](docs/HUMAN_FLOW_AUDIT.md) for the exact boundary
 and per-seed results.
 
+For a short traffic-coordination proof, enter **99** in the dashboard Seed field. The UI
+arms a pinned six-AMR, 180 s launch-gridlock workload without adding a sixth gallery card.
+All six tasks begin under their local chassis and cross the same occupied junction, so the
+peer auction chooses local winners and the BIOS traffic layer—not an animation script—must
+release the standstill. The dashboard reports the measured blocked-agent peak and first-
+release latency. On the checked BIOS 6 run, 6/6 agents are blocked at 0.72 s, the first is
+released 0.50 s later, and 6/6 tasks finish at 106.22 s with zero observed contacts. The
+identical stop-and-wait workload completes 0/6 by 180 s. Exact scope, commands, and the
+important distinction between prevention and the stale-cycle counter are in
+[`docs/SEED_99_CONGESTION_DEMO.md`](docs/SEED_99_CONGESTION_DEMO.md).
+
 The previous checked-in acceptance campaign remains BIOS 5 versus stop-and-wait evidence;
 it must not be relabelled as BIOS 6 evidence. The final BIOS 6 three-seed showcase matrix
 records zero observed robot/robot, robot/human and robot/rack contacts in 10.019 candidate

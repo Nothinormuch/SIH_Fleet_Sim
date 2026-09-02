@@ -21,7 +21,7 @@ import urllib.request
 
 import pytest
 
-from backend.server import Handler
+from backend.server import CUSTOM_SCENARIOS, Handler
 from http.server import ThreadingHTTPServer
 from src.bios4 import FEATURES, random_model
 
@@ -72,6 +72,75 @@ def _expect_error(fn, code: int):
 def test_scenarios_lists_bios4(base_url):
     _, body, _ = _get(f"{base_url}/api/scenarios")
     assert "BIOS_4" in body["policies"]
+
+
+def _custom_floor(**overrides):
+    grid = [[0] * 8 for _ in range(6)]
+    grid[1][0] = 2
+    grid[4][7] = 3
+    payload = {
+        "name": "HTTP integration floor",
+        "width": 8,
+        "height": 6,
+        "grid": grid,
+        "stations": [[0, 1]],
+        "docks": [[7, 4]],
+        "starts": [[1, 1], [1, 4]],
+        "seed": 7,
+        "duration": 120,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_custom_floor_is_saved_and_listed(base_url):
+    status, saved = _post(f"{base_url}/api/scenarios/custom", _custom_floor())
+    assert status == 200
+    assert saved["robots"] == 2
+    try:
+        _, library, _ = _get(f"{base_url}/api/scenarios")
+        entry = next(item for item in library["showcase"] if item["id"] == saved["id"])
+        assert entry["title"] == "HTTP integration floor"
+        assert entry["robots"] == 2
+        assert entry["duration"] == 120
+    finally:
+        CUSTOM_SCENARIOS.pop(saved["id"], None)
+
+
+def test_custom_floor_requires_two_amrs_and_valid_grid(base_url):
+    body = _expect_error(
+        lambda: _post(
+            f"{base_url}/api/scenarios/custom",
+            _custom_floor(starts=[[1, 1]]),
+        ),
+        400,
+    )
+    assert "between 2 and 100 AMR starts" in body["error"]
+
+    payload = _custom_floor()
+    payload["grid"][2][2] = 99
+    body = _expect_error(
+        lambda: _post(f"{base_url}/api/scenarios/custom", payload), 400)
+    assert "must be one of 0, 1, 2 or 3" in body["error"]
+
+
+def test_custom_floor_rejects_disconnected_endpoints_and_non_finite_numbers(base_url):
+    payload = _custom_floor()
+    for y in range(payload["height"]):
+        payload["grid"][y][4] = 1
+    body = _expect_error(
+        lambda: _post(f"{base_url}/api/scenarios/custom", payload), 400)
+    assert "must be connected" in body["error"]
+
+    body = _expect_error(
+        lambda: _post(
+            f"{base_url}/api/scenarios/custom",
+            None,
+            raw=json.dumps(_custom_floor()).replace('"duration": 120', '"duration": NaN').encode(),
+        ),
+        400,
+    )
+    assert "valid JSON" in body["error"]
 
 
 def test_bios4_without_a_model_is_refused_with_a_useful_message(base_url):

@@ -51,8 +51,10 @@ def perspective(im: Image.Image, quad, size: int) -> Image.Image:
     dst = [(0, 0), (size, 0), (size, size), (0, size)]
     rows, rhs = [], []
     for (dx, dy), (sx, sy) in zip(dst, quad):
-        rows.append([dx, dy, 1, 0, 0, 0, -sx * dx, -sx * dy]); rhs.append(sx)
-        rows.append([0, 0, 0, dx, dy, 1, -sy * dx, -sy * dy]); rhs.append(sy)
+        rows.append([dx, dy, 1, 0, 0, 0, -sx * dx, -sx * dy])
+        rhs.append(sx)
+        rows.append([0, 0, 0, dx, dy, 1, -sy * dx, -sy * dy])
+        rhs.append(sy)
     coeffs = np.linalg.lstsq(np.array(rows, float), np.array(rhs, float), rcond=None)[0]
     return im.transform((size, size), Image.PERSPECTIVE, coeffs, Image.BICUBIC)
 

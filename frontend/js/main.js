@@ -23,6 +23,7 @@ const el = id => document.getElementById(id);
  * The gallery keeps its own order and numbering - 01 is still Open Floor - so
  * this only changes what is armed, not what is offered. */
 const OPENING_SCENARIO = 'showcase_chokepoint';
+const SEED_99_DEMO = 99;
 
 const App = {
   view: null,
@@ -51,6 +52,7 @@ const App = {
   viewMode: '3d',
   presentationMode: false,
   showcase: [],
+  seed99Active: false,
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -79,6 +81,7 @@ async function boot() {
 
   // Simulation controls
   el('runBtn').addEventListener('click', run);
+  el('seed').addEventListener('input', syncSeed99Mode);
   el('policy').addEventListener('change', () => { syncPolicyUI(); updatePolicyProfile(); });
   el('allocationPolicy').addEventListener('change', updatePolicyProfile);
   el('trainBtn').addEventListener('click', startTraining);
@@ -228,6 +231,7 @@ function selectScenarioProfile(id, announce = true) {
   el('robots').value = profile.robots;
   el('seed').value = profile.seed;
   el('duration').value = profile.duration;
+  App.seed99Active = false;
   el('activeScenarioTitle').textContent = profile.title;
   el('activeScenarioEyebrow').textContent = profile.eyebrow;
   el('activeScenarioDescription').textContent = profile.description;
@@ -237,6 +241,40 @@ function selectScenarioProfile(id, announce = true) {
     card.classList.toggle('active', card.dataset.scenario === id);
   });
   if (announce) setStatus(`${profile.title} selected · energy-aware auction is active.`);
+}
+
+function syncSeed99Mode() {
+  const active = Number(el('seed').value) === SEED_99_DEMO;
+  if (active === App.seed99Active) return;
+  App.seed99Active = active;
+  const profile = App.showcase.find(item => item.id === el('scenario').value);
+
+  if (active) {
+    // Seed 99 is a pinned proof, not a random variation of the selected card. Keep
+    // its six-agent fleet and observation window fixed so every jury replay means the
+    // same thing. The server also reports the requested and executed scenario names.
+    el('robots').value = 6;
+    el('duration').value = 180;
+    el('activeScenarioTitle').textContent = 'Seed 99 · Launch Gridlock';
+    el('activeScenarioEyebrow').textContent = 'Six-AMR congestion proof';
+    el('activeScenarioDescription').textContent =
+      'Six AMRs begin in a measured mutual standstill, negotiate locally, separate, and complete their fixed tasks.';
+    const deployTitle = el('deployTitle');
+    if (deployTitle) deployTitle.textContent = 'Seed 99 · Launch Gridlock';
+    setStatus('Seed 99 armed · fixed 6-AMR congestion proof · 180 s evidence window.', 'busy');
+    return;
+  }
+
+  if (profile) {
+    el('robots').value = profile.robots;
+    el('duration').value = profile.duration;
+    el('activeScenarioTitle').textContent = profile.title;
+    el('activeScenarioEyebrow').textContent = profile.eyebrow;
+    el('activeScenarioDescription').textContent = profile.description;
+    const deployTitle = el('deployTitle');
+    if (deployTitle) deployTitle.textContent = profile.title;
+    setStatus(`${profile.title} restored · seed ${el('seed').value}.`);
+  }
 }
 
 function fill(select, values, preferred) {
@@ -449,6 +487,9 @@ function onCanvasClick(e) {
 /* ------------------------------------------------------------------ running */
 
 async function run() {
+  if (Number(el('seed').value) === SEED_99_DEMO && !App.seed99Active) {
+    syncSeed99Mode();
+  }
   const request = {
     scenario: el('scenario').value,
     policy: el('policy').value,
@@ -463,7 +504,9 @@ async function run() {
   el('runBtn').disabled = true;
   App.playing = false;
   setPlaybackState(false);
-  setStatus(`Simulating ${el('duration').value}s of ${el('scenario').value}…`, 'busy');
+  setStatus(request.seed === SEED_99_DEMO
+    ? 'Running Seed 99 · measuring the six-AMR opening gridlock…'
+    : `Simulating ${el('duration').value}s of ${el('scenario').value}…`, 'busy');
 
   try {
     const res = await fetch('/api/run', {
@@ -513,9 +556,15 @@ async function run() {
     // this is the moment they stop being empty.
     window.Shell?.syncRail();
     window.Shell?.renderQuick();
-    renderSummary(payload.summary, payload.meta);
+    renderSummary(payload.summary, payload.meta, payload.demo_evidence);
     renderCollectiveIntelligence(payload.frames[0]);
-    setStatus(`${n} frames · ${payload.meta.robots} AMRs · seed ${payload.meta.seed} · energy gate active`);
+    const proof = payload.demo_evidence;
+    const releaseText = proof?.first_release_latency_s == null
+      ? 'opening gridlock was not released'
+      : `first release in ${Number(proof.first_release_latency_s).toFixed(2)} s`;
+    setStatus(proof
+      ? `Seed 99 measured · ${proof.peak_simultaneously_blocked}/${proof.robots} blocked · ${releaseText} · ${payload.summary.tasks_completed}/${payload.summary.tasks_announced} tasks complete`
+      : `${n} frames · ${payload.meta.robots} AMRs · seed ${payload.meta.seed} · energy gate active`);
 
     // HUD is re-inited on every run; init() disposes any previous instance so
     // replaying / re-running never stacks overlays.
@@ -1327,7 +1376,7 @@ function renderAuctionPanel(frame) {
   log.innerHTML = rows.join('');
 }
 
-function renderSummary(s, meta) {
+function renderSummary(s, meta, demoEvidence = null) {
   const contacts = s.contacts_robot_robot + s.contacts_robot_human
                  + s.contacts_robot_rack;
   const finished = s.completed_all;
@@ -1336,6 +1385,10 @@ function renderSummary(s, meta) {
   const runDetail = finished
     ? `All tasks closed in ${s.makespan_s.toFixed(1)} seconds.`
     : `${remaining} task${remaining === 1 ? '' : 's'} remained active when the ${s.sim_seconds.toFixed(1)} s evidence window ended.`;
+  const demoReleased = demoEvidence?.first_release_latency_s != null;
+  const demoReleaseText = demoReleased
+    ? `${Number(demoEvidence.first_release_latency_s).toFixed(2)} s`
+    : 'Not released';
 
   el('summary').innerHTML = `
     <div class="summary-live">
@@ -1352,6 +1405,12 @@ function renderSummary(s, meta) {
     <dl>
       <dt>Tasks completed</dt>
       <dd>${s.tasks_completed} / ${s.tasks_announced}</dd>
+
+      ${demoEvidence ? `
+      <dt>Opening gridlock measured</dt>
+      <dd class="${demoEvidence.full_gridlock_observed ? 'good' : 'bad'}">${demoEvidence.peak_simultaneously_blocked} / ${demoEvidence.robots} AMRs</dd>
+      <dt>First release from standstill</dt>
+      <dd class="${demoReleased ? 'good' : 'bad'}">${demoReleaseText}</dd>` : ''}
 
       <dt>${finished ? 'Measured makespan' : 'Evidence window'}</dt>
       <dd>${(finished ? s.makespan_s : s.sim_seconds).toFixed(1)} s</dd>
@@ -1372,6 +1431,7 @@ function renderSummary(s, meta) {
       <summary>Coordination diagnostics <i>⌄</i></summary>
       <dl>
         <dt>Deadlocks detected</dt><dd>${Number(s.deadlocks_detected || 0)}</dd>
+        <dt>Traffic yield decisions</dt><dd>${Number(s.yields || 0)}</dd>
         <dt>Pedestrian yield ticks</dt><dd>${Number(s.human_yield_ticks || 0)}</dd>
         <dt>Human work visits</dt><dd>${Number(s.human_work_visits || 0)}</dd>
         <dt>Human distance covered</dt><dd>${Number(s.human_distance_m || 0).toFixed(1)} m</dd>
@@ -1424,7 +1484,7 @@ function updateSummaryProgress(frame) {
  *     has nowhere to put a pedestrian route. It can come back when the backend
  *     grows one; a control that does nothing is worse than a missing feature.
  *   - Save is refused rather than allowed to fail server-side when the layout
- *     has no AMR or nowhere to carry anything to.
+ *     lacks the minimum two AMRs, a pickup station or a charging dock.
  *
  * The tile encoding is not arbitrary: 0/1/2/3 are FREE/RACK/STATION/DOCK from
  * src/environment.py, and the server feeds this grid straight into Warehouse().
@@ -1633,14 +1693,18 @@ function syncBuilderTally() {
   set('tallyStarts', BUILDER.starts.length);
   // Say what is missing before the button is pressed, not after the server says no.
   const problems = [];
-  if (!BUILDER.starts.length) problems.push('one AMR start');
+  if (BUILDER.starts.length < 2) problems.push('two AMR starts');
   if (!BUILDER.stations.length) problems.push('one station');
+  if (!BUILDER.docks.length) problems.push('one charging dock');
   const status = el('builderStatus');
   const save = el('builderSaveBtn');
   if (save) save.disabled = problems.length > 0;
   if (!status) return;
   if (problems.length) {
-    status.textContent = `Place at least ${problems.join(' and ')}.`;
+    const requirements = problems.length === 1
+      ? problems[0]
+      : `${problems.slice(0, -1).join(', ')} and ${problems.at(-1)}`;
+    status.textContent = `Place at least ${requirements}.`;
     status.className = 'status';
   } else {
     status.textContent = `${BUILDER.starts.length} AMR${BUILDER.starts.length === 1 ? '' : 's'} · `

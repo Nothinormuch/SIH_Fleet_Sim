@@ -51,7 +51,7 @@ from src.bios4 import MAX_MODEL_BYTES, ModelError, model_from_json  # noqa: E402
 from src.evolve import TrainConfig, evolve         # noqa: E402
 from src.main import run_for_dashboard            # noqa: E402
 from src.scenarios import SCENARIOS, SHOWCASE_SCENARIOS  # noqa: E402
-from src.environment import Warehouse, FREE, RACK, STATION, DOCK  # noqa: E402
+from src.environment import DOCK, FREE, RACK, STATION, Warehouse  # noqa: E402
 from src.task_allocation import ALLOCATION_POLICIES  # noqa: E402
 
 # Simulations are CPU-bound and a long one takes a while; serialise them so a reloading
@@ -146,6 +146,9 @@ MAX_DURATION_S = 900.0
 # bounding a single synchronous dashboard job to roughly the old 24 x 900 envelope.
 MAX_ROBOT_SECONDS = 24_000.0
 MAX_SEED = 2**31 - 1
+MIN_CUSTOM_SIDE = 4
+MAX_CUSTOM_SIDE = 64
+CUSTOM_CELL_VALUES = frozenset((FREE, RACK, STATION, DOCK))
 
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("image/png", ".png")
@@ -406,54 +409,173 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------ endpoints
 
     def _api_scenarios_custom(self) -> None:
+        if self.headers.get_content_type() != "application/json":
+            return self._json(415, {"error": "Content-Type must be application/json"})
         try:
             raw_length = self.headers.get("Content-Length")
             if raw_length is None:
                 return self._json(411, {"error": "Content-Length is required"})
-            length = int(raw_length)
+            try:
+                length = int(raw_length)
+            except ValueError:
+                return self._json(400, {"error": "invalid Content-Length"})
             if length < 0 or length > MAX_REQUEST_BYTES:
                 return self._json(413, {"error": "request body is too large"})
             body = self.rfile.read(length)
             self._body_read = True
             try:
-                payload = json.loads(body.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                payload = json.loads(
+                    body.decode("utf-8"),
+                    parse_constant=lambda value: (_ for _ in ()).throw(
+                        ValueError(f"invalid JSON number {value}")),
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                 return self._json(400, {"error": "request body must be valid JSON"})
-        except Exception:
+        except (OSError, TypeError):
             return self._json(400, {"error": "invalid request"})
 
         # Expect: {"name":"...","width":...,"height":...,"grid":[[...],...],"stations":[[x,y],...],"docks":[[x,y],...],"starts":[[x,y],...],"seed":0,"duration":300}
-        try:
-            width = int(payload.get("width", 20))
-            height = int(payload.get("height", 20))
-            grid_raw = payload.get("grid", [])
-            if not isinstance(grid_raw, list) or len(grid_raw) != height:
-                return self._json(400, {"error": "grid must match height"})
-            grid = []
-            for row in grid_raw:
-                if not isinstance(row, list) or len(row) != width:
-                    return self._json(400, {"error": f"each grid row must have width {width}"})
-                grid.append([int(v) for v in row])
-            stations = [tuple(s) for s in payload.get("stations", []) if isinstance(s, list) and len(s) == 2]
-            docks = [tuple(s) for s in payload.get("docks", []) if isinstance(s, list) and len(s) == 2]
-            starts = [tuple(s) for s in payload.get("starts", []) if isinstance(s, list) and len(s) == 2]
-        except Exception as exc:
-            return self._json(400, {"error": f"invalid grid data: {exc}"})
+        if not isinstance(payload, dict):
+            return self._json(400, {"error": "request body must be a JSON object"})
+
+        def whole_number(name: str, default: int, lower: int, upper: int) -> int:
+            value = payload.get(name, default)
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise RequestValidationError(f"{name} must be a whole number")
+            if not lower <= value <= upper:
+                raise RequestValidationError(
+                    f"{name} must be between {lower} and {upper}")
+            return value
 
         try:
-            env = Warehouse(width, height, tuple(tuple(row) for row in grid), tuple(stations), tuple(docks), payload.get("name", "custom"))
+            width = whole_number("width", 20, MIN_CUSTOM_SIDE, MAX_CUSTOM_SIDE)
+            height = whole_number("height", 20, MIN_CUSTOM_SIDE, MAX_CUSTOM_SIDE)
+            grid_raw = payload.get("grid", [])
+            if not isinstance(grid_raw, list) or len(grid_raw) != height:
+                raise RequestValidationError(f"grid must contain exactly {height} rows")
+            grid: list[list[int]] = []
+            for y, row in enumerate(grid_raw):
+                if not isinstance(row, list) or len(row) != width:
+                    raise RequestValidationError(
+                        f"grid row {y} must contain exactly {width} cells")
+                clean_row: list[int] = []
+                for x, value in enumerate(row):
+                    if isinstance(value, bool) or not isinstance(value, int) \
+                            or value not in CUSTOM_CELL_VALUES:
+                        raise RequestValidationError(
+                            f"grid cell ({x}, {y}) must be one of 0, 1, 2 or 3")
+                    clean_row.append(value)
+                grid.append(clean_row)
+
+            def coordinates(name: str) -> tuple[tuple[int, int], ...]:
+                raw = payload.get(name, [])
+                if not isinstance(raw, list):
+                    raise RequestValidationError(f"{name} must be a list of [x, y] cells")
+                cells: list[tuple[int, int]] = []
+                for index, item in enumerate(raw):
+                    if not isinstance(item, list) or len(item) != 2:
+                        raise RequestValidationError(
+                            f"{name}[{index}] must be an [x, y] cell")
+                    x, y = item
+                    if isinstance(x, bool) or isinstance(y, bool) \
+                            or not isinstance(x, int) or not isinstance(y, int):
+                        raise RequestValidationError(
+                            f"{name}[{index}] coordinates must be whole numbers")
+                    if not 0 <= x < width or not 0 <= y < height:
+                        raise RequestValidationError(
+                            f"{name}[{index}] is outside the {width}x{height} floor")
+                    cells.append((x, y))
+                if len(set(cells)) != len(cells):
+                    raise RequestValidationError(f"{name} contains duplicate cells")
+                return tuple(cells)
+
+            stations = coordinates("stations")
+            docks = coordinates("docks")
+            starts = coordinates("starts")
+            if not 1 <= len(stations):
+                raise RequestValidationError("custom floor needs at least one station")
+            if not 1 <= len(docks):
+                raise RequestValidationError("custom floor needs at least one charging dock")
+            if not MIN_ROBOTS <= len(starts) <= MAX_ROBOTS:
+                raise RequestValidationError(
+                    f"custom floor needs between {MIN_ROBOTS} and {MAX_ROBOTS} AMR starts")
+
+            station_cells = {
+                (x, y) for y, row in enumerate(grid) for x, value in enumerate(row)
+                if value == STATION
+            }
+            dock_cells = {
+                (x, y) for y, row in enumerate(grid) for x, value in enumerate(row)
+                if value == DOCK
+            }
+            if set(stations) != station_cells:
+                raise RequestValidationError(
+                    "stations must exactly match the station cells in the grid")
+            if set(docks) != dock_cells:
+                raise RequestValidationError(
+                    "docks must exactly match the charging-dock cells in the grid")
+            if any(grid[y][x] != FREE for x, y in starts):
+                raise RequestValidationError("every AMR start must be on an empty floor cell")
+
+            raw_seed = payload.get("seed", 0)
+            if isinstance(raw_seed, bool) or not isinstance(raw_seed, int):
+                raise RequestValidationError("seed must be a whole number")
+            if not 0 <= raw_seed <= MAX_SEED:
+                raise RequestValidationError(f"seed must be between 0 and {MAX_SEED}")
+            raw_duration = payload.get("duration", 300.0)
+            if isinstance(raw_duration, bool) or not isinstance(raw_duration, (int, float)):
+                raise RequestValidationError("duration must be a number")
+            duration = float(raw_duration)
+            if not math.isfinite(duration):
+                raise RequestValidationError("duration must be finite")
+            if not MIN_DURATION_S <= duration <= MAX_DURATION_S:
+                raise RequestValidationError(
+                    f"duration must be between {MIN_DURATION_S:g} and "
+                    f"{MAX_DURATION_S:g} seconds")
+
+            raw_name = payload.get("name", "Custom floor")
+            if not isinstance(raw_name, str):
+                raise RequestValidationError("name must be text")
+            name = raw_name.strip()
+            if not name or len(name) > 80:
+                raise RequestValidationError("name must contain between 1 and 80 characters")
+        except RequestValidationError as exc:
+            return self._json(400, {"error": str(exc)})
+
+        try:
+            env = Warehouse(
+                width, height, tuple(tuple(row) for row in grid), stations, docks, name)
         except Exception as exc:
             return self._json(400, {"error": f"cannot build warehouse: {exc}"})
+
+        # Every start and task endpoint must belong to the same navigable component.
+        # Otherwise the floor saves correctly but can only end in a timeout.
+        reachable = {starts[0]}
+        frontier = [starts[0]]
+        while frontier:
+            for neighbour in env.neighbors(frontier.pop()):
+                if neighbour not in reachable:
+                    reachable.add(neighbour)
+                    frontier.append(neighbour)
+        disconnected = [cell for cell in (*starts, *stations, *docks) if cell not in reachable]
+        if disconnected:
+            return self._json(400, {
+                "error": "all AMR starts, stations and charging docks must be connected",
+                "disconnected": [list(cell) for cell in disconnected],
+            })
 
         sid = "custom_" + str(uuid.uuid4().hex[:8])
         CUSTOM_SCENARIOS[sid] = {
             "env": env,
             "starts": starts,
-            "name": payload.get("name", "custom"),
-            "seed": int(payload.get("seed", 0)),
-            "duration": float(payload.get("duration", 300.0)),
+            "name": name,
+            "seed": raw_seed,
+            "duration": duration,
         }
-        self._json(200, {"id": sid, "name": payload.get("name", "custom"), "width": width, "height": height})
+        self._json(200, {
+            "id": sid, "name": name, "width": width, "height": height,
+            "robots": len(starts),
+        })
 
     def _api_scenarios(self) -> None:
         showcase = []

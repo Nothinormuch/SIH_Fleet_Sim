@@ -1,18 +1,22 @@
 # Demonstration and judging script
 
-## Five-minute live sequence
+## Live sequence
 
-1. Start `python backend/server.py` and show a jury showcase with `BIOS_PIBT.6`.
+1. Start `python backend/server.py`, enter seed 99, and show the measured six-AMR
+   opening gridlock with `BIOS_PIBT.6`. Pause at 0.72 s, then show first release and 6/6
+   completion. If asked why `deadlocks_detected` is zero, explain that priority admission
+   prevented the gridlock from aging into the stale-cycle fallback.
+2. Show a jury showcase with `BIOS_PIBT.6`.
    Point out that the dropped pallet never broadcasts; onboard sensing promotes it to a
    temporary blocked cell and replans around it.
-2. Show `human_in_aisle`. The worker is non-cooperative and never appears in peer
+3. Show `human_in_aisle`. The worker is non-cooperative and never appears in peer
    messages. Pause on the safety halo and show the zero human-contact result.
-3. Run `python edge_demo.py --robots 3 --duration 5 --port 26231` beside `tcpdump`.
+4. Run `python edge_demo.py --robots 3 --duration 5 --port 26231` beside `tcpdump`.
    Show three PIDs, three unrelated clock epochs, authenticated peer traffic, and no
    central movement decision.
-4. Run `python fault_campaign.py --seeds 3 --jobs 3 --no-write`. Explain the 0/5/10/20%
+5. Run `python fault_campaign.py --seeds 3 --jobs 3 --no-write`. Explain the 0/5/10/20%
    loss sweep, partition healing, expired auction lease, and crashed-winner reassignment.
-5. Open the checked-in acceptance JSON. State the exact limitation: the headline stress
+6. Open the checked-in acceptance JSON. State the exact limitation: the headline stress
    baseline is right-censored at 1200 s, so the reported reductions are conservative
    lower bounds, not exact makespan speedups.
 
