@@ -29,7 +29,7 @@ Full method, provenance and caveats: **[12. Benchmark and Evidence](12-BENCHMARK
 | **A judge with 10 minutes** | [00. Problem Statement](00-PROBLEM-STATEMENT.md) → [01. Requirements Traceability](01-REQUIREMENTS-TRACEABILITY.md) → [12. Benchmark and Evidence](12-BENCHMARK-AND-EVIDENCE.md) |
 | **A judge who wants to probe** | [03. Decentralized Protocol](03-DECENTRALIZED-PROTOCOL.md) and [07. Safety](07-SAFETY.md) — the two claims the submission rests on — then [15. Limitations](15-LIMITATIONS.md) |
 | **An evaluator checking rigour** | [14. Engineering Findings](14-FINDINGS.md) and [15. Limitations](15-LIMITATIONS.md). These are where the project is most itself |
-| **A teammate before the jury slot** | [16. Demo Runbook](16-DEMO-RUNBOOK.md), then [09. Fleet Dashboard](09-DASHBOARD.md) |
+| **A teammate before the jury slot** | [17. Presentation Script](17-PRESENTATION-SCRIPT.md) — what to say — then [16. Demo Runbook](16-DEMO-RUNBOOK.md) — what to click |
 | **A developer** | [02. Architecture](02-ARCHITECTURE.md) → [10. HTTP API Reference](10-API-REFERENCE.md) → [13. Testing](13-TESTING.md) |
 
 ---
@@ -55,6 +55,7 @@ Full method, provenance and caveats: **[12. Benchmark and Evidence](12-BENCHMARK
 | 14 | [Engineering Findings](14-FINDINGS.md) | Measurements that contradicted the obvious design. The most distinctive part of this project |
 | 15 | [Limitations](15-LIMITATIONS.md) | Every known gap, defect and overclaim risk, stated before a judge finds it |
 | 16 | [Demo Runbook](16-DEMO-RUNBOOK.md) | Pre-flight, the timed demo script, the evidence walk, and 15+ anticipated judge questions |
+| 17 | [Presentation Script](17-PRESENTATION-SCRIPT.md) | The five-minute spoken script: the words, the six points where a judge takes over, and the comparison the pitch hangs on |
 
 ---
 

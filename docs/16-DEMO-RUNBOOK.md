@@ -102,6 +102,12 @@ trust `netstat`.
 
 ## 2. The five-minute demo
 
+> This section is the **operator's** view — what to click and what appears. The **spoken**
+> script for the same five minutes, with the judge hand-over points and the analogies, is
+> [17. Presentation Script](17-PRESENTATION-SCRIPT.md). Drive from this one; speak from that
+> one.
+
+
 Stage this before the jury sits down: server running, page loaded, `showcase_chokepoint`
 already played through once (this is what warms the cold-load path so the *live* run in
 Beat 1 is fast). Total: 5:00.
@@ -405,4 +411,4 @@ Siblings: [README](../README.md) · [00. Problem Statement](00-PROBLEM-STATEMENT
 [08. Edge Deployment](08-EDGE-DEPLOYMENT.md) · [09. Fleet Dashboard](09-DASHBOARD.md) ·
 [10. API Reference](10-API-REFERENCE.md) · [11. Scenarios](11-SCENARIOS.md) ·
 [12. Benchmark and Evidence](12-BENCHMARK-AND-EVIDENCE.md) · [13. Testing](13-TESTING.md) ·
-[14. Findings](14-FINDINGS.md) · [15. Limitations](15-LIMITATIONS.md)
+[14. Findings](14-FINDINGS.md) · [15. Limitations](15-LIMITATIONS.md) · [17. Presentation Script](17-PRESENTATION-SCRIPT.md)
