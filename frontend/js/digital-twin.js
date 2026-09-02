@@ -60,6 +60,20 @@ function hexCss(value) {
   return `#${value.toString(16).padStart(6, '0')}`;
 }
 
+function pedestrianEnvelope(map, meta) {
+  const cell = meta.cell_m;
+  const enabled = Boolean(map && map.pedestrian_apron);
+  const offset = enabled
+    ? Number(map.pedestrian_apron_offset_m || cell * 2.5) : 0;
+  const laneWidth = enabled
+    ? Number(map.pedestrian_apron_width_m || cell * .86) : 0;
+  // Include the whole lane and a small visual breathing margin.  Camera fitting that
+  // stops at the AMR map boundary makes an outside worker project directly over a
+  // robot even though their physics positions are metres apart.
+  const margin = enabled ? offset + laneWidth / 2 + cell * .34 : .6;
+  return {enabled, offset, laneWidth, margin};
+}
+
 export class DigitalTwin {
   constructor(canvas, onSelect) {
     this.canvas = canvas;
@@ -82,7 +96,10 @@ export class DigitalTwin {
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.065;
-    this.controls.maxPolarAngle = Math.PI * 0.47;
+    // Do not let Orbit flatten the warehouse into an almost-horizontal strip. At that
+    // angle a worker on the protected perimeter can project on top of an AMR several
+    // metres inside the barrier, which is physically safe but visually misleading.
+    this.controls.maxPolarAngle = Math.PI * 0.35;
     this.controls.minDistance = 5;
     this.controls.maxDistance = 95;
     this.controls.target.set(0, 0, 0);
@@ -192,6 +209,7 @@ export class DigitalTwin {
     if (!this.map || !this.meta) return;
     const widthM = this.map.width * this.meta.cell_m;
     const depthM = this.map.height * this.meta.cell_m;
+    const envelope = pedestrianEnvelope(this.map, this.meta);
 
     // Elevation and azimuth are chosen, not fitted. 45 degrees up is enough to
     // read the aisles without flattening the racks, and 20 degrees off the short
@@ -206,10 +224,10 @@ export class DigitalTwin {
       Math.cos(elevation) * Math.cos(azimuth));
 
     // Both floor corners and rack-height corners: what has to be in frame is the
-    // volume the warehouse occupies, not the plane it stands on.
+    // complete operational volume, including the protected pedestrian perimeter.
     const corners = [];
-    for (const x of [0, widthM]) {
-      for (const z of [0, depthM]) {
+    for (const x of [-envelope.margin, widthM + envelope.margin]) {
+      for (const z of [-envelope.margin, depthM + envelope.margin]) {
         for (const height of [0, 3]) corners.push(this._toWorld(x, z, height));
       }
     }
@@ -266,10 +284,13 @@ export class DigitalTwin {
       // show is worse than no tactical view.
       const widthM = this.map.width * this.meta.cell_m;
       const depthM = this.map.height * this.meta.cell_m;
+      const envelope = pedestrianEnvelope(this.map, this.meta);
+      const framedWidth = widthM + envelope.margin * 2;
+      const framedDepth = depthM + envelope.margin * 2;
       const vFov = this.camera.fov * Math.PI / 180;
       const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(0.5, this.camera.aspect));
-      const height = Math.max((depthM / 2) / Math.tan(vFov / 2),
-                              (widthM / 2) / Math.tan(hFov / 2)) * 1.02;
+      const height = Math.max((framedDepth / 2) / Math.tan(vFov / 2),
+                              (framedWidth / 2) / Math.tan(hFov / 2)) * 1.02;
       // A few degrees off plumb. Dead vertical flattens the racks into their own
       // footprints and you lose every cue about which way a robot is facing.
       this.camera.position.set(0, height, depthM * .14);
@@ -306,7 +327,8 @@ export class DigitalTwin {
     const cell = this.meta.cell_m;
     const widthM = this.map.width * cell;
     const heightM = this.map.height * cell;
-    const apronMargin = this.map.pedestrian_apron ? cell * 2.5 : .6;
+    const pedestrian = pedestrianEnvelope(this.map, this.meta);
+    const apronMargin = pedestrian.margin;
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(widthM + apronMargin * 2 + .8, .35,
                             heightM + apronMargin * 2 + .8),
@@ -323,12 +345,19 @@ export class DigitalTwin {
     grid.material.opacity = .55;
     this.world.add(grid);
 
-    if (this.map.pedestrian_apron) {
+    if (pedestrian.enabled) {
       const laneMaterial = new THREE.MeshBasicMaterial({
-        color: PALETTE.amber, transparent: true, opacity: .20, depthWrite: false,
+        color: PALETTE.amber, transparent: true, opacity: .38, depthWrite: false,
       });
-      const apronOffset = cell * 2.50;
-      const apronWidth = cell * .62;
+      const bufferMaterial = new THREE.MeshBasicMaterial({
+        color: PALETTE.amber, transparent: true, opacity: .055, depthWrite: false,
+      });
+      const barrierMaterial = new THREE.MeshStandardMaterial({
+        color: PALETTE.amber, roughness: .42, metalness: .58,
+      });
+      const apronOffset = pedestrian.offset;
+      const apronWidth = pedestrian.laneWidth;
+      const bufferDepth = Math.max(cell * .2, apronOffset - apronWidth / 2);
       const horizontal = new THREE.BoxGeometry(
         widthM + apronOffset * 2, .022, apronWidth,
       );
@@ -347,6 +376,56 @@ export class DigitalTwin {
         lane.renderOrder = 2;
         this.world.add(lane);
       }
+
+      // A subdued exclusion buffer plus a physical guard rail makes the semantic
+      // boundary readable from every camera angle. The rail is intentionally visual;
+      // the physics route is already outside the AMR map and never relies on it.
+      const horizontalBuffer = new THREE.BoxGeometry(
+        widthM + apronOffset * 2, .014, bufferDepth,
+      );
+      const verticalBuffer = new THREE.BoxGeometry(
+        bufferDepth, .014, heightM + apronOffset * 2,
+      );
+      for (const sign of [-1, 1]) {
+        const z = sign * (heightM / 2 + bufferDepth / 2);
+        const buffer = new THREE.Mesh(horizontalBuffer, bufferMaterial);
+        buffer.position.set(0, .012, z);
+        buffer.renderOrder = 1;
+        this.world.add(buffer);
+      }
+      for (const sign of [-1, 1]) {
+        const x = sign * (widthM / 2 + bufferDepth / 2);
+        const buffer = new THREE.Mesh(verticalBuffer, bufferMaterial);
+        buffer.position.set(x, .012, 0);
+        buffer.renderOrder = 1;
+        this.world.add(buffer);
+      }
+
+      const addRail = (length, horizontalRail, x, z) => {
+        const railGeometry = horizontalRail
+          ? new THREE.BoxGeometry(length, .07, .07)
+          : new THREE.BoxGeometry(.07, .07, length);
+        for (const y of [.18, .62]) {
+          const rail = new THREE.Mesh(railGeometry, barrierMaterial);
+          rail.position.set(x, y, z);
+          rail.castShadow = true;
+          this.world.add(rail);
+        }
+        const postCount = Math.max(2, Math.ceil(length / (cell * 2)));
+        const postGeometry = new THREE.BoxGeometry(.085, .68, .085);
+        for (let index = 0; index <= postCount; index++) {
+          const along = -length / 2 + length * index / postCount;
+          const post = new THREE.Mesh(postGeometry, barrierMaterial);
+          post.position.set(horizontalRail ? along : x, .34,
+                            horizontalRail ? z : along);
+          post.castShadow = true;
+          this.world.add(post);
+        }
+      };
+      addRail(widthM + .16, true, 0, heightM / 2 + .10);
+      addRail(widthM + .16, true, 0, -heightM / 2 - .10);
+      addRail(heightM + .16, false, widthM / 2 + .10, 0);
+      addRail(heightM + .16, false, -widthM / 2 - .10, 0);
     }
 
     const rackCells = [];

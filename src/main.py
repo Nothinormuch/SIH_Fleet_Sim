@@ -47,7 +47,8 @@ from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
                                validate_allocation_policy)
 from .task_protocol import CompletionCertificate, task_descriptor_hash
 from .transport import SimNetwork
-from .world import Actuation, World
+from .world import (Actuation, PEDESTRIAN_APRON_OFFSET_CELLS,
+                    PEDESTRIAN_APRON_WIDTH_CELLS, World)
 
 WMS_ID = "WMS"
 AUCTION_MESSAGE_TYPES = (msg.TASK_NEW, msg.BID, msg.AWARD, msg.TASK_DONE)
@@ -535,6 +536,13 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         for frame in frames[:1]
         for human in frame.get("humans", [])
     )
+    if map_payload["pedestrian_apron"]:
+        map_payload["pedestrian_apron_offset_m"] = (
+            PEDESTRIAN_APRON_OFFSET_CELLS * DEFAULT.cell_m
+        )
+        map_payload["pedestrian_apron_width_m"] = (
+            PEDESTRIAN_APRON_WIDTH_CELLS * DEFAULT.cell_m
+        )
     return {
         "map": map_payload,
         "meta": {

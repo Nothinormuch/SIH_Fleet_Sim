@@ -20,6 +20,13 @@ bad scenario geometry.
 The earlier regression test used only one row-1 AMR, so it missed the actual 10-AMR
 row-0 launch configuration visible in the screenshot.
 
+A second screenshot exposed a different presentation defect after the physics route
+had been corrected. The 3D camera still fitted only the AMR grid, not the pedestrian
+apron. At a near-horizontal orbit angle, perspective projected a worker on the front
+apron directly over an AMR several metres behind the barrier. Contact metrics remained
+zero because the world coordinates were separate, but the rendered evidence was
+misleading. Numerical separation is therefore no longer accepted as visual QA.
+
 ## Implemented design
 
 ### Protected worker operations
@@ -58,13 +65,16 @@ not choose winners, routes, parking targets, or motor commands.
 
 ### Dashboard and 3D presentation
 
-- The Three.js floor expands to include the pedestrian apron and renders it as four
-  amber protected walkway strips.
+- The Three.js camera fits the complete pedestrian envelope, not only the AMR grid,
+  and renders a wide amber walkway, exclusion buffer, and continuous guard rail.
+- Orbit elevation is bounded so perspective cannot flatten the protected walkway onto
+  the AMR staging lane. Tactical view uses the same full-envelope dimensions.
 - Worker plaques use compact IDs instead of long `Hn - WORKER` labels that covered AMR
   labels in the original camera view.
 - Green pause rings mean station work; amber rings mean yielding.
 - The Evidence diagnostics report human work visits and aggregate walking distance.
-- The 2D fallback renders the same protected perimeter and human state colors.
+- The 2D fallback fits and renders the same metric apron rather than clipping workers
+  whose valid coordinates sit outside the AMR grid.
 - Browser QA at 1280 x 720 confirmed camera fit, readable controls, no label pile-up,
   a scroll-contained Evidence panel, and no browser console warnings or errors.
 
@@ -104,11 +114,12 @@ All figures below use BIOS 6 with `auction_bundle`, identical scenario sizes and
 
 ## Verification completed
 
-- `212 passed` in the full Pytest suite.
+- `214 passed` in the full Pytest suite.
 - Ruff lint: all checks passed.
 - Python bytecode compilation: passed.
 - Git whitespace validation: passed.
-- Browser visual QA: passed, with no console warnings or errors.
+- Browser visual QA: normal overview, tactical fit, and the lowest permitted orbit
+  angle passed, with no console warnings or errors.
 - Grand Challenge liveness is explicitly tested both with workers and with the worker
   list removed, so pedestrian motion cannot silently become the fleet's deadlock
   breaker again.

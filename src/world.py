@@ -30,6 +30,16 @@ from .planner import astar
 from .settings import Config
 
 
+# Presentation showcases put workers on a real pedestrian-only perimeter rather than
+# shifting their sprites into an AMR row.  Keep the geometry public so the physics
+# world, 3D twin and 2D fallback all draw the same metres instead of maintaining three
+# nearly-equal magic numbers.  The route centre remains beyond an outer-lane AMR's
+# four-metre lidar range; the rendered width makes the separation legible to a viewer.
+PEDESTRIAN_APRON_OFFSET_CELLS = 2.50
+PEDESTRIAN_APRON_WIDTH_CELLS = 0.86
+PEDESTRIAN_APRON_BOUND_CELLS = 2.98
+
+
 @dataclass
 class Actuation:
     """What the agent asks the wheels for. The only channel from brain to world."""
@@ -282,7 +292,7 @@ class World:
         # Keep the presentation apron beyond the onboard lidar range of an AMR on the
         # outer vehicle lane. The person remains visible in the digital twin, but does
         # not become an anonymous dynamic obstacle through a wall or safety barrier.
-        apron_offset = 2.50 * cm
+        apron_offset = PEDESTRIAN_APRON_OFFSET_CELLS * cm
 
         def route_point(cell: Cell) -> Vec:
             x = (cell[0] + 0.5) * cm
@@ -583,7 +593,7 @@ class World:
                 ny = clamp(p[1], gy * cm, (gy + 1) * cm)
                 if (p[0] - nx) ** 2 + (p[1] - ny) ** 2 < radius * radius:
                     return True
-        apron = 2.80 * cm if allow_apron else 0.0
+        apron = PEDESTRIAN_APRON_BOUND_CELLS * cm if allow_apron else 0.0
         if not (-apron + radius <= p[0]
                 <= self.env.width * cm + apron - radius):
             return True

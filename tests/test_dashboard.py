@@ -260,6 +260,60 @@ console.log(JSON.stringify({screen, centre}));
     assert result["screen"] == result["centre"]
 
 
+@pytest.mark.skipif(NODE is None, reason="Node is required for the canvas unit test")
+def test_canvas_fits_the_real_pedestrian_apron_instead_of_clipping_workers():
+    """The fallback camera must frame the worker route, not only the AMR grid."""
+    script = r"""
+global.window = {devicePixelRatio: 1};
+const {View} = require('./frontend/js/environment.js');
+const ctx = {setTransform() {}, clearRect() {}};
+const canvas = {
+  getContext() { return ctx; },
+  getBoundingClientRect() { return {width: 900, height: 600}; },
+};
+const map = {
+  width: 31,
+  height: 21,
+  pedestrian_apron: true,
+  pedestrian_apron_offset_m: 3.5,
+  pedestrian_apron_width_m: 1.204,
+};
+const view = new View(canvas);
+view.resize(map, 1.4);
+const points = [
+  view.worldToScreen(-3.5, -3.5),
+  view.worldToScreen(31 * 1.4 + 3.5, 21 * 1.4 + 3.5),
+];
+for (const [x, y] of points) {
+  if (!(x >= 0 && x <= 900 && y >= 0 && y <= 600)) process.exit(2);
+}
+if (!(view.apronMarginCells > 2.5)) process.exit(3);
+console.log(JSON.stringify({points, margin: view.apronMarginCells}));
+"""
+    completed = subprocess.run(
+        [NODE, "-e", script], cwd=ROOT, check=True,
+        capture_output=True, text=True,
+    )
+    result = json.loads(completed.stdout)
+    assert result["margin"] > 2.5
+    assert all(0 <= value <= limit for point in result["points"]
+               for value, limit in zip(point, (900, 600)))
+
+
+def test_dashboard_exports_one_shared_pedestrian_apron_geometry():
+    payload = run_for_dashboard(
+        "showcase_human", POLICY_BIOS_PIBT_V6,
+        robots=5, seed=7, duration=10,
+        allocation_policy=ALLOCATION_AUCTION_BUNDLE,
+    )
+    warehouse = payload["map"]
+    assert warehouse["pedestrian_apron"]
+    assert warehouse["pedestrian_apron_offset_m"] == pytest.approx(
+        2.5 * payload["meta"]["cell_m"])
+    assert warehouse["pedestrian_apron_width_m"] == pytest.approx(
+        0.86 * payload["meta"]["cell_m"])
+
+
 def test_dashboard_metric_frames_remain_inside_free_map_cells():
     payload = run_for_dashboard(
         "dead_zone_mesh", "BIOS_PIBT.2", robots=4, seed=20, duration=20,
