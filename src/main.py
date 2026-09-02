@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import statistics
 import sys
 from dataclasses import replace
@@ -566,7 +567,7 @@ def _seed_99_demo_evidence(frames: list[dict]) -> dict:
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
                       seed: int = 0, duration: float | None = None,
                       allocation_policy: str = ALLOCATION_AUCTION_BUNDLE,
-                      policy_model=None) -> dict:
+                      policy_model=None, **extra) -> dict:
     """One run, packaged for the web dashboard: map, every frame, and the summary.
 
     Playback rather than a live stream, deliberately. The sim runs far faster than
@@ -583,12 +584,62 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         # ordinary RNG input.  The dashboard reports both names so this substitution is
         # visible rather than silently pretending the selected showcase produced it.
         sc = seed_99_congestion()
+    elif scenario.startswith("custom_"):
+        # Read injected custom info from the request (set by backend server)
+        custom_env = extra.get("_custom_env")
+        custom_starts_raw = extra.get("_custom_starts", [])
+        custom_duration = extra.get("_custom_duration")
+        custom_seed = extra.get("_custom_seed", seed)
+        starts = [(s[0], s[1]) for s in custom_starts_raw]
+        if custom_env is None:
+            raise ValueError(f"custom scenario {scenario} missing environment data")
+        # Generate random tasks and cargo for custom scenarios
+        rng = random.Random(custom_seed or seed)
+        stations_list = list(custom_env.stations) if custom_env.stations else []
+        docks_list = list(custom_env.docks) if custom_env.docks else []
+        # Build a list of pick/drop cells from stations/docks, or free cells as fallback
+        pick_cells = stations_list if stations_list else [c for c in custom_env.free_cells()]
+        drop_cells = docks_list if docks_list else [c for c in custom_env.free_cells()]
+        tasks: list[Task] = []
+        n_robots = len(starts)
+        tasks_per_robot = max(2, max(1, (len(pick_cells) // n_robots) if pick_cells else 2))
+        for i in range(n_robots * tasks_per_robot):
+            pick = rng.choice(pick_cells) if pick_cells else starts[i % len(starts)]
+            drop = rng.choice(drop_cells) if drop_cells else starts[i % len(starts)]
+            cargo_type = rng.choice(["normal", "fragile", "heavy"])
+            cargo_weight = float(rng.choice([8.0, 18.0, 36.0, 72.0]))
+            priority = rng.randint(1, 3)
+            tasks.append(Task(
+                tid=f"TC{i:03d}",
+                pick=pick,
+                drop=drop,
+                cargo_type=cargo_type,
+                cargo_weight=cargo_weight,
+                priority=priority,
+                announced_t=0.0,
+            ))
+        # Round-robin assignments per robot
+        assignments = [[] for _ in starts]
+        for idx, task in enumerate(tasks):
+            assignments[idx % len(starts)].append(task)
+        # Also set unassigned for auction policies
+        unassigned = list(tasks)
+        sc = Scenario(
+            name=custom_env.name,
+            env=custom_env,
+            starts=starts,
+            assignments=assignments,
+            unassigned=unassigned,
+            duration_s=float(custom_duration or 180.0),
+            seed=custom_seed,
+            use_auction=True,
+        )
     else:
         kw: dict = {"seed": seed}
         if robots is not None:
             kw["n_robots"] = robots
         sc = SCENARIOS[scenario](**kw)
-    if duration is not None:
+    if duration is not None and not scenario.startswith("custom_"):
         sc.duration_s = float(duration)
 
     frames: list = []

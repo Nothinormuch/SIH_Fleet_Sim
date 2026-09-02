@@ -125,22 +125,51 @@
 
   <!-- ===================================================== TIER 3 · THE MENU -->
   <div id="menu" aria-hidden="true">
-    <div class="menu-bar">
-      <div class="menu-mark">
-        <b>BIOS <em>6.0</em></b>
-        <small>Predictive collective intelligence</small>
-      </div>
-      <nav class="tabs" role="tablist" aria-label="Command menu">
-        <button class="tab active" data-tab="deployment" role="tab"><kbd>1</kbd><i>◈</i><span>Deployment</span></button>
-        <button class="tab" data-tab="fleet" role="tab"><kbd>2</kbd><i>❖</i><span>Fleet</span></button>
-        <button class="tab" data-tab="coordination" role="tab"><kbd>3</kbd><i>⟡</i><span>Coordination</span></button>
-        <button class="tab" data-tab="evidence" role="tab"><kbd>4</kbd><i>▤</i><span>Evidence</span></button>
-        <button class="tab" data-tab="system" role="tab"><kbd>5</kbd><i>⚙</i><span>System</span></button>
+
+    <!-- Stage one. Two rails, and the middle of the screen left alone: the
+         warehouse stays fully visible and fully lit between them, which is the
+         whole reason this is a pause overlay and not a page. Only the rails
+         carry a scrim, and only wide enough to put ground under their text. -->
+
+    <div class="rail rail-left">
+      <div class="rail-mark"><b>BIOS <em>6.0</em></b><small>Command menu</small></div>
+      <nav class="rail-list" role="menu" aria-label="Command menu">
+        <button class="rail-item" data-tab="deployment" role="menuitem"><i>◈</i><span>Deployment</span><kbd>1</kbd></button>
+        <button class="rail-item" data-tab="fleet" role="menuitem"><i>❖</i><span>Fleet</span><kbd>2</kbd></button>
+        <button class="rail-item" data-tab="coordination" role="menuitem"><i>⟡</i><span>Coordination</span><kbd>3</kbd></button>
+        <button class="rail-item" data-tab="evidence" role="menuitem"><i>▤</i><span>Evidence</span><kbd>4</kbd></button>
+        <button class="rail-item" data-tab="system" role="menuitem"><i>⚙</i><span>System</span><kbd>5</kbd></button>
       </nav>
-      <button class="menu-close" id="closeMenuBtn"><kbd>Esc</kbd> Return to floor</button>
+      <div class="rail-prompt">
+        <button id="openPanelBtn"><kbd>↵</kbd>Open</button>
+        <button id="closeMenuBtn"><kbd>Esc</kbd>Close</button>
+      </div>
     </div>
 
-    <div class="menu-body">
+    <!-- The right rail is the pouch: state you want to reach without opening
+         anything. The robots you have, and the angles you can look from. -->
+    <aside class="rail rail-right">
+      <section class="quick">
+        <h4><i>❖</i>Fleet</h4>
+        <div class="quick-grid" id="quickFleet"></div>
+      </section>
+      <section class="quick">
+        <h4><i>⟡</i>Perspective</h4>
+        <div class="quick-grid quick-camera" id="quickCamera"></div>
+      </section>
+      <div class="rail-counter"><small id="railCounterLabel">Contacts</small><b id="railCounter">—</b></div>
+    </aside>
+
+  </div>
+
+  <!-- Stage two, a sibling of the rails rather than a child of them, so it can
+       sit above the HUD while they sit below it. -->
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-hidden="true">
+      <header class="sheet-head">
+        <div><span class="eyebrow" id="sheetEyebrow">Command menu</span><h2 id="sheetTitle">Deployment</h2></div>
+        <button class="sheet-close" id="sheetCloseBtn"><kbd>Esc</kbd> Back</button>
+      </header>
+      <div class="sheet-body">
 
       <!-- ------------------------------------------------------- DEPLOYMENT -->
       <section class="panel split active" data-panel="deployment" role="tabpanel">
@@ -152,6 +181,7 @@
           <div class="scroller">
             <div id="scenarioGallery" class="scenario-gallery"></div>
             <select id="scenario" hidden aria-hidden="true"></select>
+            <button id="builderBtn" class="build-button"><i>▦</i><span>Build a floor</span><small>Draw your own warehouse and run it</small></button>
           </div>
         </div>
         <div class="col">
@@ -359,7 +389,43 @@
         </div>
       </section>
 
+      </div>
     </div>
+
+
+  <!-- The scenario builder. Its own overlay because a grid you paint on wants the
+       whole screen; it sits above the sheet that launched it. -->
+  <div id="builder" class="builder" aria-hidden="true">
+    <header class="builder-head">
+      <div><span class="eyebrow">Deployment</span><h2>Build a floor</h2></div>
+      <div class="builder-head-actions">
+        <button id="builderSaveBtn" class="ghost-btn primary">Save and select</button>
+        <button id="builderCloseBtn" class="sheet-close"><kbd>Esc</kbd> Cancel</button>
+      </div>
+    </header>
+    <div class="builder-body">
+      <aside class="builder-pool" aria-label="Components">
+        <h4>Components</h4>
+        <div id="builderPool" class="pool-list">
+          <button class="pool-tile active" draggable="true" data-type="FREE"><i class="pool-swatch free"></i><b>Floor</b><small>Passable</small></button>
+          <button class="pool-tile" draggable="true" data-type="RACK"><i class="pool-swatch rack"></i><b>Rack</b><small>Never passable</small></button>
+          <button class="pool-tile" draggable="true" data-type="STATION"><i class="pool-swatch station"></i><b>Station</b><small>Pick and drop</small></button>
+          <button class="pool-tile" draggable="true" data-type="DOCK"><i class="pool-swatch dock"></i><b>Charger</b><small>Charge pad</small></button>
+          <button class="pool-tile" draggable="true" data-type="AMR"><i class="pool-swatch amr"></i><b>AMR start</b><small>One robot</small></button>
+        </div>
+        <p class="builder-hint">Drag a component onto the floor, or click to paint. Click a rack again to clear it.</p>
+        <dl class="builder-tally">
+          <dt>Stations</dt><dd id="tallyStations">0</dd>
+          <dt>Chargers</dt><dd id="tallyDocks">0</dd>
+          <dt>AMRs</dt><dd id="tallyStarts">0</dd>
+        </dl>
+        <p class="status" id="builderStatus">Place at least two AMRs, one station and one charging dock.</p>
+      </aside>
+      <div class="builder-stage">
+        <canvas id="builderGrid"></canvas>
+      </div>
+    </div>
+    <div id="builderPreview" class="builder-preview" aria-hidden="true"></div>
   </div>
 
   <!-- ================================================ ceremonial + narrative -->

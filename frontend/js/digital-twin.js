@@ -22,7 +22,12 @@ function disposeObject(root) {
     if (obj.material) {
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
       for (const material of materials) {
-        if (material.map) material.map.dispose();
+        // Textures from the shared cache outlive the scene that used them: the
+        // whole world is rebuilt on every run, and disposing a cached map here
+        // would throw away a texture the next build is about to ask for by name
+        // and get handed straight back. Geometry and materials are per-build and
+        // do belong here.
+        if (material.map && !material.map.userData.shared) material.map.dispose();
         material.dispose();
       }
     }
@@ -58,6 +63,51 @@ function makeLabel(text, colour = '#59cbf6', compact = false) {
 
 function hexCss(value) {
   return `#${value.toString(16).padStart(6, '0')}`;
+}
+
+/* Textures for the twin.
+ *
+ * One loader so every map gets the same treatment: SRGB colour space (a texture
+ * loaded as linear reads washed out under ACES tone mapping), and anisotropy so
+ * the floor does not turn to mush at grazing angles - which is most of the frame
+ * when the camera sits at 45 degrees.
+ *
+ * These are baked from the render drop, not the renders themselves: the sources
+ * are 7 MB presentation shots with plinths and labels in them. See
+ * tools/bake_twin_textures.py for how each one was cut.
+ */
+const TEXTURE_LOADER = new THREE.TextureLoader();
+const TEXTURES = {};
+
+/* A status badge: a camera-facing sprite carrying one of the rendered icons.
+ *
+ * Deliberately a Sprite rather than a quad. State is the one thing on this screen
+ * that must be readable from any angle, and a badge that turns edge-on when the
+ * operator orbits is worse than the halo colour it is meant to reinforce.
+ */
+function badge(name, size = .52) {
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texture(name), transparent: true, depthTest: false, sizeAttenuation: true,
+  }));
+  sprite.scale.set(size, size, 1);
+  sprite.renderOrder = 90;
+  sprite.visible = false;
+  return sprite;
+}
+
+function texture(name, {repeat = null, srgb = true} = {}) {
+  const key = `${name}|${repeat ? repeat.join('x') : '1'}`;
+  if (TEXTURES[key]) return TEXTURES[key];
+  const map = TEXTURE_LOADER.load(`/assets/twin/${name}`);
+  if (srgb) map.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) {
+    map.wrapS = map.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(repeat[0], repeat[1]);
+  }
+  map.anisotropy = 8;
+  map.userData.shared = true;
+  TEXTURES[key] = map;
+  return map;
 }
 
 function pedestrianEnvelope(map, meta) {
@@ -340,10 +390,17 @@ export class DigitalTwin {
     const heightM = this.map.height * cell;
     const pedestrian = pedestrianEnvelope(this.map, this.meta);
     const apronMargin = pedestrian.margin;
+    // One texture tile per two cells: fine enough to read as panelling from the
+    // orbit camera, coarse enough that it does not shimmer at the far edge.
+    const floorMap = texture('floor_panel.jpg', [
+      Math.max(1, Math.round(this.map.width / 2)),
+      Math.max(1, Math.round(this.map.height / 2)),
+    ]);
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(widthM + apronMargin * 2 + .8, .35,
                             heightM + apronMargin * 2 + .8),
-      new THREE.MeshStandardMaterial({color: PALETTE.floor, roughness: .88, metalness: .08}),
+      new THREE.MeshStandardMaterial({map: floorMap, color: 0xb9c4d2,
+                                      roughness: .82, metalness: .12}),
     );
     floor.position.y = -.22;
     floor.receiveShadow = true;
@@ -450,20 +507,17 @@ export class DigitalTwin {
     // Instancing keeps the richer geometry inexpensive even on a large warehouse.
     const uprightGeometry = new THREE.BoxGeometry(cell * .055, cell * 1.18, cell * .055);
     const shelfGeometry = new THREE.BoxGeometry(cell * .9, cell * .045, cell * .9);
-    const cartonGeometry = new THREE.BoxGeometry(cell * .62, cell * .24, cell * .64);
     const rackMaterial = new THREE.MeshStandardMaterial({color: PALETTE.steel, roughness: .32, metalness: .76});
     const shelfMaterial = new THREE.MeshStandardMaterial({color: PALETTE.rack, roughness: .38, metalness: .64});
-    const cartonMaterial = new THREE.MeshStandardMaterial({color: 0xb47a43, roughness: .84, metalness: .02});
     const uprights = new THREE.InstancedMesh(uprightGeometry, rackMaterial, rackCells.length * 4);
     const shelves = new THREE.InstancedMesh(shelfGeometry, shelfMaterial, rackCells.length * 3);
-    const cartons = new THREE.InstancedMesh(cartonGeometry, cartonMaterial, rackCells.length * 2);
-    for (const mesh of [uprights, shelves, cartons]) {
+    for (const mesh of [uprights, shelves]) {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
     }
     const matrix = new THREE.Matrix4();
-    let uprightIndex = 0, shelfIndex = 0, cartonIndex = 0;
-    rackCells.forEach(([x, y], index) => {
+    let uprightIndex = 0, shelfIndex = 0;
+    rackCells.forEach(([x, y]) => {
       const centre = this._cellToWorld(x, y, 0);
       const edge = cell * .41;
       for (const [dx, dz] of [[-edge, -edge], [edge, -edge], [-edge, edge], [edge, edge]]) {
@@ -474,19 +528,14 @@ export class DigitalTwin {
         matrix.setPosition(centre.x, level, centre.z);
         shelves.setMatrixAt(shelfIndex++, matrix);
       }
-      for (const level of [cell * .3, cell * .76]) {
-        const stagger = (index % 2 ? 1 : -1) * cell * .08;
-        matrix.setPosition(centre.x + stagger, level, centre.z);
-        cartons.setMatrixAt(cartonIndex++, matrix);
-      }
     });
-    this.world.add(uprights, shelves, cartons);
+    this.world.add(uprights, shelves);
 
     for (const [x, y] of this.map.stations || []) {
       this.world.add(this._makePad(x, y, 0x3b82f6, 'PICK / DROP'));
     }
     for (const [x, y] of this.map.docks || []) {
-      this.world.add(this._makePad(x, y, 0x22c55e, 'CHARGE'));
+      this.world.add(this._makeChargeDock(x, y));
     }
 
     for (const zone of this.meta.dead_zones || []) {
@@ -525,26 +574,144 @@ export class DigitalTwin {
     this.world.add(boundary);
   }
 
+  /* A pick / drop station.
+   *
+   * The same plinth-and-deck construction as the charge dock, minus the post -
+   * these are floor stations, not equipment. It gets the upgrade because leaving
+   * it as the old flat disc next to a modelled dock would have made it look
+   * worse than it did before the dock existed.
+   *
+   * The inlay is corner brackets rather than the dock's cross: a target to place
+   * into, not a spot to line up on.
+   */
   _makePad(x, y, colour, labelText) {
     const cell = this.meta.cell_m;
     const group = new THREE.Group();
-    group.position.copy(this._cellToWorld(x, y, .02));
-    const pad = new THREE.Mesh(
-      new THREE.CylinderGeometry(cell * .42, cell * .42, .08, 32),
-      new THREE.MeshStandardMaterial({color: colour, emissive: colour, emissiveIntensity: .28,
-        roughness: .45, metalness: .35}),
-    );
-    pad.receiveShadow = true;
-    group.add(pad);
+    group.position.copy(this._cellToWorld(x, y, 0));
+
+    const dark = new THREE.MeshStandardMaterial({color: 0x1b2836, roughness: .5, metalness: .6});
+    const steel = new THREE.MeshStandardMaterial({color: 0x53657a, roughness: .34, metalness: .78});
+    const glow = new THREE.MeshStandardMaterial({
+      color: 0x0a1c2b, emissive: colour, emissiveIntensity: 1.1, roughness: .3,
+    });
+
+    const add = (geometry, material, px, py, pz) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(px, py, pz);
+      mesh.receiveShadow = true;
+      mesh.castShadow = true;
+      group.add(mesh);
+      return mesh;
+    };
+
+    add(new THREE.BoxGeometry(cell * .92, .07, cell * .92), dark, 0, .035, 0);
+    add(new THREE.BoxGeometry(cell * .76, .05, cell * .76), steel, 0, .095, 0);
+
+    // Four corner brackets, each an L of two bars.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        add(new THREE.BoxGeometry(cell * .22, .012, cell * .045), glow,
+            sx * cell * .21, .126, sz * cell * .30);
+        add(new THREE.BoxGeometry(cell * .045, .012, cell * .22), glow,
+            sx * cell * .30, .126, sz * cell * .21);
+      }
+    }
+
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(cell * .35, .025, 8, 40),
-      new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: .72}),
+      new THREE.RingGeometry(cell * .48, cell * .53, 40),
+      new THREE.MeshBasicMaterial({color: colour, transparent: true, opacity: .34,
+        side: THREE.DoubleSide, depthWrite: false}),
     );
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = .07;
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = .012;
     group.add(ring);
+
     const label = makeLabel(labelText, hexCss(colour), true);
     label.position.y = 1.15;
+    label.scale.multiplyScalar(.58);
+    group.add(label);
+    return group;
+  }
+
+  /* A charging dock, modelled rather than textured.
+   *
+   * The drop has a "Charging" badge and a glowing platform render, and neither
+   * survives being used here: the badge is an icon on a plinth, and the platform
+   * is cropped at both image edges so its top face cannot be flattened out of the
+   * render. The repo's own charge tile is drawn with a baked perspective for the
+   * 2D view and stretches when laid flat.
+   *
+   * Which is fine, because the thing that made the old pad look like a
+   * placeholder was not its texture - it was being a disc. Volume, a post at
+   * standing height and emissive inlay do the work instead.
+   */
+  _makeChargeDock(x, y) {
+    const cell = this.meta.cell_m;
+    const green = PALETTE.green;
+    const group = new THREE.Group();
+    group.position.copy(this._cellToWorld(x, y, 0));
+
+    const steel = new THREE.MeshStandardMaterial({color: 0x53657a, roughness: .34, metalness: .78});
+    const dark = new THREE.MeshStandardMaterial({color: 0x1b2836, roughness: .5, metalness: .6});
+    const glow = new THREE.MeshStandardMaterial({
+      color: 0x0d2b22, emissive: green, emissiveIntensity: 1.25, roughness: .3,
+    });
+
+    const add = (geometry, material, px, py, pz) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(px, py, pz);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+      return mesh;
+    };
+
+    // Plinth and deck: two plates, so the dock has an edge that catches light
+    // instead of reading as a decal on the floor.
+    add(new THREE.BoxGeometry(cell * .92, .07, cell * .92), dark, 0, .035, 0);
+    add(new THREE.BoxGeometry(cell * .76, .05, cell * .76), steel, 0, .095, 0);
+
+    // Emissive inlay - a cross with a centre pad, which is what says "line up
+    // here" without a caption.
+    add(new THREE.BoxGeometry(cell * .60, .012, cell * .05), glow, 0, .126, 0);
+    add(new THREE.BoxGeometry(cell * .05, .012, cell * .60), glow, 0, .126, 0);
+    add(new THREE.BoxGeometry(cell * .17, .014, cell * .17), glow, 0, .127, 0);
+
+    // Corner studs.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        add(new THREE.BoxGeometry(cell * .07, .05, cell * .07), steel,
+            sx * cell * .33, .13, sz * cell * .33);
+      }
+    }
+
+    // The post, set on the back edge so an AMR can drive onto the deck from the
+    // other three sides.
+    const postZ = -cell * .40;
+    add(new THREE.BoxGeometry(cell * .17, .10, cell * .17), dark, 0, .12, postZ);
+    add(new THREE.BoxGeometry(cell * .13, 1.02, cell * .13), steel, 0, .63, postZ);
+    // Charge-level strip up the front face.
+    add(new THREE.BoxGeometry(cell * .045, .74, .012), glow, 0, .60, postZ + cell * .068);
+
+    // Emitter head, tilted down toward the deck.
+    const head = add(new THREE.BoxGeometry(cell * .30, .17, cell * .20), dark, 0, 1.18, postZ + .04);
+    head.rotation.x = .34;
+    const lens = add(new THREE.BoxGeometry(cell * .21, .09, .02), glow, 0, 1.14, postZ + cell * .12);
+    lens.rotation.x = .34;
+
+    // A soft ring on the floor, so the dock still reads from directly above where
+    // the post is foreshortened to nothing.
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(cell * .48, cell * .53, 40),
+      new THREE.MeshBasicMaterial({color: green, transparent: true, opacity: .38,
+        side: THREE.DoubleSide, depthWrite: false}),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = .012;
+    group.add(ring);
+
+    const label = makeLabel('CHARGE', hexCss(green), true);
+    label.position.y = 1.62;
     label.scale.multiplyScalar(.58);
     group.add(label);
     return group;
@@ -562,6 +729,61 @@ export class DigitalTwin {
       this.deliveredMarkers.set(task.id, deliveredMarker);
       this.world.add(pickMarker, deliveredMarker);
     }
+    this._buildRackStock(rackUse);
+  }
+
+  /* Stock every beam of every rack, from one geometry and one material.
+   *
+   * This used to be two systems and they did not match. The enclosed beams got a
+   * single wide slab (.62 x .24 x .64 cell) in one tint; the top beam got four
+   * small cubes (.34 x .26 x .34) in another. Side by side in one bay that reads
+   * as two different warehouses, which is exactly what it was.
+   *
+   * All three beams now use the same box in the same four quadrant slots task
+   * cargo uses, so a rack is one kind of thing stacked three high and a task
+   * marker is that same box in a different colour. Only the top beam is shared
+   * with task cargo - _selectRackSlot hands out its slots in order - so only
+   * there are claimed slots skipped.
+   */
+  _buildRackStock(rackUse) {
+    const cell = this.meta.cell_m;
+    const cells = this.rackCells || [];
+    if (!cells.length) return;
+    const beams = [cell * .3, cell * .76, cell * 1.22];
+    const slotOffsets = [[-.19, -.19], [.19, -.19], [-.19, .19], [.19, .19]];
+    const stock = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(cell * .34, cell * .26, cell * .34),
+      new THREE.MeshStandardMaterial({
+        map: texture('carton.jpg'), color: 0xd2c7b6, roughness: .9, metalness: .02,
+      }),
+      cells.length * beams.length * slotOffsets.length,
+    );
+    stock.castShadow = true;
+    stock.receiveShadow = true;
+    const matrix = new THREE.Matrix4();
+    let index = 0;
+    cells.forEach(([x, y], cellIndex) => {
+      const claimed = rackUse.get(`${x},${y}`) || 0;
+      const centre = this._cellToWorld(x, y, 0);
+      beams.forEach((level, beam) => {
+        for (let slot = 0; slot < slotOffsets.length; slot++) {
+          if (beam === beams.length - 1 && slot < claimed) continue;
+          const [sx, sz] = slotOffsets[slot];
+          // Deterministic, not random: the same run must rebuild identically on
+          // every replay, and boxes squared up on every rack is the regularity
+          // that read as placeholder to begin with.
+          const noise = Math.sin((cellIndex * 12 + beam * 4 + slot) * 12.9898) * 43758.5453;
+          const jitter = noise - Math.floor(noise);
+          matrix.makeRotationY((jitter - .5) * .5);
+          matrix.setPosition(centre.x + sx * cell, level, centre.z + sz * cell);
+          stock.setMatrixAt(index++, matrix);
+        }
+      });
+    });
+    // Instances past the fill point keep an identity matrix and would all stack
+    // at the origin; trimming the draw count is what keeps them off screen.
+    stock.count = index;
+    this.world.add(stock);
   }
 
   _cargoColour(task) {
@@ -626,6 +848,14 @@ export class DigitalTwin {
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(slotX * cell, cell * 1.055, slotZ * cell);
     marker.add(ring);
+    if (delivered) {
+      // Delivered markers already turn green; the badge is what makes "this one
+      // is finished" legible without knowing that green is the code.
+      const done = badge('badge_complete.png', cell * .42);
+      done.position.set(slotX * cell, cell * 1.42, slotZ * cell);
+      done.visible = true;
+      marker.add(done);
+    }
     marker.userData = {
       taskMarker: true, taskId: task.id, delivered, rackCell: rack,
     };
@@ -695,14 +925,42 @@ export class DigitalTwin {
     base.castShadow = true;
     base.userData.robotId = id;
     group.add(base);
-    const top = new THREE.Mesh(
-      new THREE.BoxGeometry(.68, .22, .66),
-      new THREE.MeshStandardMaterial({color: 0x10202c, roughness: .28, metalness: .68}),
-    );
+    /* Deck detail, modelled - NOT the top-down render.
+     *
+     * The render's top view was mapped here and it was the worst thing in the
+     * scene: it is a picture of a *different* robot, one with a mast and gantry
+     * this chassis does not have, stretched from a 1.59:1 source onto a nearly
+     * square face. It read as a grey decal of another vehicle whose outline
+     * lined up with nothing underneath it.
+     *
+     * The rule it broke is worth keeping: a MATERIAL texture transfers (the
+     * floor panelling, the corrugated card - they describe a surface), a
+     * DEPICTION does not (it describes an object, and the object is wrong).
+     * Panel lines and a lit strip in the robot's own colour do the job instead,
+     * in the same language as the charge dock.
+     */
+    const deckSide = new THREE.MeshStandardMaterial({color: 0x10202c, roughness: .28, metalness: .68});
+    const top = new THREE.Mesh(new THREE.BoxGeometry(.68, .22, .66), deckSide);
     top.position.y = .43;
     top.castShadow = true;
     top.userData.robotId = id;
     group.add(top);
+    const deckPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(.5, .02, .48),
+      new THREE.MeshStandardMaterial({color: 0x18303f, roughness: .42, metalness: .6}),
+    );
+    deckPlate.position.y = .545;
+    deckPlate.userData.robotId = id;
+    group.add(deckPlate);
+    for (const dz of [-.13, .13]) {
+      const strip = new THREE.Mesh(
+        new THREE.BoxGeometry(.42, .012, .035),
+        new THREE.MeshStandardMaterial({color: 0x0a1620, emissive: colour, emissiveIntensity: .8}),
+      );
+      strip.position.set(0, .556, dz);
+      strip.userData.robotId = id;
+      group.add(strip);
+    }
     const wheelMaterial = new THREE.MeshStandardMaterial({color: 0x05090d, roughness: .76, metalness: .28});
     const wheels = [];
     for (const [x, z] of [[-.43, -.25], [.43, -.25], [-.43, .25], [.43, .25]]) {
@@ -753,9 +1011,13 @@ export class DigitalTwin {
       group.add(rail);
     }
     const payload = new THREE.Group();
+    // Textured, but the material colour is still the channel that says what the
+    // cargo is - _cargoColour rewrites it every frame. A map multiplies the tint
+    // rather than replacing it, so the carton reads as card AND stays colour-coded.
     const payloadBox = new THREE.Mesh(
       new THREE.BoxGeometry(.46, .34, .46),
-      new THREE.MeshStandardMaterial({color: PALETTE.cyan, roughness: .55, metalness: .08}),
+      new THREE.MeshStandardMaterial({map: texture('carton.jpg'), color: PALETTE.cyan,
+                                      roughness: .7, metalness: .06}),
     );
     payloadBox.position.set(0, .78, -.18);
     payloadBox.castShadow = true;
@@ -790,7 +1052,20 @@ export class DigitalTwin {
     label.position.y = 1.34;
     label.scale.multiplyScalar(.84);
     group.add(label);
-    group.userData = {robotId: id, colour, halo, selection, label, beacon, wheels, payload};
+    // State badges. The halo already encodes state as colour; these say which
+    // state in words a judge does not have to be taught.
+    // Above the name plate, not level with it: the label is a 2.1 x 0.59 sprite at
+    // y 1.34 with renderOrder 100 and depthTest off, so a badge sharing that
+    // height is simply painted over.
+    const badgeCharging = badge('badge_charging.png', .58);
+    const badgeBlocked = badge('badge_deadlock.png', .58);
+    for (const b of [badgeCharging, badgeBlocked]) {
+      b.position.set(0, 1.96, 0);
+      b.renderOrder = 101;
+      group.add(b);
+    }
+    group.userData = {robotId: id, colour, halo, selection, label, beacon, wheels, payload,
+                      badgeCharging, badgeBlocked};
     this.dynamic.add(group);
     this.robots.set(id, group);
     return group;
@@ -799,47 +1074,41 @@ export class DigitalTwin {
   _ensureHuman(id) {
     if (this.humans.has(id)) return this.humans.get(id);
     const group = new THREE.Group();
-    const uniform = new THREE.MeshStandardMaterial({color: 0x24384a, roughness: .78});
-    const vestMaterial = new THREE.MeshStandardMaterial({color: 0xf5b843, roughness: .64});
-    const skin = new THREE.MeshStandardMaterial({color: 0xd9a276, roughness: .82});
+    const index = Math.max(0, (parseInt(id.replace(/\D/g, ''), 10) || 1) - 1);
+
+    /* A cross-billboard, not an articulated figure.
+     *
+     * Two quads at right angles, both carrying a photographed worker, rotated to
+     * the pedestrian's heading. The crossed pair is what keeps it from vanishing:
+     * a single plane disappears edge-on, which for a pedestrian is exactly the
+     * moment they are walking straight at a robot and you most want to see them.
+     *
+     * This trades the old capsule figure's articulated stride for a much better
+     * likeness. It keeps everything else the simulation actually publishes -
+     * heading, the yield ring, and the working pose - and fakes the walk with a
+     * bob, which at the distance a whole warehouse is framed at is what a stride
+     * reads as anyway.
+     */
+    const VESTS = ['worker_hi.png', 'worker_orange.png', 'worker_blue.png'];
+    const map = texture(VESTS[index % VESTS.length]);
+    const figure = new THREE.Group();
+    for (const turn of [0, Math.PI / 2]) {
+      const quad = new THREE.Mesh(
+        new THREE.PlaneGeometry(.86, 1.72),
+        new THREE.MeshBasicMaterial({map, transparent: true, alphaTest: .35,
+                                     side: THREE.DoubleSide, depthWrite: true}),
+      );
+      quad.position.y = .86;
+      quad.rotation.y = turn;
+      figure.add(quad);
+    }
+    group.add(figure);
+
+    // Kept as empty arrays: the update loop drives limbs and arms for the old
+    // figure and a billboard has neither, but the loop should not have to know.
     const limbs = [];
     const arms = [];
-    for (const x of [-.1, .1]) {
-      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(.075, .47, 5, 10), uniform);
-      leg.position.set(x, .34, 0);
-      leg.castShadow = true;
-      limbs.push(leg);
-      group.add(leg);
-    }
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(.2, .47, 6, 14), vestMaterial);
-    body.position.y = .97;
-    body.castShadow = true;
-    for (const x of [-.27, .27]) {
-      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(.055, .39, 5, 9), uniform);
-      arm.position.set(x, .96, 0);
-      arm.rotation.z = x < 0 ? -.12 : .12;
-      arm.castShadow = true;
-      limbs.push(arm);
-      arms.push(arm);
-      group.add(arm);
-    }
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(.2, 20, 14),
-      skin,
-    );
-    head.position.y = 1.48;
-    head.castShadow = true;
-    const helmet = new THREE.Mesh(
-      new THREE.SphereGeometry(.215, 20, 10, 0, Math.PI * 2, 0, Math.PI * .58),
-      new THREE.MeshStandardMaterial({color: 0xf2cf45, roughness: .48}),
-    );
-    helmet.position.y = 1.56;
-    const stripe = new THREE.Mesh(
-      new THREE.TorusGeometry(.215, .026, 8, 28),
-      new THREE.MeshBasicMaterial({color: 0xf8ffb5}),
-    );
-    stripe.rotation.x = Math.PI / 2;
-    stripe.position.y = 1.02;
+
     const pauseRing = new THREE.Mesh(
       new THREE.RingGeometry(.42, .5, 36),
       new THREE.MeshBasicMaterial({color: PALETTE.amber, transparent: true, opacity: .72,
@@ -848,6 +1117,8 @@ export class DigitalTwin {
     pauseRing.rotation.x = -Math.PI / 2;
     pauseRing.position.y = .025;
     pauseRing.visible = false;
+    group.add(pauseRing);
+
     const workTool = new THREE.Group();
     const tablet = new THREE.Mesh(
       new THREE.BoxGeometry(.30, .38, .045),
@@ -855,21 +1126,17 @@ export class DigitalTwin {
     );
     const tabletScreen = new THREE.Mesh(
       new THREE.BoxGeometry(.24, .30, .012),
-      new THREE.MeshBasicMaterial({color: 0x55dfff}),
+      new THREE.MeshStandardMaterial({color: 0x0d4f63, emissive: PALETTE.cyan,
+        emissiveIntensity: .55, roughness: .3}),
     );
-    tabletScreen.position.z = -.029;
+    tabletScreen.position.z = .03;
     workTool.add(tablet, tabletScreen);
-    workTool.position.set(0, 1.02, -.30);
-    workTool.rotation.x = -.34;
+    workTool.position.set(.24, 1.02, .30);
+    workTool.rotation.set(-.5, .3, 0);
     workTool.visible = false;
-    group.add(body, head, helmet, stripe, pauseRing, workTool);
-    // The yellow vest and helmet already communicate the role. A compact ID avoids
-    // the long "WORKER" plaques covering AMR labels when both share a junction.
-    const label = makeLabel(id, '#f5b843', true);
-    label.position.y = 2.02;
-    label.scale.multiplyScalar(.52);
-    group.add(label);
-    group.userData = {limbs, arms, pauseRing, workTool};
+    group.add(workTool);
+
+    group.userData = {limbs, arms, pauseRing, workTool, figure};
     this.dynamic.add(group);
     this.humans.set(id, group);
     return group;
@@ -928,6 +1195,11 @@ export class DigitalTwin {
         : info.state === 'retreat' ? PALETTE.amber
         : group.userData.colour;
       group.userData.halo.material.color.setHex(stateColour);
+      // One badge at a time, and blocked wins: a robot that is both charging and
+      // stuck is a stuck robot, and that is the one worth showing.
+      const blocked = Boolean(info.failed) || info.state === 'blocked';
+      group.userData.badgeBlocked.visible = blocked;
+      group.userData.badgeCharging.visible = !blocked && info.state === 'charging';
       group.userData.halo.material.opacity = .48 + .24 * (1 + Math.sin(simTime * 4)) / 2;
       group.userData.selection.material.opacity = robot.id === this.selectedId ? .95 : 0;
       group.userData.selection.rotation.z = simTime * 1.4;
@@ -956,6 +1228,13 @@ export class DigitalTwin {
       group.userData.limbs.forEach((limb, index) => {
         limb.rotation.x = index % 2 ? -stride : stride;
       });
+      // The billboard has no legs, so the walk is a bob on the same phase the
+      // stride ran on - two bobs per stride cycle, which is one per footfall.
+      const figure = group.userData.figure;
+      if (figure) {
+        figure.position.y = Math.abs(stride) * .06;
+        figure.rotation.z = stride * .035;
+      }
       const humanMode = human.mode || (human.paused ? 'yielding' : 'walking');
       group.userData.workTool.visible = humanMode === 'working';
       if (humanMode === 'working') {

@@ -169,10 +169,18 @@ button { cursor: pointer; background: none; border: 0; }
 body.hud-hidden #hud { opacity: 0; pointer-events: none; }
 body.hud-hidden .vignette { opacity: .3; }
 
-/* The HUD steps aside for the menu. Leaving it up puts two competing readouts of
-   the same run on screen at once, ghosted through the panels - and the whole
-   point of the menu is that it is the place where you read things. */
-body.menu-open #hud { opacity: 0; pointer-events: none; }
+/* Stage one keeps the HUD up. In the reference the health bars and the compass
+   stay visible while the rails are open - you are still in the world, so the
+   readouts that describe it should still be there. Only the clusters the rails
+   would physically land on top of step aside.
+
+   A sheet is different: that is a thing you stopped to read, so the HUD goes. */
+body.menu-open .messages,
+body.menu-open .perspective,
+body.menu-open .link-state,
+body.menu-open .pip,
+body.menu-open .menu-prompt { opacity: 0; pointer-events: none; }
+body.sheet-open #hud { opacity: 0; pointer-events: none; }
 
 /* --- vitals, top left. The HP/FP/Stamina stack, in the same order of
        importance: what the fleet achieved, what it has left, how safe it was. */
@@ -646,90 +654,297 @@ input[type=range]#scrub {
 
 /* ------------------------------------------------------------ TIER 3 menu */
 
-/* The world stays visible behind the menu. That is the single most important
-   borrowed decision on this screen: you are always looking at the warehouse,
-   and the menu is a veil over it, not a different page. */
+/* Two stages, and the first one is barely a menu at all.
+ *
+ * Stage one puts a rail down each edge and leaves the middle of the screen
+ * completely alone - no blur, no dim, no scrim across the warehouse. That is the
+ * whole point of a pause overlay: you are still looking at the world, and the
+ * categories are laid beside it rather than over it. Only the rails carry a
+ * gradient, and only wide enough to put ground under their own text.
+ *
+ * Stage two opens the chosen category as a sheet over about three quarters of
+ * the screen, with the rails still visible past its edges - so you can always see
+ * where you came from and how to get back.
+ */
 
+/* The rails sit BELOW the HUD (z-index 8 against its 10). In the reference the
+   health bars stay lit on top of the menu's gradient, and they cannot do that if
+   the gradient is painted over them - the vitals just go grey. The sheet is a
+   sibling rather than a child for exactly this reason: it needs to be above the
+   HUD, and a child cannot escape its parent's stacking context. */
 #menu {
   position: fixed;
   inset: 0;
-  z-index: 40;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  /* Deliberately thin. The warehouse has to stay legible through the veil - that
-     is the whole reason the menu is a layer rather than a page, and an opacity
-     high enough to be comfortable to read against is high enough to lose it. The
-     panels carry their own backgrounds, so the text never sits on bare world. */
-  background:
-    radial-gradient(ellipse 90% 70% at 50% 40%, rgba(5,11,18,.42), rgba(5,11,18,.72) 70%, rgba(5,11,18,.86));
-  backdrop-filter: blur(4px) saturate(.6) brightness(.62);
-  -webkit-backdrop-filter: blur(4px) saturate(.6) brightness(.62);
+  z-index: 8;
+  pointer-events: none;
   opacity: 0;
   visibility: hidden;
   transition: opacity var(--t) var(--ease), visibility 0s linear var(--t);
 }
+/* The sheet's backdrop, and the click target that dismisses it. */
+#menu::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(5,11,18,.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t) var(--ease);
+}
+body.sheet-open #menu::after { opacity: 1; pointer-events: auto; }
 body.menu-open #menu {
   opacity: 1;
   visibility: visible;
   transition: opacity var(--t) var(--ease), visibility 0s;
 }
-body.menu-open .vignette { opacity: .2; }
 
-.menu-bar {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 28px;
-  padding: 20px 36px 0;
+/* --------------------------------------------------------------- the rails */
+
+.rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  transition: opacity var(--t) var(--ease);
 }
-.menu-mark { display: grid; gap: 3px; }
-.menu-mark b {
+.rail-left {
+  left: 0;
+  width: 330px;
+  padding: 26px 26px 22px;
+  justify-content: center;
+  gap: 26px;
+  background: linear-gradient(90deg, rgba(5,11,18,.94) 0%, rgba(5,11,18,.82) 55%, transparent 100%);
+}
+.rail-right {
+  right: 0;
+  width: 244px;
+  padding: 26px 22px 22px;
+  justify-content: center;
+  gap: 22px;
+  background: linear-gradient(270deg, rgba(5,11,18,.94) 0%, rgba(5,11,18,.8) 55%, transparent 100%);
+}
+body.menu-open .rail-left  { animation: rail-in-left var(--t) var(--ease) both; }
+body.menu-open .rail-right { animation: rail-in-right var(--t) var(--ease) both; }
+@keyframes rail-in-left  { from { transform: translateX(-18px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes rail-in-right { from { transform: translateX(18px);  opacity: 0; } to { transform: none; opacity: 1; } }
+
+.rail-mark { display: grid; gap: 3px; padding-left: 4px; }
+.rail-mark b {
   font-family: var(--serif);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 400;
   letter-spacing: .26em;
   text-transform: uppercase;
   color: var(--rim-lit);
 }
-.menu-mark b em { font-style: normal; color: var(--accent); text-shadow: 0 0 16px rgba(53,198,244,.5); }
-.menu-mark small { font-size: 8.5px; letter-spacing: .24em; text-transform: uppercase; color: var(--dimmer); white-space: nowrap; }
+.rail-mark b em { font-style: normal; color: var(--accent); text-shadow: 0 0 16px rgba(53,198,244,.5); }
+.rail-mark small { font-size: 8.5px; letter-spacing: .24em; text-transform: uppercase; color: var(--dimmer); }
 
-/* The tab strip. Elden Ring puts its top-level categories in a single row with
-   the active one lifted and underlined in gold, and it never nests: five things,
-   flat, always all visible. Anything that cannot be one of five things is not a
-   category, it is a detail inside one. */
-.tabs { display: flex; justify-content: center; gap: 4px; }
-.tab {
+/* The category list. An icon in its own bordered square, the label beside it, and
+   a cursor that is a band sliding behind the row and fading out to the right -
+   not a block of colour filling it. */
+.rail-list { display: grid; gap: 2px; }
+.rail-item {
   position: relative;
-  padding: 10px 22px 11px;
   display: grid;
-  justify-items: center;
-  gap: 4px;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 12px 7px 6px;
+  text-align: left;
   color: var(--dim);
-  border-bottom: 1px solid transparent;
-  transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  transition: color var(--t-fast) var(--ease);
 }
-.tab i { font-style: normal; font-size: 13px; line-height: 1; opacity: .8; }
-.tab span { font-size: 10.5px; letter-spacing: .26em; text-transform: uppercase; }
-.tab kbd {
+.rail-item::before {
+  content: "";
   position: absolute;
-  top: 2px;
-  right: 6px;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(53,198,244,.16), rgba(53,198,244,.05) 55%, transparent);
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease);
+}
+.rail-item > * { position: relative; }
+.rail-item i {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  font-style: normal;
+  font-size: 14px;
+  border: 1px solid var(--edge-dim);
+  background: linear-gradient(145deg, #1c2a3a, #0a121c);
+  color: var(--rim);
+  transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.rail-item span {
+  font-family: var(--serif);
+  font-size: 15px;
+  letter-spacing: .06em;
+}
+.rail-item kbd {
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9px;
   color: var(--dimmer);
-  opacity: .7;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease);
 }
-.tab:hover { color: var(--text); background: linear-gradient(180deg, rgba(28,42,58,.4), transparent); }
-.tab.active {
+.rail-item:hover, .rail-item.active { color: var(--text-hi); }
+.rail-item:hover kbd, .rail-item.active kbd { opacity: 1; }
+.rail-item:hover i { border-color: var(--edge); color: var(--rim-lit); }
+.rail-item.active { color: var(--text-max); }
+.rail-item.active::before { opacity: 1; }
+.rail-item.active i {
+  border-color: var(--accent);
   color: var(--accent);
-  border-bottom-color: var(--accent);
-  background: linear-gradient(180deg, rgba(18,58,80,.4), transparent);
-  text-shadow: 0 0 14px rgba(53,198,244,.4);
+  box-shadow: 0 0 16px rgba(53,198,244,.25), inset 0 0 12px rgba(53,198,244,.12);
 }
-.tab.active i { opacity: 1; }
+.rail-item.active span { text-shadow: 0 0 16px rgba(53,198,244,.35); }
 
-.menu-close {
+/* Dimmed, not hidden. A category with nothing in it yet still says it exists and
+   what will be there, which is why the reference greys its entries rather than
+   removing them. */
+.rail-item.is-empty { color: var(--dimmer); cursor: not-allowed; }
+.rail-item.is-empty i { opacity: .4; border-color: rgba(30,58,77,.5); }
+.rail-item.is-empty:hover { color: var(--dimmer); }
+.rail-item.is-empty:hover i { border-color: rgba(30,58,77,.5); color: var(--rim); }
+
+.rail-prompt { display: flex; gap: 18px; padding-left: 6px; }
+.rail-prompt button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9.5px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--dim);
+  transition: color var(--t-fast) var(--ease);
+}
+.rail-prompt button:hover { color: var(--accent); }
+.rail-prompt kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  min-width: 22px;
+  text-align: center;
+  padding: 3px 6px;
+  border: 1px solid var(--edge-dim);
+  background: #0a121c;
+  color: var(--rim);
+}
+
+/* ------------------------------------------------------ the right-hand rail */
+
+.quick { display: grid; gap: 9px; }
+.quick h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.quick h4 i { font-style: normal; font-size: 11px; color: var(--rim); }
+.quick-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+
+/* Slots, the way a pouch is slots: fixed squares whose positions you learn. */
+.slot {
+  position: relative;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--edge-dim);
+  background: linear-gradient(145deg, #1c2a3a, #0a121c);
+  color: var(--dim);
+  transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.slot:hover { border-color: var(--edge); color: var(--text); background: linear-gradient(145deg, #23384e, #0c1725); }
+.slot.active {
+  border-color: var(--accent);
+  color: var(--text-max);
+  box-shadow: 0 0 14px rgba(53,198,244,.2), inset 0 0 12px rgba(53,198,244,.1);
+}
+.slot b { font-family: var(--mono); font-size: 10.5px; font-weight: 400; letter-spacing: .02em; }
+.slot small { font-size: 8px; letter-spacing: .12em; text-transform: uppercase; color: var(--dimmer); }
+.slot > i { font-style: normal; font-size: 15px; line-height: 1; color: var(--rim); }
+.slot.active > i { color: var(--accent); }
+.slot-swatch { width: 7px; height: 7px; transform: rotate(45deg); }
+/* A battery read at slot size has room for a bar and nothing else. */
+.slot-batt { position: absolute; left: 4px; right: 4px; bottom: 4px; height: 2px; background: rgba(30,58,77,.6); }
+.slot-batt i { display: block; height: 100%; background: var(--ok); }
+.slot-batt i.low { background: var(--warn); }
+.slot-batt i.crit { background: var(--bad); }
+.quick-empty { grid-column: 1 / -1; font-size: 11px; font-style: italic; color: var(--dimmer); }
+
+.rail-counter {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  padding: 9px 12px;
+  border: 1px solid var(--edge-dim);
+  background: #0a121c;
+}
+.rail-counter small { font-size: 8.5px; letter-spacing: .24em; text-transform: uppercase; color: var(--dimmer); }
+.rail-counter b { font-family: var(--mono); font-size: 17px; font-weight: 400; color: var(--text-hi); }
+.rail-counter b.good { color: var(--ok); }
+.rail-counter b.bad { color: var(--bad); }
+
+/* ---------------------------------------------------------------- the sheet */
+
+.sheet {
+  position: fixed;
+  z-index: 45;
+  top: 50%;
+  left: 50%;
+  width: 76vw;
+  height: 78vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  pointer-events: auto;
+  border: 1px solid var(--edge);
+  background: linear-gradient(180deg, rgba(12,21,32,.97), rgba(5,11,18,.98));
+  box-shadow: 0 30px 90px rgba(0,0,0,.72);
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -50%) scale(.985);
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), visibility 0s linear var(--t);
+}
+body.sheet-open .sheet {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), visibility 0s;
+}
+
+/* The world dims only once a sheet is open, and only then. Stage one leaves it
+   alone entirely, which is the difference the reference is built on. */
+body.sheet-open .vignette { opacity: .5; }
+body.sheet-open .rail { opacity: .3; }
+
+.sheet-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 28px 16px;
+  border-bottom: 1px solid var(--edge-dim);
+}
+.sheet-head h2 {
+  margin: 4px 0 0;
+  font-family: var(--serif);
+  font-size: 23px;
+  font-weight: 400;
+  letter-spacing: .12em;
+  color: var(--text-hi);
+}
+.sheet-close {
   display: flex;
   align-items: center;
   white-space: nowrap;
@@ -740,8 +955,8 @@ body.menu-open .vignette { opacity: .2; }
   color: var(--dim);
   transition: color var(--t-fast) var(--ease);
 }
-.menu-close:hover { color: var(--accent); }
-.menu-close kbd {
+.sheet-close:hover { color: var(--accent); }
+.sheet-close kbd {
   font-family: var(--mono);
   font-size: 9px;
   padding: 3px 7px;
@@ -749,7 +964,7 @@ body.menu-open .vignette { opacity: .2; }
   color: var(--rim);
 }
 
-.menu-body { min-height: 0; padding: 14px 36px 30px; }
+.sheet-body { min-height: 0; padding: 18px 28px 24px; }
 .panel { display: none; height: 100%; min-height: 0; }
 .panel.active { display: grid; animation: panel-in var(--t) var(--ease) both; }
 @keyframes panel-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
@@ -1270,6 +1485,170 @@ body.jury-mode .mission { bottom: auto; top: 76px; }
 body.pip-open .menu-prompt { bottom: 250px; }
 body.jury-mode .menu-prompt { opacity: 0; pointer-events: none; }
 
+
+/* ------------------------------------------------------- the scenario builder
+ *
+ * Merged from feat/scenario-builder, restyled. The branch drew it in the old
+ * shell's idiom - rounded corners, its own palette literals, a stylesheet that
+ * no longer exists - so what came across is the behaviour, not the surface.
+ *
+ * It is an overlay rather than a category: painting a grid wants the whole
+ * screen, and the builder is a detail inside Deployment (it is how you make a
+ * floor to deploy onto), not a sixth thing in the rail.
+ */
+
+.build-button {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 1px 14px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 13px 16px;
+  text-align: left;
+  border: 1px dashed var(--edge-dim);
+  background: rgba(19,30,43,.35);
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.build-button:hover { border-color: var(--accent); background: rgba(20,62,86,.45); }
+.build-button i {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  font-style: normal;
+  font-size: 15px;
+  color: var(--rim);
+  border: 1px solid var(--edge-dim);
+}
+.build-button:hover i { color: var(--accent); border-color: var(--edge); }
+.build-button span { font-family: var(--serif); font-size: 15px; color: var(--text-hi); }
+.build-button small { font-size: 10.5px; color: var(--dimmer); }
+
+.builder {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: linear-gradient(180deg, #0c1520, #050b12);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--t) var(--ease), visibility 0s linear var(--t);
+}
+body.builder-open .builder {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--t) var(--ease), visibility 0s;
+}
+
+.builder-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 30px 16px;
+  border-bottom: 1px solid var(--edge-dim);
+}
+.builder-head h2 {
+  margin: 4px 0 0;
+  font-family: var(--serif);
+  font-size: 23px;
+  font-weight: 400;
+  letter-spacing: .12em;
+  color: var(--text-hi);
+}
+.builder-head-actions { display: flex; align-items: center; gap: 16px; }
+.ghost-btn.primary { border-color: var(--edge); color: var(--accent); }
+.ghost-btn.primary:hover { border-color: var(--accent); background: rgba(20,62,86,.5); }
+.ghost-btn:disabled { opacity: .4; cursor: not-allowed; border-color: var(--edge-dim); color: var(--dimmer); }
+
+.builder-body {
+  display: grid;
+  grid-template-columns: 268px 1fr;
+  gap: 26px;
+  min-height: 0;
+  padding: 22px 30px 26px;
+}
+
+.builder-pool { display: grid; grid-template-rows: auto auto auto auto 1fr; gap: 14px; align-content: start; min-height: 0; }
+.builder-pool h4 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.pool-list { display: grid; gap: 4px; }
+.pool-tile {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 12px;
+  padding: 8px 11px;
+  text-align: left;
+  cursor: grab;
+  border: 1px solid transparent;
+  border-left: 2px solid var(--edge-dim);
+  background: rgba(19,30,43,.45);
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.pool-tile:active { cursor: grabbing; }
+.pool-tile:hover { background: rgba(32,52,72,.6); }
+.pool-tile.active { border-color: var(--edge); border-left-color: var(--accent); background: rgba(20,62,86,.45); }
+.pool-tile b { font-family: var(--serif); font-size: 13.5px; font-weight: 400; color: var(--text-hi); }
+.pool-tile small { font-size: 9.5px; color: var(--dimmer); }
+.pool-swatch { grid-row: 1 / 3; width: 34px; height: 34px; border: 1px solid var(--edge-dim); }
+/* The swatches are the tiles the grid actually paints, baked from the same
+   sources the 3D twin renders from - so the palette, the canvas and the
+   warehouse you end up with cannot drift apart. Flat colours here were a legend
+   you had to learn; these are a preview. */
+.pool-swatch { background-size: cover; background-position: center; background-color: #0d1a26; }
+.pool-swatch.free    { background-image: url('/assets/twin/builder/tile_floor.png'); }
+.pool-swatch.rack    { background-image: url('/assets/twin/builder/tile_rack.png'); }
+.pool-swatch.station { background-image: url('/assets/twin/builder/tile_station.png'); }
+.pool-swatch.dock    { background-image: url('/assets/twin/builder/tile_amr_dock.png'); }
+.pool-swatch.amr     { background-image: url('/assets/twin/builder/tile_amr.png'); }
+
+.builder-hint { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--dim); }
+.builder-tally { display: grid; grid-template-columns: 1fr auto; gap: 0; margin: 0; }
+.builder-tally dt { padding: 7px 0; font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid rgba(30,58,77,.5); }
+.builder-tally dd { margin: 0; padding: 7px 0; font-family: var(--mono); font-size: 13px; color: var(--text-hi); text-align: right; border-bottom: 1px solid rgba(30,58,77,.5); }
+
+.builder-stage {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--edge-dim);
+  background:
+    linear-gradient(rgba(30,58,77,.16) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, rgba(30,58,77,.16) 1px, transparent 1px) 0 0 / 28px 28px,
+    #070f18;
+}
+#builderGrid { display: block; border: 1px solid var(--edge); cursor: crosshair; }
+
+/* Follows the pointer during a drag so you can see which cell you are about to
+   land on before you let go. */
+.builder-preview {
+  position: fixed;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background-color: rgba(53,198,244,.2);
+  background-size: cover;
+  background-position: center;
+  opacity: .9;
+  transform: translate(-50%, -50%);
+  display: none;
+  z-index: 60;
+}
+
 /* ------------------------------------------------------------ responsive */
 
 @media (max-width: 1180px) {
@@ -1277,20 +1656,25 @@ body.jury-mode .menu-prompt { opacity: 0; pointer-events: none; }
   .messages { width: 260px; }
   .mission { width: min(560px, 56vw); }
   .split, .split.wide { grid-template-columns: minmax(260px, 320px) 1fr; gap: 22px; }
-  .menu-bar, .menu-body { padding-left: 24px; padding-right: 24px; }
+  .rail-left { width: 292px; }
+  .rail-right { width: 216px; }
+  .sheet { width: 82vw; }
+  .sheet-body { padding-left: 22px; padding-right: 22px; }
 }
 
 @media (max-width: 900px) {
   .messages { display: none; }
   .transport { width: min(320px, 44vw); }
   .split, .split.wide { grid-template-columns: 1fr; grid-template-rows: minmax(0, .9fr) minmax(0, 1.1fr); }
-  .menu-bar { gap: 12px; }
-  .menu-mark small { display: none; }
-  .menu-mark b { font-size: 14px; }
-  .tab { padding: 9px 10px; }
-  .tab span { font-size: 8px; letter-spacing: .14em; }
-  .menu-close { gap: 0; font-size: 0; }
-  .menu-close kbd { font-size: 9px; }
+  /* Below this the two rails would meet in the middle and there would be no
+     world left between them, which is the one thing this layout exists to
+     protect. The right-hand rail is the one to drop: its slots are shortcuts to
+     things the categories also reach. */
+  .rail-right { display: none; }
+  .rail-left { width: 258px; }
+  .rail-mark small { display: none; }
+  .rail-item span { font-size: 13.5px; }
+  .sheet { width: 92vw; height: 84vh; }
   .field-grid, .inspector-grid, .keys { grid-template-columns: 1fr; }
   .pip { width: 220px; }
 }
