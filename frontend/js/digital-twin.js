@@ -507,22 +507,17 @@ export class DigitalTwin {
     // Instancing keeps the richer geometry inexpensive even on a large warehouse.
     const uprightGeometry = new THREE.BoxGeometry(cell * .055, cell * 1.18, cell * .055);
     const shelfGeometry = new THREE.BoxGeometry(cell * .9, cell * .045, cell * .9);
-    const cartonGeometry = new THREE.BoxGeometry(cell * .62, cell * .24, cell * .64);
     const rackMaterial = new THREE.MeshStandardMaterial({color: PALETTE.steel, roughness: .32, metalness: .76});
     const shelfMaterial = new THREE.MeshStandardMaterial({color: PALETTE.rack, roughness: .38, metalness: .64});
-    const cartonMaterial = new THREE.MeshStandardMaterial({
-      map: texture('carton.jpg'), color: 0xd8cfc2, roughness: .88, metalness: .02,
-    });
     const uprights = new THREE.InstancedMesh(uprightGeometry, rackMaterial, rackCells.length * 4);
     const shelves = new THREE.InstancedMesh(shelfGeometry, shelfMaterial, rackCells.length * 3);
-    const cartons = new THREE.InstancedMesh(cartonGeometry, cartonMaterial, rackCells.length * 2);
-    for (const mesh of [uprights, shelves, cartons]) {
+    for (const mesh of [uprights, shelves]) {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
     }
     const matrix = new THREE.Matrix4();
-    let uprightIndex = 0, shelfIndex = 0, cartonIndex = 0;
-    rackCells.forEach(([x, y], index) => {
+    let uprightIndex = 0, shelfIndex = 0;
+    rackCells.forEach(([x, y]) => {
       const centre = this._cellToWorld(x, y, 0);
       const edge = cell * .41;
       for (const [dx, dz] of [[-edge, -edge], [edge, -edge], [-edge, edge], [edge, edge]]) {
@@ -533,18 +528,8 @@ export class DigitalTwin {
         matrix.setPosition(centre.x, level, centre.z);
         shelves.setMatrixAt(shelfIndex++, matrix);
       }
-      // The two enclosed beams. The top beam is stocked separately, in
-      // _buildTopStock, because it is the one task cargo also lives on.
-      for (const [tier, level] of [cell * .3, cell * .76].entries()) {
-        const noise = Math.sin((index * 3 + tier) * 12.9898) * 43758.5453;
-        const jitter = noise - Math.floor(noise);
-        const stagger = ((index + tier) % 2 ? 1 : -1) * cell * (.05 + jitter * .06);
-        matrix.makeRotationY((jitter - .5) * .12);
-        matrix.setPosition(centre.x + stagger, level, centre.z + (jitter - .5) * cell * .05);
-        cartons.setMatrixAt(cartonIndex++, matrix);
-      }
     });
-    this.world.add(uprights, shelves, cartons);
+    this.world.add(uprights, shelves);
 
     for (const [x, y] of this.map.stations || []) {
       this.world.add(this._makePad(x, y, 0x3b82f6, 'PICK / DROP'));
@@ -744,51 +729,56 @@ export class DigitalTwin {
       this.deliveredMarkers.set(task.id, deliveredMarker);
       this.world.add(pickMarker, deliveredMarker);
     }
-    this._buildTopStock(rackUse);
+    this._buildRackStock(rackUse);
   }
 
-  /* Stock the top beam of every rack.
+  /* Stock every beam of every rack, from one geometry and one material.
    *
-   * It was bare, and from any camera above the racks that read as empty shelving
-   * rather than as a working warehouse. It cannot simply get another full-width
-   * carton like the two beams below it, because the top beam is the one task
-   * cargo sits on: _selectRackSlot hands out four quadrant slots per rack at
-   * cell * 1.22, and a centred carton would be inside all four of them.
+   * This used to be two systems and they did not match. The enclosed beams got a
+   * single wide slab (.62 x .24 x .64 cell) in one tint; the top beam got four
+   * small cubes (.34 x .26 x .34) in another. Side by side in one bay that reads
+   * as two different warehouses, which is exactly what it was.
    *
-   * So this runs after _buildTasks and fills only what tasks did not claim, in
-   * the same quadrant geometry. rackUse counts slots handed out per rack, and
-   * _selectRackSlot assigns them in order, so slots [used, 4) are free.
+   * All three beams now use the same box in the same four quadrant slots task
+   * cargo uses, so a rack is one kind of thing stacked three high and a task
+   * marker is that same box in a different colour. Only the top beam is shared
+   * with task cargo - _selectRackSlot hands out its slots in order - so only
+   * there are claimed slots skipped.
    */
-  _buildTopStock(rackUse) {
+  _buildRackStock(rackUse) {
     const cell = this.meta.cell_m;
     const cells = this.rackCells || [];
     if (!cells.length) return;
+    const beams = [cell * .3, cell * .76, cell * 1.22];
+    const slotOffsets = [[-.19, -.19], [.19, -.19], [-.19, .19], [.19, .19]];
     const stock = new THREE.InstancedMesh(
       new THREE.BoxGeometry(cell * .34, cell * .26, cell * .34),
       new THREE.MeshStandardMaterial({
-        map: texture('carton.jpg'), color: 0xcfc5b6, roughness: .9, metalness: .02,
+        map: texture('carton.jpg'), color: 0xd2c7b6, roughness: .9, metalness: .02,
       }),
-      cells.length * 4,
+      cells.length * beams.length * slotOffsets.length,
     );
     stock.castShadow = true;
     stock.receiveShadow = true;
-    const slotOffsets = [[-.19, -.19], [.19, -.19], [-.19, .19], [.19, .19]];
     const matrix = new THREE.Matrix4();
     let index = 0;
     cells.forEach(([x, y], cellIndex) => {
-      const used = rackUse.get(`${x},${y}`) || 0;
+      const claimed = rackUse.get(`${x},${y}`) || 0;
       const centre = this._cellToWorld(x, y, 0);
-      for (let slot = used; slot < slotOffsets.length; slot++) {
-        const [sx, sz] = slotOffsets[slot];
-        // Deterministic, not random: the same run must rebuild identically on
-        // every replay, and four identical boxes squared up on every rack is
-        // exactly the regularity that reads as placeholder.
-        const noise = Math.sin((cellIndex * 4 + slot) * 12.9898) * 43758.5453;
-        const jitter = noise - Math.floor(noise);
-        matrix.makeRotationY((jitter - .5) * .5);
-        matrix.setPosition(centre.x + sx * cell, cell * 1.22, centre.z + sz * cell);
-        stock.setMatrixAt(index++, matrix);
-      }
+      beams.forEach((level, beam) => {
+        for (let slot = 0; slot < slotOffsets.length; slot++) {
+          if (beam === beams.length - 1 && slot < claimed) continue;
+          const [sx, sz] = slotOffsets[slot];
+          // Deterministic, not random: the same run must rebuild identically on
+          // every replay, and boxes squared up on every rack is the regularity
+          // that read as placeholder to begin with.
+          const noise = Math.sin((cellIndex * 12 + beam * 4 + slot) * 12.9898) * 43758.5453;
+          const jitter = noise - Math.floor(noise);
+          matrix.makeRotationY((jitter - .5) * .5);
+          matrix.setPosition(centre.x + sx * cell, level, centre.z + sz * cell);
+          stock.setMatrixAt(index++, matrix);
+        }
+      });
     });
     // Instances past the fill point keep an identity matrix and would all stack
     // at the origin; trimming the draw count is what keeps them off screen.
@@ -935,23 +925,42 @@ export class DigitalTwin {
     base.castShadow = true;
     base.userData.robotId = id;
     group.add(base);
-    // Six materials, one per box face, so the baked top-down view lands on +Y and
-    // nowhere else - it is the face the orbit and tactical cameras actually see.
-    // The map is greyscale and the robot's identity colour is the tint, which is
-    // how one texture serves all ten liveries. See tools/bake_twin_textures.py.
+    /* Deck detail, modelled - NOT the top-down render.
+     *
+     * The render's top view was mapped here and it was the worst thing in the
+     * scene: it is a picture of a *different* robot, one with a mast and gantry
+     * this chassis does not have, stretched from a 1.59:1 source onto a nearly
+     * square face. It read as a grey decal of another vehicle whose outline
+     * lined up with nothing underneath it.
+     *
+     * The rule it broke is worth keeping: a MATERIAL texture transfers (the
+     * floor panelling, the corrugated card - they describe a surface), a
+     * DEPICTION does not (it describes an object, and the object is wrong).
+     * Panel lines and a lit strip in the robot's own colour do the job instead,
+     * in the same language as the charge dock.
+     */
     const deckSide = new THREE.MeshStandardMaterial({color: 0x10202c, roughness: .28, metalness: .68});
-    const deckTop = new THREE.MeshStandardMaterial({
-      map: texture('amr_deck.png'), color: colour,
-      roughness: .42, metalness: .34, transparent: true,
-    });
-    const top = new THREE.Mesh(
-      new THREE.BoxGeometry(.68, .22, .66),
-      [deckSide, deckSide, deckTop, deckSide, deckSide, deckSide],
-    );
+    const top = new THREE.Mesh(new THREE.BoxGeometry(.68, .22, .66), deckSide);
     top.position.y = .43;
     top.castShadow = true;
     top.userData.robotId = id;
     group.add(top);
+    const deckPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(.5, .02, .48),
+      new THREE.MeshStandardMaterial({color: 0x18303f, roughness: .42, metalness: .6}),
+    );
+    deckPlate.position.y = .545;
+    deckPlate.userData.robotId = id;
+    group.add(deckPlate);
+    for (const dz of [-.13, .13]) {
+      const strip = new THREE.Mesh(
+        new THREE.BoxGeometry(.42, .012, .035),
+        new THREE.MeshStandardMaterial({color: 0x0a1620, emissive: colour, emissiveIntensity: .8}),
+      );
+      strip.position.set(0, .556, dz);
+      strip.userData.robotId = id;
+      group.add(strip);
+    }
     const wheelMaterial = new THREE.MeshStandardMaterial({color: 0x05090d, roughness: .76, metalness: .28});
     const wheels = [];
     for (const [x, z] of [[-.43, -.25], [.43, -.25], [-.43, .25], [.43, .25]]) {

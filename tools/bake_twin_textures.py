@@ -35,8 +35,6 @@ DEFAULT_SOURCE = pathlib.Path.home() / "Downloads" / "3D_assest_final" / "3D_ass
 
 # Source renders, by the only stable handle they have - their filename.
 SRC = {
-    "amr_yellow": "Gemini_Generated_Image_58n48c58n48c58n4.png",
-    "amr_blue":   "Gemini_Generated_Image_ae4aqbae4aqbae4a.png",
     "floor_dark": "Gemini_Generated_Image_9ngfqc9ngfqc9ngf.png",
     "carton":     "Gemini_Generated_Image_j80itqj80itqj80i.png",
     "worker_hi":  "Gemini_Generated_Image_o8fl7eo8fl7eo8fl.png",   # yellow vest
@@ -183,15 +181,19 @@ def bake(source: pathlib.Path, preview: bool) -> None:
     made.append(save(seamless(panel, 512), "floor_panel.jpg"))
     shots.append(("floor", seamless(panel, 512)))
 
-    # --- AMR deck ------------------------------------------------------------
-    # The top-down view off the turnaround sheet, neutralised for tinting. This
-    # goes on the +Y face of the chassis and nowhere else: it is the face the
-    # orbit and tactical cameras actually see.
-    amr = Image.open(source / SRC["amr_yellow"])
-    deck = desaturate(key_background(amr, (1000, 112, 1742, 580)))
-    deck.thumbnail((256, 256), Image.LANCZOS)
-    made.append(save(deck, "amr_deck.png"))
-    shots.append(("amr deck", deck))
+    # --- AMR deck -------------------------------------------------------------
+    # Deliberately NOT baked any more. The top-down view was mapped onto the
+    # chassis and was the least convincing thing in the scene: it depicts a robot
+    # with a mast and gantry that the twin's chassis does not have, so the outline
+    # lined up with nothing under it, and a 1.59:1 source stretched onto a nearly
+    # square face on top of that.
+    #
+    # The distinction worth keeping from this: a MATERIAL texture transfers out of
+    # these renders - the floor panelling and the corrugated card describe a
+    # surface, and a surface is a surface. A DEPICTION does not: it describes an
+    # object, and the object in the render is not the object in the scene. The
+    # AMR turnarounds remain excellent reference for *modelling* a robot; they are
+    # not a texture for one.
 
     # --- cargo carton --------------------------------------------------------
     # A clean patch of corrugated card between the tape straps, mirrored into a
