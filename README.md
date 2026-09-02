@@ -6,6 +6,18 @@ Smart Warehouses** · Bharat Electronics Limited · Software · Robotics and Dro
 A multi-robot warehouse simulation, a peer-to-peer coordination protocol, and a
 benchmark harness for decentralized AMR priority and path-conflict resolution.
 
+> ## 📖 Full documentation: **[`docs/README.md`](docs/README.md)**
+>
+> A seventeen-document set written against the problem statement, spined on a
+> [requirements traceability matrix](docs/01-REQUIREMENTS-TRACEABILITY.md) that maps all
+> 20 requirements to code, tests and measured evidence.
+>
+> **Both success criteria are met**, measured 2026-09-02 at commit `7740efb`:
+> **0 inter-robot collisions** across 268.54 robot-hours, and a **64.07% / 50.63% / 33.38%**
+> minimum task-time reduction versus stop-and-wait at 4 / 6 / 8 robots against a 20%
+> threshold — see [12. Benchmark and Evidence](docs/12-BENCHMARK-AND-EVIDENCE.md).
+> Known gaps are listed in [15. Limitations](docs/15-LIMITATIONS.md).
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
