@@ -16,11 +16,11 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .amr import POLICIES, POLICY_BIOS_PIBT_V5, POLICY_STOP_WAIT
+from .amr import POLICIES, POLICY_BIOS_PIBT_V6, POLICY_STOP_WAIT
 from .main import run_scenario
 from .metrics import PolicyResult, compare_paired, safety_report
 from .scenarios import SCENARIOS
-from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_POLICIES,
+from .task_allocation import (ALLOCATION_AUCTION_BUNDLE, ALLOCATION_POLICIES,
                               ALLOCATION_PREASSIGNED)
 
 
@@ -94,8 +94,8 @@ def run_acceptance_benchmark(
     first_seed: int = 0,
     duration_s: float | None = None,
     baseline_policy: str = POLICY_STOP_WAIT,
-    candidate_policy: str = POLICY_BIOS_PIBT_V5,
-    allocation_policy: str = ALLOCATION_AUCTION,
+    candidate_policy: str = POLICY_BIOS_PIBT_V6,
+    allocation_policy: str = ALLOCATION_AUCTION_BUNDLE,
     threshold_pct: float = 20.0,
     bootstrap_samples: int = 5000,
     jobs: int = 1,
@@ -276,9 +276,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="override the pinned scenario cutoff")
     parser.add_argument("--baseline", default=POLICY_STOP_WAIT,
                         choices=sorted(POLICIES))
-    parser.add_argument("--candidate", default=POLICY_BIOS_PIBT_V5,
+    parser.add_argument("--candidate", default=POLICY_BIOS_PIBT_V6,
                         choices=sorted(POLICIES))
-    parser.add_argument("--allocation-policy", default=ALLOCATION_AUCTION,
+    parser.add_argument("--allocation-policy", default=ALLOCATION_AUCTION_BUNDLE,
                         choices=sorted(ALLOCATION_POLICIES))
     parser.add_argument("--threshold", type=float, default=20.0)
     parser.add_argument("--bootstrap-samples", type=int, default=5000)

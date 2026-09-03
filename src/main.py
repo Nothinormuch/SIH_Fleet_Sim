@@ -38,6 +38,7 @@ from .amr import (AMRBrain, CENTRAL_POLICIES, POLICIES, POLICY_HIERARCHICAL,
                   POLICY_DECENTRALIZED, POLICY_BIOS4,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
+from .geometry import Cell
 from .metrics import PolicyResult, compare, safety_report
 from .scenarios import (SCENARIOS, SEED_99_DEMO_ROBOTS, SEED_99_DEMO_SEED,
                         Scenario, seed_99_congestion, workload_fingerprint)

@@ -260,11 +260,18 @@ bounded future work. See
 JSON evidence for the exact gates and limitations.
 
 The strict SIH acceptance benchmark now passes all 90 paired seeds across 4-, 6- and
-8-robot fleets. `BIOS_PIBT.5` completes 30/30 runs at every fleet size; stop-and-wait
+8-robot fleets with the released default stack: `BIOS_PIBT.6` plus Auction V2
+(`auction_bundle`). The candidate completes 30/30 runs at every fleet size; stop-and-wait
 completes 0/30 before the fixed 1200 s cutoff. The minimum conservative per-seed
-completion-time reduction bounds are **63.64%**, **51.17%** and **34.16%** respectively,
-all above the required 20%. All 1,620 candidate tasks complete with zero observed
-robot/robot, robot/human or robot/rack contacts across 88.6512 robot-hours.
+completion-time reduction bounds are **65.22%**, **50.63%** and **33.46%** respectively,
+all above the required 20%. All 1,620 candidate tasks complete with zero observed contacts
+and zero detected deadlocks across 88.3926 candidate robot-hours.
+
+The same clean commit was also re-run with `BIOS_PIBT.5` plus plain `auction`. BIOS 6 with
+Auction V2 preserves completion and safety, slightly improves the worst-case acceptance
+bounds at 4 and 8 robots, and sends **18.0% fewer messages overall** across the 90 candidate
+runs. It is not materially faster at the median on this pinned chokepoint workload; the
+measured improvement is chiefly communication efficiency with no liveness or safety loss.
 
 These are right-censored lower bounds, not exact speedups: the baseline makespans are
 unknown because the baseline never finishes. A candidate result at time `C` and an
@@ -272,10 +279,11 @@ unfinished baseline at cutoff `D` establish only that the true reduction is grea
 than `1 - C/D`. The release gate uses the minimum bound across seeds, not a favorable
 average, and refuses candidate timeouts or mismatched workload fingerprints.
 
-See [`docs/SIH_ACCEPTANCE_BENCHMARK.md`](docs/SIH_ACCEPTANCE_BENCHMARK.md) for the exact
+See [`docs/12-BENCHMARK-AND-EVIDENCE.md`](docs/12-BENCHMARK-AND-EVIDENCE.md) for the exact
 method, limitations and commands. Raw evidence is checked in as
 [`artifacts/benchmarks/sih-acceptance.json`](artifacts/benchmarks/sih-acceptance.json)
-and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv).
+and [`artifacts/benchmarks/sih-acceptance.csv`](artifacts/benchmarks/sih-acceptance.csv),
+with dated BIOS 6/V2 and BIOS 5 control artifacts beside them.
 The complete Python regression suite, lint, Python compilation and frontend JavaScript
 syntax checks are release gates; run them again before quoting a new commit as evidence.
 
