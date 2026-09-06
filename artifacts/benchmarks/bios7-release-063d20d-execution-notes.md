@@ -45,10 +45,20 @@ against current-source V6. Every declared human/fault coverage check was exercis
 Its robot-failure scenario contains one recovery job; this is not a claim of
 recovery from every failure in a fully loaded warehouse.
 
-New regression50 and the complete registered holdout were started from this frozen
-source. Old-source completed stages do not count as a passing prerequisite for
-the new source. Stress, repeats, capacity, causal checks and latest-source live LAN
-timing must be recorded under their own correct scope before release approval.
+The fresh regression50 stage passed all three workers. V7 and current-source V6
+both completed 100/100 tasks in 379.24 simulated seconds with zero contacts;
+their cumulative messages and bytes matched. The unsafe immutable V6 reference
+(19 rack-contact events) remains excluded from valid performance claims. The
+new-source capacity stage was started only after this prerequisite passed.
+
+The repeat stage also passed all eight workers. Each of the four configurations
+matched its own repeated non-timing simulation result exactly. V7's two 30/30
+runs had zero contacts and passed all three current-source V6 nonregression gates.
+
+The complete registered holdout is running from this frozen source. Old-source
+completed stages do not count as a passing prerequisite for the new source.
+Capacity, causal checks and latest-source live LAN timing must still finish and
+be recorded under their own correct scope before release approval.
 Workers use the same deterministic tasks, seeds, physical settings and strict
 V6 completion-time/message/byte comparison. The already observed seed range is
 not replaced by easier seeds or called untouched holdout evidence.
