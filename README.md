@@ -72,7 +72,8 @@ fallback is available. The scene follows received live positions and task/cargo 
 
 The `seven` release candidate prepares `BIOS_PIBT.7` plus Auction V2
 (`auction_bundle`) as the public launch defaults. **Promotion to personal main is
-pending final acceptance and two-host checks**; see the
+blocked: the completed two-host campaign passed 2/7 sessions**, despite passing
+headless acceptance. Ten-AMR live liveness and timing still require repair; see the
 [candidate release notes](docs/25-BIOS7-DEMO-RELEASE.md). Plain `auction` and the
 earlier route policies remain selectable controls. BIOS 6 combines V5's
 battery-aware priority/deadline cargo allocation with event-triggered communication,

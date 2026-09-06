@@ -1,9 +1,17 @@
 # BIOS7 smaller-fleet demo release candidate
 
-Status: **verification in progress; personal main has not been promoted**.
+Status: **release blocked by the completed two-laptop campaign; personal main has not been promoted**.
 The `seven` branch prepares `BIOS_PIBT.7` with `auction_bundle` as the public
-launch defaults. The final SIH campaign and latest-source Mac/Windows timing
-evidence are still required before publication. This file is not release approval.
+launch defaults. The final SIH headless campaign passed, but the latest-source
+Mac/Windows campaign passed only two of seven sessions. This file is not release
+approval. See the [unaltered LAN evidence and audit](../artifacts/deployment/lan-campaign-20260906T114030Z-sje2va1r/REVIEW.md).
+
+The LAN test completed 32/47 declared tasks with zero contacts across all seven
+sessions. Three-AMR sensor-loss and overlapping-path sessions passed. Ten-AMR
+overlap completed 2/10 jobs and human crossing completed 3/10. Chokepoint and
+blocked-aisle completed 10/10 each, and the one-job failure scenario recovered
+its job, but every ten-AMR session failed at least one timing gate. None of
+these failures may be overridden by the successful headless results.
 
 ## Scope
 
@@ -80,6 +88,11 @@ Required before promotion: complete registered 30-seed SIH range, zero candidate
 contacts and full task completion, per-case time/message/byte nonregression against
 current-source V6, the SIH stop-and-wait bound, stress/coverage and repeat gates,
 causal checks, full regression tests, and latest-source two-host live evidence.
+The complete registered range now passed: 900/900 candidate jobs, zero contacts,
+and per-case current-source V6 time/message/byte nonregression. Median exact task
+time reduction against current-source V6 was 8.3198%. The minimum stop-and-wait
+reduction was a 27.475% lower bound because that control timed out; it is not an
+exact completed-baseline speedup. This does not approve the failed live campaign.
 See [the release checklist](24-BIOS7-RELEASE-CHECKLIST.md) and
 [controller execution notes](../artifacts/benchmarks/bios7-release-063d20d-execution-notes.md).
 

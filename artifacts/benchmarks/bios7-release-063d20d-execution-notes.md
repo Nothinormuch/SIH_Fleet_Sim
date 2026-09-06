@@ -1,4 +1,4 @@
-# Bidirectional idle-clearance repair: verification in progress
+# Bidirectional idle-clearance repair: headless passed, live release blocked
 
 Frozen commit: `063d20d4b2bf75f0e2d0d3d8634eb747680356c4`.
 Frozen worktree: `/private/tmp/bios7-release-clearance.wsWyLd`.
@@ -37,7 +37,7 @@ idle-corridor and V7 group passed 157 tests. The final complete suite passed
 development test invocation with incomplete lease tests was interrupted and is
 not reported as a successful suite.
 
-## Release evidence still required
+## Completed headless evidence and remaining live gate
 
 The new stress stage completed all 108 workers and passed: 36/36 V7 cases,
 318/318 tasks, zero contacts, and per-case makespan/message/byte nonregression
@@ -55,10 +55,13 @@ The repeat stage also passed all eight workers. Each of the four configurations
 matched its own repeated non-timing simulation result exactly. V7's two 30/30
 runs had zero contacts and passed all three current-source V6 nonregression gates.
 
-The complete registered holdout is running from this frozen source. Old-source
-completed stages do not count as a passing prerequisite for the new source.
-The complete registered SIH campaign and latest-source live LAN timing must finish and
-be recorded under their own correct scope before release approval.
+The complete registered holdout finished all 120 workers from this frozen source:
+900/900 BIOS7 jobs, zero contacts and all strict current-source V6 time/message/byte
+nonregression checks passed. Median exact time reduction against current-source V6
+was 8.3198%; the minimum stop-and-wait improvement was a 27.475% lower bound from
+timed-out controls, not an exact completed-baseline comparison. Old-source completed
+stages do not count as a passing prerequisite for a changed controller. Latest-source
+live LAN timing and liveness must also pass before release approval.
 Workers use the same deterministic tasks, seeds, physical settings and strict
 V6 completion-time/message/byte comparison. The already observed seed range is
 not replaced by easier seeds or called untouched holdout evidence.
@@ -86,10 +89,16 @@ there is no measured speed benefit on this open-floor case. These controlled
 ablations isolate a policy effect, not a universal improvement guarantee.
 
 The root backend on port 8001 was idle and was restarted to load this controller.
-Port 8000 and unrelated applications were not stopped. The prepared seven-round
-Windows package matches the current controller fingerprint
-`9509986f53f1ca8dc927f320f1b6c99da5cd169e2b21b4bd6f48a7a960b023bc`;
-preparation is not a measured LAN run. Private session keys remain outside Git.
+Port 8000 and unrelated applications were not stopped. The initial package with
+fingerprint `9509986f53f1ca8dc927f320f1b6c99da5cd169e2b21b4bd6f48a7a960b023bc`
+was withdrawn before use. Final candidate public defaults were packaged under
+fingerprint `8578c87abdc2e09189a22c4f576690dbcf007742d3ace36ba4c86bc97cda900a`.
+That actual seven-round LAN campaign completed but passed only 2/7 sessions:
+32/47 jobs, zero contacts, incomplete ten-AMR overlap/human-crossing jobs, and
+timing failures in all five ten-AMR sessions. See the
+[preserved campaign review](../deployment/lan-campaign-20260906T114030Z-sje2va1r/REVIEW.md).
+Private session keys remain outside Git. The live failure blocks promotion despite
+the passing headless campaign and 1,023-test public-default regression suite.
 
 Actual browser verification selected the existing Grand Challenge profile with
 BIOS 7, Auction V2, ten AMRs, five workers, seed 1 and the original 800-second
@@ -98,6 +107,7 @@ seconds, zero robot/robot, robot/human and robot/rack contacts, and no browser
 errors. Changing the draft selector did not relabel the preceding V6 recording.
 This is dashboard/simulator workflow evidence, not live independent-host timing.
 
-BIOS 6 remains the default. No merge or push has occurred. Laptop software-in-the-loop
+BIOS 6 remains the personal-main default; `seven` prepares BIOS7 launch defaults
+only as an unreleased candidate. No merge or push has occurred. Laptop software-in-the-loop
 tests are not Raspberry Pi measurements, physical safety certification or universal
 AMR compatibility evidence.
