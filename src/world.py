@@ -233,6 +233,11 @@ class World:
         self.env = env
         self.cfg = cfg
         self.rng = random.Random(seed)
+        # A separate stream keeps pedestrian perturbations independent of sensor noise.
+        self.human_rng = random.Random(seed + 17001)
+        self.human_randomized = False
+        self.human_next_change: dict[str, float] = {}
+        self.human_behavior_events = 0
         self.t = 0.0
         self.robots: dict[str, RobotState] = {}
         self.humans: dict[str, HumanState] = {}
@@ -405,6 +410,15 @@ class World:
 
     def step(self, dt: float, cmds: dict[str, Actuation]) -> list[ContactEvent]:
         spec = self.cfg.robot
+        if self.human_randomized:
+            for hid, h in sorted(self.humans.items()):
+                if self.t >= self.human_next_change.get(hid, 0.0):
+                    h.speed = self.human_rng.uniform(0.65, 1.35)
+                    h.dwell_remaining_s = self.human_rng.uniform(0.0, 1.5)
+                    if self.human_rng.random() < 0.4:
+                        h.direction *= -1
+                    self.human_next_change[hid] = self.t + self.human_rng.uniform(3.0, 8.0)
+                    self.human_behavior_events += 1
         prev: dict[str, Vec] = {r.rid: (r.x, r.y) for r in self.robots.values()}
         prev_h: dict[str, Vec] = {h.hid: (h.x, h.y) for h in self.humans.values()}
 

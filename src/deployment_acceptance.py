@@ -140,7 +140,7 @@ def run_deployment_acceptance(duration_s: float = 20.0,
     site = load_site_config(site_path)
     tasks = load_task_file(task_path, site_path)
 
-    normal_ports = _free_udp_block(7)
+    normal_ports = _free_udp_block(1 + 2 * robots)
     normal = run_hil_demo(
         scenario_name=scenario_name,
         robots=robots,
@@ -148,7 +148,7 @@ def run_deployment_acceptance(duration_s: float = 20.0,
         allocation_policy=ALLOCATION_AUCTION_BUNDLE,
         peer_port=normal_ports,
         sensor_base_port=normal_ports + 1,
-        actuator_base_port=normal_ports + 4,
+        actuator_base_port=normal_ports + 1 + robots,
         shared_key="deployment-acceptance-key-0001",
         require_task_completion=True,
     )

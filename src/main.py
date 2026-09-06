@@ -124,6 +124,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     dt = 1.0 / cfg.rates.world_hz
 
     world = World(sc.env, cfg, seed=seed)
+    world.human_randomized = sc.human_randomized
     net = SimNetwork(cfg, seed=seed)
     net.register(WMS_ID)
     announced_tasks = _announced_tasks(sc, allocation_policy)

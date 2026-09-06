@@ -87,6 +87,7 @@ class Scenario:
     # Optional per-robot starting state of charge for energy-allocation experiments.
     initial_battery_fracs: list[float] = field(default_factory=list)
     seed: int = 0
+    human_randomized: bool = False
 
     @property
     def n_robots(self) -> int:
@@ -159,6 +160,8 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
         "seed": sc.seed,
         "config": asdict(cfg),
     }
+    if sc.human_randomized:
+        payload["human_behavior"] = "seeded-speed-pause-reversal-v1"
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                          allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -534,6 +537,46 @@ def deployment_socket_acceptance(n_robots: int = 3, tasks_per_robot: int = 1,
     )
 
 
+def edge_overlap(n_robots: int = 3, tasks_per_robot: int = 1,
+                 seed: int = 0) -> Scenario:
+    """Compact opposing work across shared space; one job per robot by default."""
+    height = max(10, n_robots + 5)
+    env = open_floor(12, height, name="edge_overlap")
+    starts, assignments = [], []
+    for i in range(n_robots):
+        y = 2 + i
+        left, right = (2, y), (9, y)
+        pick, drop = (left, right) if i % 2 == 0 else (right, left)
+        starts.append(pick)
+        assignments.append([Task(f"EDGE-{i:02d}-{j}", pick, drop, 0.0)
+                            for j in range(tasks_per_robot)])
+    return Scenario("edge_overlap", env, starts, assignments,
+                    duration_s=180.0, pose_noise_m=0.0, seed=seed)
+
+
+def edge_chokepoint(n_robots: int = 3, tasks_per_robot: int = 1,
+                    seed: int = 0) -> Scenario:
+    sc = edge_overlap(n_robots, tasks_per_robot, seed)
+    grid = [list(row) for row in sc.env.grid]
+    for y in range(sc.env.height):
+        if y != sc.env.height // 2:
+            grid[y][6] = RACK
+    sc.env = Warehouse(sc.env.width, sc.env.height,
+                       tuple(tuple(row) for row in grid), sc.env.stations,
+                       sc.env.docks, "edge_chokepoint")
+    sc.name, sc.duration_s = "edge_chokepoint", 240.0
+    return sc
+
+
+def edge_human_crossing(n_robots: int = 3, tasks_per_robot: int = 1,
+                        seed: int = 0) -> Scenario:
+    sc = edge_overlap(n_robots, tasks_per_robot, seed)
+    sc.name, sc.duration_s = "edge_human_crossing", 240.0
+    sc.humans = [[(x, 1), (x, sc.env.height - 2)] for x in (4, 6, 8)]
+    sc.human_randomized = True
+    return sc
+
+
 def blocked_aisle(n_robots: int = 3, tasks_per_robot: int = 1,
                   seed: int = 0) -> Scenario:
     """A dropped pallet appears on one planned route; an alternate route remains."""
@@ -873,6 +916,9 @@ SCENARIOS = {
     "dead_zone_mesh": lambda **kw: dead_zone(mesh_radio=True, **kw),
     "open_floor_control": open_floor_control,
     "deployment_socket_acceptance": deployment_socket_acceptance,
+    "edge_overlap": edge_overlap,
+    "edge_chokepoint": edge_chokepoint,
+    "edge_human_crossing": edge_human_crossing,
     "blocked_aisle": blocked_aisle,
     "robot_failure_reassignment": robot_failure_reassignment,
     "partition_recovery": partition_recovery,

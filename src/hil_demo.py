@@ -16,6 +16,7 @@ controller authoritative when replacing this referee with a vendor adapter.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -211,6 +212,7 @@ def run_hil_demo(
     on_snapshot: Callable[[dict], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     sensor_cut_control: Callable[[str], bool] | None = None,
+    finish_when_complete: bool = False,
 ) -> dict:
     """Run N public edge-node executables against a socket-only physics referee."""
     if robots < 3:
@@ -223,6 +225,10 @@ def run_hil_demo(
         raise ValueError("actuator port range is invalid")
     if shared_key == "":
         raise ValueError("authenticated HIL proof requires a non-empty shared key")
+    ranges = [set(range(sensor_base_port, sensor_base_port + robots)),
+              set(range(actuator_base_port, actuator_base_port + robots)), {peer_port}]
+    if any(ranges[i] & ranges[j] for i in range(3) for j in range(i)):
+        raise ValueError("sensor, actuator and peer ports must not overlap")
     if sensor_cut_robot is not None:
         if sensor_cut_robot not in [f"AMR{index + 1:02d}" for index in range(robots)]:
             raise ValueError("sensor_cut_robot must identify a configured AMR")
@@ -232,7 +238,12 @@ def run_hil_demo(
             raise ValueError("sensor cut must end before the evidence window")
 
     scenario = SCENARIOS[scenario_name](n_robots=robots, seed=seed)
+    if scenario.robot_restart_at or scenario.partition_at is not None:
+        raise ValueError("Socket runner does not yet support restart or network partition events")
+    if len(scenario.starts) != robots:
+        raise ValueError("scenario starts must match requested process count")
     world = World(scenario.env, DEFAULT, seed=seed)
+    world.human_randomized = scenario.human_randomized
     robot_ids = [f"AMR{index + 1:02d}" for index in range(robots)]
     for rid, start in zip(robot_ids, scenario.starts):
         world.add_robot(rid, start)
@@ -242,6 +253,12 @@ def run_hil_demo(
     tasks = (scenario.unassigned
              or [task for queue in scenario.assignments for task in queue])
     repo_root = Path(__file__).resolve().parent.parent
+    # Pin the working source, including uncommitted edits; HEAD alone is insufficient
+    # evidence for an experimental run. Capture before any controller is launched.
+    source_paths = sorted((repo_root / "src").glob("*.py"))
+    source_paths += [repo_root / "edge_node.py"]
+    source_hashes = {str(path.relative_to(repo_root)):
+                     hashlib.sha256(path.read_bytes()).hexdigest() for path in source_paths}
     sensor_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     nodes: list[_NodeProcess] = []
     task_source = None
@@ -317,18 +334,53 @@ def run_hil_demo(
         observed_completions: set[str] = set()
         recent_packets: list[dict] = []
         sensor_counts = {rid: 0 for rid in robot_ids}
+        expected_stops: set[str] = set()
+        activated_obstacles: set[str] = set()
+        cleared_obstacles: set[str] = set()
+        events: list[dict] = []
+        work_finished_at: float | None = None
+        cut_started_wall: float | None = None
+        cut_ended_wall: float | None = None
         for tick in range(ticks):
             if should_stop is not None and should_stop():
                 cancelled = True
                 break
             elapsed_s = tick * dt
+            for node in nodes:
+                if (node.rid in scenario.robot_fail_at and node.rid not in expected_stops
+                        and elapsed_s >= scenario.robot_fail_at[node.rid]):
+                    if node.process.poll() is not None:
+                        raise RuntimeError(f"{node.rid} exited before scheduled failure")
+                    expected_stops.add(node.rid)
+                    node.process.terminate()
+                    events.append({"type": "controller_process_stop", "robot": node.rid,
+                                   "t": world.t, "task": node.visual_status.get("task")})
+            for event in scenario.obstacles:
+                if (event.oid not in activated_obstacles and elapsed_s >= event.appear_at
+                        and (event.clear_at is None or elapsed_s < event.clear_at)):
+                    if world.add_obstacle(event.oid, event.cell, event.radius_m) is not None:
+                        activated_obstacles.add(event.oid)
+                        events.append({"type": "obstacle_appeared", "id": event.oid,
+                                       "cell": event.cell, "t": world.t})
+                if (event.clear_at is not None and elapsed_s >= event.clear_at
+                        and event.oid not in cleared_obstacles):
+                    world.remove_obstacle(event.oid)
+                    cleared_obstacles.add(event.oid)
+                    events.append({"type": "obstacle_cleared", "id": event.oid, "t": world.t})
             cut_nodes = set()
             for node in nodes:
+                if node.rid in expected_stops:
+                    continue
                 sensor_is_cut = (
                     node.rid == sensor_cut_robot
                     and sensor_cut_at_s <= elapsed_s
                     < sensor_cut_at_s + sensor_cut_duration_s
                 )
+                if node.rid == sensor_cut_robot:
+                    if sensor_is_cut and cut_started_wall is None:
+                        cut_started_wall = time.monotonic()
+                    elif not sensor_is_cut and cut_started_wall is not None and cut_ended_wall is None:
+                        cut_ended_wall = time.monotonic()
                 if sensor_cut_control is not None:
                     sensor_is_cut = sensor_is_cut or sensor_cut_control(node.rid)
                 if sensor_is_cut:
@@ -369,6 +421,8 @@ def run_hil_demo(
                         "world": world.snapshot(), "map": world.env.to_json(),
                         "cell_m": DEFAULT.cell_m,
                         "duration_s": duration_s,
+                        "scenario": scenario_name, "events": list(events),
+                        "human_behavior_events": world.human_behavior_events,
                         "tasks": [{"id": t.tid, "pick": t.pick, "drop": t.drop,
                                    "cargo_type": t.cargo_type} for t in tasks],
                         "observed_completed": sorted(observed_completions),
@@ -388,12 +442,26 @@ def run_hil_demo(
                                         "safety_stop": commands[n.rid].safety_stop},
                         } for n in nodes],
                     })
-            failed = [node for node in nodes if node.process.poll() is not None]
+            failed = [node for node in nodes if node.process.poll() is not None
+                      and node.rid not in expected_stops]
             if failed:
                 raise RuntimeError(
                     "edge node exited inside evidence window: "
                     + ", ".join(node.rid for node in failed)
                 )
+            if finish_when_complete and on_snapshot is not None:
+                events_complete = (
+                    len(expected_stops) == len(scenario.robot_fail_at)
+                    and len(activated_obstacles) == len(scenario.obstacles)
+                    and all(e.clear_at is None or e.oid in cleared_obstacles
+                            for e in scenario.obstacles)
+                    and (sensor_cut_robot is None or elapsed_s >=
+                         sensor_cut_at_s + sensor_cut_duration_s + 2.0)
+                )
+                if {t.tid for t in tasks} <= observed_completions and events_complete:
+                    work_finished_at = work_finished_at or elapsed_s
+                    if elapsed_s - work_finished_at >= 1.0:
+                        break
     finally:
         if task_source is not None:
             task_source.close()
@@ -438,10 +506,18 @@ def run_hil_demo(
     deadlines_met = (
         len(reports) == robots
         and all(report.get("runtime", {}).get("deadline_misses", 0) == 0
+                and report.get("full_cycle", {}).get("deadline_misses", 0) == 0
+                and report.get("scheduling_late_ticks", 0) == 0
+                and report.get("skipped_schedule_slots", 0) == 0
                 for report in reports)
     )
     task_gate = (not require_task_completion or len(completed) == len(tasks))
     contact_free = all(value == 0 for value in contacts.values())
+    event_coverage = (len(activated_obstacles) == len(scenario.obstacles)
+                      and len(expected_stops) == len(scenario.robot_fail_at))
+    failed_active_tasks = [r.get("task") for r in reports if r.get("robot_id") in expected_stops]
+    failure_work_recovered = all(tid and tid in completed for tid in failed_active_tasks)
+    event_gate = event_coverage and failure_work_recovered
     sensor_cut_evidence = None
     sensor_cut_gate = True
     if sensor_cut_robot is not None:
@@ -451,26 +527,38 @@ def run_hil_demo(
             for event_t, safety_stop in target.actuation_events
             if event_t >= window_started
         ]
+        actual_cut = (cut_started_wall - window_started
+                      if cut_started_wall is not None else None)
+        actual_return = (cut_ended_wall - window_started
+                         if cut_ended_wall is not None else None)
+        moving_before_cut = actual_cut is not None and any(
+            not stopped and actual_cut - 0.5 <= event_t < actual_cut
+            for event_t, stopped in relative_events)
         stop_events = [
             event_t for event_t, safety_stop in relative_events
-            if safety_stop and event_t >= sensor_cut_at_s
+            if safety_stop and actual_cut is not None and event_t >= actual_cut
+            and (actual_return is None or event_t < actual_return)
         ]
         first_stop = min(stop_events) if stop_events else None
         recovered = any(
             not safety_stop
-            and event_t >= sensor_cut_at_s + sensor_cut_duration_s
+            and actual_return is not None and event_t >= actual_return
             for event_t, safety_stop in relative_events
         )
-        response_s = None if first_stop is None else first_stop - sensor_cut_at_s
+        response_s = None if first_stop is None else first_stop - actual_cut
         sensor_cut_gate = (
             response_s is not None
             and response_s <= 0.30
             and recovered
+            and moving_before_cut
         )
         sensor_cut_evidence = {
             "robot_id": sensor_cut_robot,
             "cut_at_s": sensor_cut_at_s,
             "cut_duration_s": sensor_cut_duration_s,
+            "actual_cut_wall_s": actual_cut,
+            "actual_return_wall_s": actual_return,
+            "non_stop_command_observed_before_cut": moving_before_cut,
             "first_safety_stop_after_cut_s": first_stop,
             "response_s": response_s,
             "recovered_after_sensor_return": recovered,
@@ -478,10 +566,11 @@ def run_hil_demo(
         }
     success = all((distinct_processes, hardware_boundary, peers_observed,
                    authenticated, deadlines_met, contact_free, task_gate,
-                   sensor_cut_gate, not process_failures, not cancelled))
+                   sensor_cut_gate, event_gate, not process_failures, not cancelled))
     pi_model = _raspberry_pi_model()
     result = {
         "success": success,
+        "source_sha256": source_hashes,
         "cancelled": cancelled,
         "proof_scope": "closed_loop_software_in_the_loop",
         "physical_amr_tested": False,
@@ -506,6 +595,14 @@ def run_hil_demo(
         "peer_messages_observed": peers_observed,
         "authenticated_transport": authenticated,
         "control_deadlines_met": deadlines_met,
+        "events": events,
+        "event_coverage": event_coverage,
+        "failed_active_task_ids": failed_active_tasks,
+        "failure_work_recovered": failure_work_recovered,
+        "human_behavior_events": world.human_behavior_events,
+        "humans": len(world.humans),
+        "simulation_time_s": world.t,
+        "event_scope": "physical obstacle events and controlled process stops; no RF fault emulation",
         "contacts": contacts,
         "tasks_announced": len(tasks),
         "tasks_completed": len(completed),

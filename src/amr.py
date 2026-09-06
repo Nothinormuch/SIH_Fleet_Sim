@@ -269,6 +269,7 @@ class AMRBrain:
         ] = {}
         # block -> (entry mouth, immutable task ids in this directional batch)
         self._v3_corridor_waves: dict[int, tuple[Cell, tuple[str, ...]]] = {}
+        self._task_corridor_cache: dict[tuple[Cell, Cell], dict[int, Cell]] = {}
         self._last_catalog_broadcast = -1e9
         self._catalog_cursor = 0
         self._task_network_healthy_since: float | None = None
@@ -4528,6 +4529,12 @@ class AMRBrain:
         """
         if self.circulation.enabled:
             return {}
+        # This descriptor uses only immutable map topology and task endpoints, not
+        # live congestion, ownership or battery state. Avoid repeating the same A*
+        # for every catalogue item on every auction tick. No eligibility is cached.
+        key = (task.pick, task.drop)
+        if key in self._task_corridor_cache:
+            return dict(self._task_corridor_cache[key])
         path = astar(self.env, task.pick, task.drop)
         directions: dict[int, Cell] = {}
         for cell in path:
@@ -4537,6 +4544,9 @@ class AMRBrain:
             entry = self.blocks.nearest_end(cid, cell)
             if entry is not None:
                 directions[cid] = entry
+        if len(self._task_corridor_cache) >= 2048:
+            self._task_corridor_cache.pop(next(iter(self._task_corridor_cache)))
+        self._task_corridor_cache[key] = dict(directions)
         return directions
 
     def _v3_bid_cost(self, task: Task, sensors: Sensors) -> float:

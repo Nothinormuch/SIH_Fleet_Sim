@@ -428,7 +428,9 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise ValueError("Expected a JSON object")
             if route == "/api/edge-lab/start":
-                return self._json(202, _EDGE_LAB.start(payload.get("mode", "normal")))
+                return self._json(202, _EDGE_LAB.start(
+                    payload.get("mode", "normal"), payload.get("profile", "interfaces"),
+                    payload.get("robots", 3), payload.get("seed", 0)))
             if route == "/api/edge-lab/cut-sensor":
                 return self._json(200, _EDGE_LAB.cut_sensor(payload.get("robot")))
             if route == "/api/edge-lab/stop":

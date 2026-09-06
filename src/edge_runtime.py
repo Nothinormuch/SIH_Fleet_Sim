@@ -129,12 +129,19 @@ class EdgeRuntime:
         self._persisted_terminal_records = brain.export_terminal_records()
         self._pending_terminal_records: list[dict] | None = None
         self.metrics = EdgeMetrics()
+        self.cycle_metrics = EdgeMetrics()
+        self.phase_max_ms: dict[str, float] = {}
+        self.scheduling_late_ticks = 0
+        self.skipped_schedule_slots = 0
 
     def tick(self, local_t: float, sensors: Sensors) -> Actuation:
         started = time.perf_counter()
+        cpu_started = time.thread_time()
         local_sensors = replace(sensors, t=local_t)
         inbox = self.transport.poll()
+        polled = time.perf_counter()
         actuation, outbox = self.brain.step(local_t, local_sensors, inbox)
+        planned = time.perf_counter()
         for message in outbox:
             self.transport.send(message)
         records = self.brain.export_terminal_records()
@@ -144,6 +151,13 @@ class EdgeRuntime:
             time.perf_counter() - started,
             1.0 / self.cfg.rates.safety_hz,
         )
+        for name, value in {
+            "peer_receive": polled - started,
+            "brain": planned - polled,
+            "send_and_records": time.perf_counter() - planned,
+            "thread_cpu": time.thread_time() - cpu_started,
+        }.items():
+            self.phase_max_ms[name] = max(self.phase_max_ms.get(name, 0.0), value * 1000)
         return actuation
 
     def flush_terminal_records(self) -> None:
@@ -159,6 +173,10 @@ class EdgeRuntime:
         return {
             "robot_id": self.brain.rid,
             "runtime": self.metrics.to_dict(),
+            "full_cycle": self.cycle_metrics.to_dict(),
+            "phase_max_ms": dict(self.phase_max_ms),
+            "scheduling_late_ticks": self.scheduling_late_ticks,
+            "skipped_schedule_slots": self.skipped_schedule_slots,
             "transport": dict(self.transport.stats),
             "brain": dict(self.brain.stats),
             "state": self.brain.state,
@@ -201,6 +219,8 @@ class UdpJsonHardwareIO:
         self._latest: Sensors | None = None
         self._received_at: float | None = None
         self.visual_status = visual_status
+        self._visual_at = float("-inf")
+        self._visual_cache: dict = {}
 
     def read_sensors(self) -> tuple[Sensors | None, float | None]:
         while True:
@@ -232,7 +252,13 @@ class UdpJsonHardwareIO:
             "t": t,
         }
         if self.visual_status is not None:
-            frame["visual_status"] = self.visual_status()
+            # UI consumes 10 Hz snapshots; computing its path/cargo metadata at
+            # 50 Hz adds work to the control budget without improving the display.
+            now = time.monotonic()
+            if now - self._visual_at >= 0.1:
+                self._visual_cache = self.visual_status()
+                self._visual_at = now
+            frame["visual_status"] = self._visual_cache
         payload = json.dumps(frame, separators=(",", ":"), allow_nan=False).encode("utf-8")
         try:
             self.actuator.sendto(payload, self.actuator_target)
@@ -415,6 +441,9 @@ def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareI
     try:
         while not stop_requested:
             now = time.monotonic()
+            cycle_started = time.perf_counter()
+            if now - next_tick > period:
+                runtime.scheduling_late_ticks += 1
             if now >= next_watchdog:
                 notifier.notify("WATCHDOG=1\nSTATUS=BIOS control loop healthy")
                 next_watchdog = now + 1.0
@@ -434,7 +463,15 @@ def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareI
             # slow filesystem may delay the next coordination tick, but never the
             # protective command already selected for this sensor frame.
             runtime.flush_terminal_records()
+            runtime.cycle_metrics.record_loop(time.perf_counter() - cycle_started, period)
             next_tick += period
+            # Do not burst stale catch-up control cycles after an OS/disk stall.
+            # Record missed slots explicitly; keep the 20 ms acceptance budget intact.
+            lag = time.monotonic() - next_tick
+            if lag >= period:
+                skipped = int(lag / period)
+                runtime.skipped_schedule_slots += skipped
+                next_tick += skipped * period
             time.sleep(max(0.0, next_tick - time.monotonic()))
     finally:
         notifier.notify("STOPPING=1\nSTATUS=BIOS edge node stopping safely")

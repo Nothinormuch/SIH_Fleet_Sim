@@ -11,9 +11,12 @@
 <body>
   <header><a class="brand" href="/">BIOS <span>6.0</span></a><span class="header-label">DEPLOYMENT LAB / 01</span><a href="/">Warehouse dashboard ↗</a></header>
   <main>
-    <section class="intro"><div><p class="eyebrow">FROM SIMULATION TO ONBOARD COMPUTING</p><h1>Three robots. Three independent brains.</h1><p class="lead">Watch real BIOS processes exchange messages and drive a simulated warehouse through live sensor and motor interfaces.</p></div><span class="scope">SOFTWARE IN THE LOOP<br><small>Virtual onboard computers · current host</small></span></section>
+    <section class="intro"><div><p class="eyebrow">FROM SIMULATION TO ONBOARD COMPUTING</p><h1>One robot. One independent brain.</h1><p class="lead">Launch 3–10 real BIOS processes. Watch peer coordination, shared paths and failure recovery through live sensor and motor interfaces.</p></div><span class="scope">SOFTWARE IN THE LOOP<br><small>Virtual onboard computers · current host</small></span></section>
     <section class="toolbar" aria-label="Demo controls">
-      <button id="start" class="primary">Start live demo <span>20 s →</span></button>
+      <label>Scenario <select id="profile"><option value="interfaces">Interfaces · 20 s</option><option value="overlap">Opposing routes · 180 s</option><option value="chokepoint">Single-cell chokepoint · 240 s</option><option value="blocked">Blocked aisle · 180 s</option><option value="failure">Controller failure · 180 s</option><option value="humans">Variable human crossings · 240 s</option></select></label>
+      <label>AMRs <select id="robot-count"><option>3</option><option>4</option><option>6</option><option>8</option><option>10</option></select></label>
+      <label>Seed <input id="seed" type="number" min="0" max="10000" value="0" style="width:5em"></label>
+      <button id="start" class="primary">Start live demo</button>
       <button id="fault-demo">Run sensor-loss demo</button>
       <button id="stop" disabled>Stop run</button>
       <button id="download" disabled>Download evidence ↓</button>
@@ -37,7 +40,8 @@
         <p id="view-notice" class="view-notice" role="status">3D assets from the warehouse dashboard · live UDP positions</p>
         <div class="map-wrap"><canvas id="twin-live" aria-label="Live three-dimensional warehouse; drag to orbit, scroll to zoom, click a robot to select"></canvas><canvas id="map" hidden aria-label="Live positions of three simulated AMRs in three separate lanes"></canvas><div id="map-empty">Start a run to connect the controllers.<br><small>Positions will come from the live physics loop.</small></div></div>
         <div class="legend"><span><i class="pick"></i>Pickup</span><span><i class="drop"></i>Drop</span><span><i class="dock"></i>Charge dock</span><span>Click a robot to inspect its controller</span></div>
-        <p class="floor-note">Three isolated test lanes make the deployment interfaces easy to inspect. Use the warehouse dashboard for congestion benchmarks.</p>
+        <p class="floor-note">Choose a shared-path profile to test coordination. Events are applied to live physics; each controller remains independent. A timeout or timing-budget overrun fails the run.</p>
+        <p id="scenario-events" class="mono" role="status">No scenario events yet.</p>
         <div class="network"><div><b>WMS</b><small>Announces tasks only</small></div><span>↓</span><div class="bus"><b>Authenticated peer multicast</b><small id="bus-label">Bids · awards · intent · task completion</small></div></div>
         <div class="progress"><i id="progress"></i></div>
       </section>

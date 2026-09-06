@@ -176,9 +176,10 @@ def corridors(env: Warehouse) -> "CorridorMap":
     real fleet managers call traffic zones or one-way segments, and it is the direct
     answer to "resolving deadlocks at narrow intersections or choke points".
 
-    A block is a maximal connected run of cells with at most two exits. Length-1 blocks
-    are dropped: a single cell is just a cell, and locking it would serialise ordinary
-    corners for nothing.
+    A block is a maximal connected run of cells with at most two exits. Ordinary
+    length-one corners are omitted. A single-cell articulation doorway is different:
+    removing it disconnects its two approaches. Include both mouth cells so existing
+    directional admission can protect that bottleneck without serializing all corners.
     """
     corridor_cells = {c for c in env.free_cells() if env.degree(c) <= 2}
     seen: set[Cell] = set()
@@ -200,7 +201,27 @@ def corridors(env: Warehouse) -> "CorridorMap":
                     seen.add(n)
                     stack.append(n)
         if len(comp) < 2:
-            continue
+            approaches = env.neighbors(start)
+            if len(approaches) != 2:
+                continue
+            # Only unavoidable doors, not corners or gaps with a route around them.
+            reachable, frontier = {start, approaches[0]}, [approaches[0]]
+            while frontier and approaches[1] not in reachable:
+                for neighbor in env.neighbors(frontier.pop()):
+                    if neighbor not in reachable:
+                        reachable.add(neighbor)
+                        frontier.append(neighbor)
+            if approaches[1] in reachable:
+                continue
+            comp.extend(approaches)
+        # Adjacent articulation doors can share a mouth. Keep a single exclusive
+        # zone rather than publishing contradictory ownership for that shared cell.
+        overlaps = {of[c] for c in comp if c in of}
+        merged = set(comp)
+        for previous in overlaps:
+            merged.update(members.pop(previous))
+            ends.pop(previous)
+        comp = sorted(merged)
         block = frozenset(comp)
         # An end is a block cell that touches something outside the block - the mouth
         # a robot enters and leaves by.

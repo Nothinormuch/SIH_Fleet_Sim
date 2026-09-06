@@ -21,7 +21,7 @@ python backend/server.py
    heading selects the same robot in both panels. **Expand view** enlarges the floor.
 2. Point to the authenticated packet trace. A passive subscription observes the
    multicast messages. The WMS announces tasks; it does not select winners.
-3. After the 20-second run, show completed tasks, measured contacts and per-process
+3. After the run, show completed tasks, measured contacts and per-process
    p99 computation time. **Download evidence** exports this run, not an old report.
 4. Click **Run sensor-loss demo**. AMR01 loses sensor input at 3 seconds for 2 seconds.
    Its controller emits a zero-speed safety stop, then recovers when frames resume.
@@ -46,13 +46,33 @@ the current host. Robot bodies, sensors, the warehouse, and battery draw are sim
 There is no Raspberry Pi CPU, operating-system or GPIO emulation in this screen.
 Physical Raspberry Pi performance requires running on that hardware.
 
-The three separate test lanes exercise the deployment boundary and make each robot's
-motion legible. They are not a congestion or human-avoidance benchmark. Contacts of
-absent body types are naturally zero. Use the main warehouse scenarios for those tests.
+Select 3–10 AMRs and a seed before starting. The **Interfaces** profile retains the
+short isolated-lane demonstration. Additional profiles exercise opposing routes,
+a one-cell articulation doorway, a dropped pallet, an actual controller process stop,
+and three humans crossing with seeded speed/pause/direction changes. Humans do not
+broadcast intentions, but retain local collision avoidance; this is not a test of
+non-cooperative people deliberately entering an unavoidable braking envelope.
+
+Profiles have fixed maximum windows of 20–240 seconds. The run may finish after all
+completion announcements and required events have occurred, with a one-second settling
+interval; final node reports still determine PASS. Evidence records actual simulation
+time separately from the maximum window. Timeouts and cancelled runs do not pass.
+
+The failure profile stops AMR01's actual process at two seconds. Its chassis remains
+in the physics model; the adapter watchdog commands a stop and surviving peers must
+complete its active task. This is a controlled process-stop test, not power-loss or
+disk-corruption certification. Blocked-aisle events appear only when their physical
+footprint is unoccupied. Network partitions/restarts are explicitly unsupported by
+this socket runner; no real RF impairment is claimed.
 
 Live completion counts are observed announcements; the end result uses the node
 reports. Packet counts measure what the observer received, not guaranteed delivery
-to every peer. Computation timing appears after node shutdown. Stopping early marks
+to every peer. Computation timing appears after node shutdown. The gate now also checks
+the full sensor-read/brain/command-write/journal cycle and scheduler wakeups, not only
+the brain calculation. Phase maxima and thread CPU time support diagnosing OS scheduling
+versus algorithm work. UI metadata is refreshed at 10 Hz; actuator commands remain 50 Hz.
+Late schedule slots are recorded and skipped instead of bursting stale catch-up ticks.
+Stopping early marks
 the result cancelled and never yields a passing full-completion verdict.
 
 3D movement is interpolated only between received positions, never extrapolated beyond
@@ -79,7 +99,20 @@ count alongside p99. A desktop OS with simultaneous graphics work is not a hard
 real-time platform; no timing gate has been relaxed for presentation.
 
 One run is allowed at a time. Closing/reloading the browser does not stop robot
-processes: they finish their bounded 20-second run. **Stop run** requests graceful
+processes: they finish their bounded run. **Stop run** requests graceful
 cleanup. Stopping the server also cleans up the children. Local controls require
 same-origin JSON requests. The lab allocates a separate UDP port group and ephemeral
 authentication key for every run, and does not overwrite checked-in acceptance JSON.
+
+## Broader acceptance commands
+
+```bash
+python edge_stress_acceptance.py --robots 3,6,10 --seeds 3 --jobs 2
+python edge_stress_acceptance.py --mode live --robots 3,10 --seeds 1 --jobs 1 --output artifacts/deployment/edge-stress-live.json
+```
+
+The first command uses deterministic fixed-step simulation, the second actual UDP
+processes with visual telemetry. Run live timing tests separately from batch jobs.
+For actual graphics-load evidence, start profiles in the browser and download their
+results. Source SHA-256 hashes accompany batch reports, including failures. The older
+90-run headline SIH benchmark remains a separately scoped experiment.

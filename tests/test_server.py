@@ -74,7 +74,9 @@ def test_virtual_edge_lab_routes_and_validation(base_url):
     assert body["state"] == "idle"
     with urllib.request.urlopen(f"{base_url}/edge-lab.html") as response:
         assert response.status == 200
-        assert b"Three robots. Three independent brains." in response.read()
+        page = response.read()
+        assert b"One robot. One independent brain." in page
+        assert b'id="robot-count"' in page and b'value="chokepoint"' in page
     _expect_error(lambda: _post(f"{base_url}/api/edge-lab/start", {"mode": "bad"}), 400)
     _expect_error(lambda: _post(f"{base_url}/api/edge-lab/cut-sensor", {"robot": "AMR01"}), 409)
     request = urllib.request.Request(f"{base_url}/api/edge-lab/start", data=b'{}',

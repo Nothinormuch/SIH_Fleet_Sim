@@ -14,13 +14,23 @@ import time
 from .hil_demo import run_hil_demo
 
 
-def _available_ports() -> int:
+PROFILES = {
+    "interfaces": ("deployment_socket_acceptance", 20.0),
+    "overlap": ("edge_overlap", 180.0),
+    "chokepoint": ("edge_chokepoint", 240.0),
+    "blocked": ("blocked_aisle", 180.0),
+    "failure": ("robot_failure_reassignment", 180.0),
+    "humans": ("edge_human_crossing", 240.0),
+}
+
+
+def _available_ports(robots: int = 3) -> int:
     """Probe a contiguous block; actual binds still fail explicitly if raced."""
     for _ in range(100):
         base = 35000 + secrets.randbelow(20000)
         sockets = []
         try:
-            for port in range(base, base + 7):
+            for port in range(base, base + 1 + 2 * robots):
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 sockets.append(sock)
                 sock.bind(("127.0.0.1", port))
@@ -51,9 +61,16 @@ class EdgeLab:
         )
         return result
 
-    def start(self, mode: str = "normal") -> dict:
+    def start(self, mode: str = "normal", profile: str = "interfaces",
+              robots: int = 3, seed: int = 0) -> dict:
         if mode not in ("normal", "sensor_demo"):
             raise ValueError("mode must be normal or sensor_demo")
+        if profile not in PROFILES:
+            raise ValueError("Unknown lab profile")
+        if type(robots) is not int or not 3 <= robots <= 10:
+            raise ValueError("robots must be an integer from 3 to 10")
+        if type(seed) is not int or not 0 <= seed <= 10000:
+            raise ValueError("seed must be an integer from 0 to 10000")
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 raise RuntimeError("An edge lab run is already active")
@@ -61,14 +78,16 @@ class EdgeLab:
             self._cut_until.clear()
             self._state = {"state": "starting", "mode": mode, "snapshot": None,
                            "result": None, "error": None, "faults": [],
-                           "run_id": secrets.token_hex(8)}
-            self._thread = threading.Thread(target=self._run, args=(mode,),
+                           "run_id": secrets.token_hex(8), "profile": profile,
+                           "robots": robots, "seed": seed,
+                           "duration_s": PROFILES[profile][1]}
+            self._thread = threading.Thread(target=self._run, args=(mode, profile, robots, seed),
                                             name="bios-edge-lab", daemon=True)
             self._thread.start()
         return self.status()
 
     def cut_sensor(self, rid: str) -> dict:
-        if rid not in ("AMR01", "AMR02", "AMR03"):
+        if rid not in [f"AMR{i + 1:02d}" for i in range(self._state.get("robots", 3))]:
             raise ValueError("Unknown robot")
         with self._lock:
             if self._state["state"] != "running":
@@ -104,20 +123,20 @@ class EdgeLab:
             if not self._stop.is_set():
                 self._state["state"] = "running"
 
-    def _run(self, mode: str):
+    def _run(self, mode: str, profile: str, robots: int, seed: int):
         try:
-            base = _available_ports()
+            base = _available_ports(robots)
             kwargs = {}
             if mode == "sensor_demo":
                 kwargs = {"sensor_cut_robot": "AMR01", "sensor_cut_at_s": 3.0,
                           "sensor_cut_duration_s": 2.0}
             result = run_hil_demo(
-                scenario_name="deployment_socket_acceptance", robots=3,
-                duration_s=20.0, require_task_completion=True,
+                scenario_name=PROFILES[profile][0], robots=robots, seed=seed,
+                duration_s=PROFILES[profile][1], require_task_completion=True,
                 peer_port=base, sensor_base_port=base + 1,
-                actuator_base_port=base + 4, shared_key=secrets.token_hex(24),
+                actuator_base_port=base + 1 + robots, shared_key=secrets.token_hex(24),
                 on_snapshot=self._snapshot, should_stop=self._stop.is_set,
-                sensor_cut_control=self._cut, **kwargs,
+                sensor_cut_control=self._cut, finish_when_complete=True, **kwargs,
             )
             with self._lock:
                 self._state["result"] = result
