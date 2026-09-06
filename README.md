@@ -102,21 +102,20 @@ Version 1 remains documented in
 
 ## The position this project takes
 
-The problem statement asks for a fully decentralised fleet and treats centralisation as
-the flaw. That framing does not survive contact with how AMR fleets are actually built,
-and a submission that repeats it back is arguing from a false model. The specific errors
-are catalogued in [`docs/CRITIQUE.md`](docs/CRITIQUE.md); the short version:
+The project investigates decentralized task allocation and traffic coordination
+for SIH 26123. The evaluation separates application architecture, networking,
+physical assumptions and measured performance:
 
-- **"Centralised" is not "cloud."** Real fleets (Amazon Robotics, Locus, Geek+, 6 River,
-  OTTO) run an on-prem fleet manager on the LAN at 1–5 ms. The latency argument only
-  works against an architecture nobody deploys.
-- **The latency numbers do not survive arithmetic.** At 1.2 m/s, 50 ms is 6 cm. Global
-  routing runs at 0.1–1 Hz anyway. Localisation error causes warehouse collisions;
-  network round-trip does not.
-- **Peer-to-peer does not fix Wi-Fi dead zones.** In infrastructure mode the access
-  point relays peer frames — same radio, same hole. `tests/test_core.py` tests exactly
-  this. The fix is a different link layer (802.11s, Wi-Fi Direct, UWB), which the
-  statement never mentions.
+- **Centralized does not necessarily mean cloud-hosted.** This repository's optional
+  fleet manager runs locally. Comparisons must identify the actual controller and
+  network being tested, not assume one architecture always has lower latency.
+- **Latency and safety effects need measurement.** Sensor freshness, braking,
+  localization, scheduling and communication are separate parts of the operating
+  envelope. A latency calculation alone does not establish collision avoidance.
+- **Peer-to-peer application messages do not create a radio mesh.** The simulator
+  distinguishes infrastructure dead zones from its modeled peer-mesh behavior.
+  The two-laptop deployment test uses Ethernet multicast; it does not validate
+  real warehouse Wi-Fi coverage or an 802.11s installation.
 - **Zero observed contacts is a finite test result, not universal safety.** Report
   the scenarios, seeds, contact definition and observation window. The
   [Fischer–Lynch–Paterson result](https://groups.csail.mit.edu/tds/papers/Lynch/jacm85.pdf)
@@ -127,14 +126,16 @@ are catalogued in [`docs/CRITIQUE.md`](docs/CRITIQUE.md); the short version:
   fleet can deadlock at a constrained passage. Larger-fleet claims need separate
   tests that report floor space, workload, service capacity and network conditions.
 
-So this repository implements a **hierarchy**, and treats full decentralisation as a
-*degraded mode* rather than a superior architecture:
+BIOS 6/7 with peer auction perform task allocation and traffic coordination in
+independent robot processes. The WMS announces jobs; robots select owners through
+the peer protocol and plan their own movement. The software-in-the-loop referee
+supplies simulated physics and sensors and applies commands/watchdogs. It is not
+the task allocator, traffic planner or relay for robot peer messages.
 
-| Layer | Rate | Where it runs | What it does |
-| --- | --- | --- | --- |
-| **0 — Safety** | 50 Hz target | Onboard software; **not certified** | Sensor-based stop command using modeled speed and closing speed; does not require a peer message. Coverage depends on valid sensor inputs. |
-| **1 — Local traffic** | 10 Hz | Onboard | Peer intents, block-level exclusion, deadlock breaking, give-way manoeuvres. |
-| **2 — Global route** | 1 Hz | Fleet manager when reachable, P2P when not | Prioritised space-time A* reference; healthy networking does not make this planner generally optimal. |
+The software stop loop targets 50 Hz; local reactive coordination targets 10 Hz.
+These configured rates are not hard-real-time certification. The separate
+`hierarchical` comparison policy uses a fleet manager when reachable and peer
+negotiation otherwise; it is not the architecture of every policy in this repository.
 
 The repository's Layer 0 is a software stop mechanism, not a certified protective
 device and not evidence of ISO 3691-4 or ISO 13849 conformity. Physical deployment
@@ -209,21 +210,28 @@ Transport and world are injected. That single constraint buys three things at on
 
 ## Coordination policies
 
-All policies are fields on one class, sharing one trajectory follower, one safety layer and
-one physics interface — so any difference between them is caused by coordination and
-nothing else. Separately tuned controllers would make the comparison meaningless.
+Policies share a controller class, motion/safety components and a physics interface.
+A fair comparison still needs pinned workloads, physical parameters, allocation
+settings and source versions. Shared code alone does not isolate the cause of an
+improvement; the BIOS 7 campaign includes both a current-source V6 control and an
+explicit passage-release ablation.
 
 | Policy | What it is | Why it is here |
 | --- | --- | --- |
 | `stop_and_wait` | Textbook: follow your own shortest path, stop when the next cell is occupied. | The weak baseline the statement names. Implemented faithfully, not as a straw man. |
-| `central` | Fleet manager plans everything with prioritised space-time A*. Robots follow the schedule; no peer negotiation. | **The strong baseline the statement omits** — what every deployed fleet actually runs. Beating only stop-and-wait proves nothing. |
-| `hierarchical` | Central plans when reachable, P2P negotiation when not, Layer 0 always. | The proposal. Full decentralisation as a fallback, not an ideal. |
 | `BIOS_1.0.0` | Decentralized block leases plus an aggressive local unstick manoeuvre. | Existing experimental liveness policy retained for comparison. |
 | `BIOS_PIBT.1` | Replicated PIBT next-cell resolution, rich priorities and corridor leases. | Retained regression baseline; it gridlocks under the 24-AMR stress seed. |
 | `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
 | `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Retained decentralized comparison policy. |
 | `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, payload/cargo factors, priority/deadline ordering, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Frozen decentralized release baseline. |
 | `BIOS_PIBT.6` | V5 plus event-triggered traffic, decaying peer congestion experience, soft anonymous-moving-object forecasts, charger contention avoidance, load-aware idle clearing, churn recovery and decision traces. | Default fully decentralized route policy; supports frozen Auction and released Auction V2 allocation. |
+
+The additional `central` policy is a centralized prioritized-space-time A* reference;
+`hierarchical` adds peer fallback when its fleet manager is unavailable. The
+[documented reference execution limitations](docs/23-BIOS7-EXPERIMENT.md#important-centralized-reference-limitation)
+prevent treating their current results as proof of superiority over validated
+industrial planners. `BIOS_PIBT.7` remains experimental until its release gates pass;
+it adds execution-identity-checked corridor passage release to the shared controller.
 
 Task ownership is selected independently of the route policy. `auction` lets peers
 broadcast bids and converge on deterministic leased awards; this is the fully
@@ -264,7 +272,9 @@ question about chassis dynamics instead of about decisions.
 
 Everything that must hold regardless of what the network learned stays in ordinary Python:
 panic-on-stick fires above the model on its own timer, Layer 0 sits below it, and
-unexecutable verbs are masked. A badly trained BIOS_4 is slow, not unsafe.
+unexecutable verbs are masked. Learned outputs remain subject to these shared
+software guards; this does not guarantee safe behavior for every model, sensor
+fault or physical deployment.
 
 ```bash
 # train (about 45 minutes on 12 cores, writes models/bios4.json)
