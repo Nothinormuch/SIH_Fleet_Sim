@@ -82,8 +82,9 @@ completion-time **lower bound**, not an exact measured speedup. Seed 99 is exclu
 because it is a hand-built demonstration, not an acceptance sample.
 
 For the fixed release range use `--phase release --release-stage holdout`; it
-retains seeds 2000–2029. Seeds 2000–2012 were already observed during development,
-as were the earlier 1000–1002 sample, and must not be called untouched holdouts.
+retains seeds 2000–2029. Seeds 2000–2015 were already observed during development,
+as were the earlier 1000–1002 sample; seed 2016's V6 controls were also observed.
+They must not be called untouched holdouts.
 Capacity studies use `--phase scaling`, which explicitly distinguishes a
 fixed floor from scaled floor/service capacity and records free-cell density. A
 100-robot headless result is not evidence of 100 physical robots or live Pi timing.
@@ -155,6 +156,14 @@ The previously failing 16/30 workload now completes 30/30 without contacts in
 protocol bytes. Its no-release ablation returns to 871.14 s. The 973-test suite
 passes, but a complete registered acceptance rerun and latest-source multi-host
 timing proof are still required; this single known-case repair is not a release.
+
+Independent review then found a shared V6/V7 off-centre idle-clearance defect on
+bidirectional maps: a safe staged path was computed but not installed. The approved
+`063d20d` repair preserves those waypoints while retaining normal block/intersection
+admission. Its captured reproduction clears in 12.84 simulated seconds instead of
+remaining stationary for 60 seconds, with zero contacts. The complete suite now
+passes 1,006 tests. See the [new source-pinned execution notes](../artifacts/benchmarks/bios7-release-063d20d-execution-notes.md)
+for scope and outstanding release gates; interrupted 98f3433 results remain visible.
 
 ### Important centralized-reference limitation
 

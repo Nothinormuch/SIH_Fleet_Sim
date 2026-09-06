@@ -53,6 +53,13 @@ Windows package matches the current controller fingerprint
 `9509986f53f1ca8dc927f320f1b6c99da5cd169e2b21b4bd6f48a7a960b023bc`;
 preparation is not a measured LAN run. Private session keys remain outside Git.
 
+Actual browser verification selected the existing Grand Challenge profile with
+BIOS 7, Auction V2, ten AMRs, five workers, seed 1 and the original 800-second
+window. The loaded 4,188-frame recording reported 20/20 tasks in 418.7 simulated
+seconds, zero robot/robot, robot/human and robot/rack contacts, and no browser
+errors. Changing the draft selector did not relabel the preceding V6 recording.
+This is dashboard/simulator workflow evidence, not live independent-host timing.
+
 BIOS 6 remains the default. No merge or push has occurred. Laptop software-in-the-loop
 tests are not Raspberry Pi measurements, physical safety certification or universal
 AMR compatibility evidence.
