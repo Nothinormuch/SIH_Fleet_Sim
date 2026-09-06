@@ -1454,7 +1454,9 @@ class AMRBrain:
             self._track_block(t, False, None)
             return
 
-        if self.state == ST_RETREAT:
+        if (self.state == ST_RETREAT
+                and not (self._retreat_for == "idle-clearance"
+                         and not self.circulation.enabled)):
             if self._retreat_for in ("dynamic-cut", "idle-clearance"):
                 # A route-cut escape is not giving way to a named blocker. Keep
                 # the normal two-phase destination lease even for its exceptional
@@ -1471,6 +1473,10 @@ class AMRBrain:
             # still protects the reverse, which is the guarantee that actually matters.
             self._track_block(t, False, None)
             return
+
+        # Bidirectional idle clearance retains the ordinary block admission and
+        # intersection arbitration below. Its validated metric waypoints do not
+        # grant permission to bypass a peer's corridor token or priority decision.
 
         if self.policy == POLICY_BIOS4:
             self._bios4_traffic(t, sensors, outbox)
@@ -3771,16 +3777,19 @@ class AMRBrain:
                 tuple(-coordinate for coordinate in cell),
             ))
             recovery = recovery_routes[local_target]
-            if (self.circulation.enabled and (
-                    not self.circulation.allows(self.env, here, local_target)
+            if ((self.circulation.enabled
+                    and not self.circulation.allows(self.env, here, local_target))
                     or len(recovery) > 1
                     or not self._recovery_route_clear(sensors, (
-                        cell_center(here, self.cfg.cell_m), recovery[-1])))):
+                        cell_center(here, self.cfg.cell_m), recovery[-1]))):
                 # An adjacent physical bay need not be an outgoing circulation
                 # edge. A* can turn this alleged one-cell vacate into a full-map
                 # loop, which optional-parking cancellation then resets each tick.
-                # Use only this observed local step, with the same mapped swept
-                # footprint guard and two-phase destination lease as cut recovery.
+                # On bidirectional maps, off-centre recovery also needs its metric
+                # waypoints: an ordinary replan can reinstate the obstructed
+                # recentering motion that this staged route was meant to avoid.
+                # Use only this observed local step, with the mapped swept-footprint
+                # guard and normal map-specific block/cell admission rules.
                 # Task goals and occupied cells remain excluded by `taken` above.
                 self.goal = local_target
                 self.retreat_target = local_target
@@ -3796,7 +3805,7 @@ class AMRBrain:
                 self._track_block(t, True, "gate")
                 self.stats["retreats"] += 1
                 self._record_decision(
-                    t, "IDLE_CLEARANCE", "One validated leased step into a local bay",
+                    t, "IDLE_CLEARANCE", "One validated step into a local bay",
                     from_cell=list(here), to_cell=list(local_target),
                     requesting_robots=sorted(p.rid for p in explicit_blockers))
                 return

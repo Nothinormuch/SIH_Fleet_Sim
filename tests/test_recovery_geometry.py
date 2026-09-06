@@ -402,6 +402,125 @@ def _fixture(turns=0, policy=POLICY_BIOS_PIBT_V7, seed=0, racks=True):
     return brain, world, target
 
 
+def _bidirectional_idle_fixture(policy=POLICY_BIOS_PIBT_V7, turns=0, seed=0,
+                               junction=True):
+    """Captured off-centre chassis, optionally clearing into a controlled block."""
+    from src.amr import Peer, ST_IDLE
+    old, world, target = _fixture(turns=turns, policy=policy, seed=seed)
+    grid = [list(row) for row in old.env.grid]
+    x, y = _rotate_cell((2, 4), turns)
+    if junction:
+        grid[y][x] = FREE
+    env = Warehouse(7, 7, tuple(map(tuple, grid)), ((0, 0),), ((6, 6),))
+    world.env = env
+    brain = AMRBrain(old.rid, env, DEFAULT, policy=policy)
+    brain.state = ST_IDLE
+    here = world.sense(brain.rid, pose_noise_m=0).cell
+    for rid, body in world.robots.items():
+        if rid != brain.rid:
+            brain.peers[rid] = Peer(
+                rid, cell=to_cell((body.x, body.y), DEFAULT.cell_m),
+                pose=(body.x, body.y, body.theta), last_seen=0,
+                blocked_on=brain.rid, task_id="WAIT-" + rid,
+                goal=here, intent=[here, target])
+    assert not brain.circulation.enabled
+    assert brain._controlled_block(here) is None
+    assert (brain._controlled_block(target) is None) == junction
+    return brain, world, target
+
+
+@pytest.mark.parametrize("policy", (POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7))
+@pytest.mark.parametrize("turns", range(4))
+@pytest.mark.parametrize("noise,seed", ((0.0, 0), (0.02, 0), (0.02, 17)))
+def test_bidirectional_idle_clearance_preserves_staging_and_really_finishes(
+        policy, turns, noise, seed):
+    brain, world, target = _bidirectional_idle_fixture(policy, turns, seed)
+    sensors = world.sense(brain.rid, pose_noise_m=0)
+    route = brain._recovery_route(sensors, target)
+    assert route is not None and len(route) == 2
+    brain._vacate_if_in_the_way(0.0, sensors)
+    assert brain.goal == brain._cell_repair_target == target
+    assert brain._recovery_waypoints == route
+    assert brain.state == ST_RETREAT and brain._retreat_for == "idle-clearance"
+    assert brain._hold and brain.blocked_on == "gate"
+    assert not brain._claims  # Planning is not permission to move.
+    staged_arrival = False
+    for _ in range(1600):
+        for peer in brain.peers.values():
+            peer.last_seen = world.t
+        sensors = world.sense(brain.rid, pose_noise_m=noise)
+        act, _ = brain.step(world.t, sensors, [])
+        world.step(0.02, {brain.rid: act})
+        assert not world.contacts
+        body = world.robots[brain.rid]
+        staged_arrival |= (
+            brain._cell_repair_target is None
+            and dist((body.x, body.y), cell_center(target, DEFAULT.cell_m)) < 0.16)
+        if brain.state != ST_RETREAT and brain.goal is None:
+            # Peers still advertise the target in their future path, so the idle
+            # AMR may subsequently clear another cell through ordinary arbitration.
+            # It must first finish the actual metric recovery, not just change state.
+            assert staged_arrival
+            assert dist((body.x, body.y), cell_center(_rotate_cell((3, 3), turns),
+                                                    DEFAULT.cell_m)) > DEFAULT.cell_m
+            break
+    else:
+        pytest.fail(f"idle clearance stranded: {sensors.pose}, {brain.path}, {brain.state}")
+
+
+@pytest.mark.parametrize("policy", (POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7))
+def test_bidirectional_idle_clearance_still_requires_its_block_lease(policy):
+    brain, world, target = _bidirectional_idle_fixture(policy, junction=False)
+    sensors = world.sense(brain.rid, pose_noise_m=0)
+    brain._vacate_if_in_the_way(0.0, sensors)
+    brain._traffic_loop(0.0, sensors, [])
+    assert brain._hold and brain._follow(0.0, sensors).v == 0.0
+    outbox = []
+    brain._bios_claim(0.0, sensors, target, outbox)
+    assert outbox
+    zone = brain._controlled_block(target)
+    brain._claims[zone] = ("OTHER", 20.0, 0, 0, None)
+    brain._traffic_loop(1.0, sensors, [])
+    assert brain._hold and brain.blocked_on == "OTHER"
+    assert brain._follow(1.0, sensors).v == 0.0
+    assert brain._cell_repair_target == target
+    assert brain._claims[zone][0] == "OTHER"
+
+
+@pytest.mark.parametrize("policy", (POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7))
+def test_bidirectional_idle_clearance_rechecks_an_obstacle_after_planning(policy):
+    brain, world, target = _bidirectional_idle_fixture(policy)
+    sensors = world.sense(brain.rid, pose_noise_m=0)
+    brain._vacate_if_in_the_way(0.0, sensors)
+    brain._traffic_loop(0.0, sensors, [])
+    brain._bios_claim(0.0, sensors, target, [])
+    brain._traffic_loop(1.0, sensors, [])
+    assert not brain._hold
+    point = brain._recovery_waypoints[0]
+    blocked = replace(sensors, detections=[*sensors.detections,
+                      Detection(point[0], point[1], 0.3, 0.0, 0.0)])
+    assert not brain._recovery_route_clear(blocked, brain._recovery_waypoints)
+    assert brain._follow(1.0, blocked).v == 0.0
+
+
+@pytest.mark.parametrize("policy", (POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7))
+def test_clear_centred_idle_vacate_keeps_the_normal_path_follower(policy):
+    from src.amr import Peer, ST_IDLE
+    env = Warehouse(5, 5, tuple((FREE,) * 5 for _ in range(5)), (), ())
+    world = World(env, DEFAULT, seed=0)
+    world.add_robot("IDLE", (2, 2))
+    brain = AMRBrain("IDLE", env, DEFAULT, policy=policy)
+    brain.peers["WAIT"] = Peer(
+        "WAIT", cell=(2, 1), pose=(*cell_center((2, 1), DEFAULT.cell_m), 0),
+        last_seen=0, blocked_on=brain.rid, goal=(2, 2), task_id="WAIT-TASK",
+        intent=[(2, 2), (2, 3)])
+    brain._vacate_if_in_the_way(0, world.sense(brain.rid, pose_noise_m=0))
+    assert brain.state == ST_IDLE
+    assert len(brain.path) == 2 and brain.path[-1] == brain.goal
+    assert brain._cell_repair_target is None
+    assert not brain._recovery_waypoints
+
+
 def test_exact_rectangle_distance_detects_corner_and_segment_crossing():
     rect = (40.6, 16.8, 42.0, 18.2)
     assert segment_rectangle_distance((40.549068918095095, 16.127285187135282),
