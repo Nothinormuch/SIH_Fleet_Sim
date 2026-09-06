@@ -16,6 +16,7 @@ if (readOnlyMultihost) {
 const colors = ['#35c6f4', '#46d39a', '#f5b843'];
 let latest = null;
 let busy = false;
+let actionError = null;
 let connected = true;
 let packetCounts = {};
 let liveTwin = null;
@@ -105,9 +106,9 @@ async function api(path, payload) {
 }
 async function action(path, payload={}) {
   if (busy || readOnlyMultihost) return;
-  busy = true; $('error').hidden = true; render();
+  busy = true; actionError = null; $('error').hidden = true; render();
   try { latest = await api(path, payload); connected = true; }
-  catch (error) { $('error').textContent = error.message; $('error').hidden = false; }
+  catch (error) { actionError = error.message; }
   finally { busy = false; render(); }
 }
 function runOptions(mode) {
@@ -138,7 +139,9 @@ function render() {
   if (readOnlyMultihost) { names.idle='Waiting for terminal-owned multi-host run'; names.starting='Waiting for both host agents and controller readiness…'; names.running='● Live · multi-host observer · read-only'; }
   $('status').textContent = !connected ? 'Disconnected from dashboard server' :
     state === 'running' && !live ? 'Telemetry delayed · last received positions' : names[state];
-  if (latest?.error) { $('error').textContent = latest.error; $('error').hidden = false; }
+  const shownError = latest?.error || actionError;
+  $('error').textContent = shownError || '';
+  $('error').hidden = !shownError;
   const snapshot = latest?.snapshot;
   const result = latest?.result;
   const nodes = snapshot?.nodes || [];
