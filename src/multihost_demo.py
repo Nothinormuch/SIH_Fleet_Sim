@@ -93,6 +93,18 @@ def _completion_owner(packet, task) -> str | None:
 
 def _timing_pass(report: dict) -> bool:
     """Missing measurements and non-finite values cannot become zero by default."""
+    if report.get("journal_worker") is not None:
+        writer = report["journal_worker"]
+        if (not isinstance(writer, dict) or writer.get("drained") is not True
+                or type(writer.get("failures")) is not int or writer["failures"] != 0
+                or type(writer.get("submitted")) is not int
+                or type(writer.get("completed")) is not int
+                or writer["submitted"] < 0
+                or writer["submitted"] != writer["completed"]
+                or type(writer.get("max_write_ms")) not in (int, float)
+                or not math.isfinite(writer["max_write_ms"])
+                or not 0 <= writer["max_write_ms"] <= 1000):
+            return False
     for name in ("runtime", "full_cycle"):
         row = report.get(name)
         if not isinstance(row, dict) or type(row.get("ticks")) is not int or row["ticks"] <= 0:

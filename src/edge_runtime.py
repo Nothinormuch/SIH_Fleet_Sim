@@ -34,6 +34,7 @@ from .settings import DEFAULT, Config
 from .site_config import SiteConfigError, load_site_config
 from .task_allocation import ALLOCATION_PREASSIGNED
 from .terminal_journal import TerminalJournal, TerminalJournalError
+from .journal_worker import JournalWorker
 from .transport import DEFAULT_GROUP, DEFAULT_PORT, UdpMulticastTransport
 from .world import Actuation, Detection, Sensors
 
@@ -132,6 +133,10 @@ class EdgeRuntime:
         self.terminal_journal = terminal_journal
         self._persisted_terminal_records = brain.export_terminal_records()
         self._pending_terminal_records: list[dict] | None = None
+        self._journal_worker = JournalWorker(terminal_journal) if terminal_journal else None
+        self._journal_submitted = False
+        self._held_outbox = []
+        self.journal_hold_ticks = 0
         self.metrics = EdgeMetrics()
         self.cycle_metrics = EdgeMetrics()
         self.phase_max_ms: dict[str, float] = {}
@@ -153,6 +158,20 @@ class EdgeRuntime:
     def tick(self, local_t: float, sensors: Sensors) -> Actuation:
         started = time.perf_counter()
         cpu_started = time.thread_time()
+        if self._journal_worker and self._pending_terminal_records is not None:
+            if not self._journal_submitted or not self._journal_worker.poll():
+                self.journal_hold_ticks += 1
+                self.metrics.record_loop(time.perf_counter() - started,
+                                         1.0 / self.cfg.rates.safety_hz)
+                return Actuation(v=0.0, omega=0.0, safety_stop=True)
+            # No brain steps/sends occurred while pending: preserve sender sequence
+            # order. Recalculate motion below; never replay an old actuation.
+            self._persisted_terminal_records = self._pending_terminal_records
+            self._pending_terminal_records = None
+            self._journal_submitted = False
+            for message in self._held_outbox:
+                self.transport.send(message)
+            self._held_outbox = []
         local_sensors = replace(sensors, t=local_t)
         inbox = self.transport.poll()
         polled = time.perf_counter()
@@ -161,11 +180,17 @@ class EdgeRuntime:
             self.peer_backlog_stops += 1
             actuation = Actuation(v=0.0, omega=0.0, safety_stop=True)
         planned = time.perf_counter()
-        for message in outbox:
-            self.transport.send(message)
         records = self.brain.export_terminal_records()
-        if records != self._persisted_terminal_records:
+        if self._journal_worker and records != self._persisted_terminal_records:
+            if len(outbox) > 4096:
+                raise TerminalJournalError("pending durable outbox exceeds bound")
             self._pending_terminal_records = records
+            self._held_outbox = list(outbox)
+            self.journal_hold_ticks += 1
+            actuation = Actuation(v=0.0, omega=0.0, safety_stop=True)
+        else:
+            for message in outbox:
+                self.transport.send(message)
         self.metrics.record_loop(
             time.perf_counter() - started,
             1.0 / self.cfg.rates.safety_hz,
@@ -180,13 +205,12 @@ class EdgeRuntime:
         return actuation
 
     def flush_terminal_records(self) -> None:
-        """Persist terminal state after the current actuation has already been sent."""
-        if self.terminal_journal is None or self._pending_terminal_records is None:
+        """Submit one snapshot after transmitting the protective stop."""
+        if self._journal_worker is None or self._pending_terminal_records is None:
             return
-        records = self._pending_terminal_records
-        self.terminal_journal.sync(records)
-        self._persisted_terminal_records = records
-        self._pending_terminal_records = None
+        if not self._journal_submitted:
+            self._journal_worker.submit(self._pending_terminal_records)
+            self._journal_submitted = True
 
     def report(self) -> dict:
         return {
@@ -199,6 +223,8 @@ class EdgeRuntime:
             "stale_command_stops": self.stale_command_stops,
             "late_command_stops": self.late_command_stops,
             "peer_backlog_stops": self.peer_backlog_stops,
+            "journal_hold_ticks": self.journal_hold_ticks,
+            "journal_worker": dict(self._journal_worker.stats) if self._journal_worker else None,
             "max_scheduling_lateness_ms": self.max_scheduling_lateness_s * 1000.0,
             "timing_events": [dict(event) for event in self.timing_events],
             "transport": dict(self.transport.stats),
@@ -217,7 +243,11 @@ class EdgeRuntime:
         try:
             self.flush_terminal_records()
         finally:
-            self.transport.close()
+            try:
+                if self._journal_worker:
+                    self._journal_worker.close()
+            finally:
+                self.transport.close()
 
 
 class UdpJsonHardwareIO:
@@ -571,9 +601,9 @@ def _run_edge_node_loop(brain: AMRBrain, transport: PeerTransport, hardware: Har
             write_duration = time.perf_counter() - write_started
             runtime.phase_max_ms["actuator_write"] = max(
                 runtime.phase_max_ms.get("actuator_write", 0.0), write_duration * 1000.0)
-            # Atomic disk persistence is deliberately after the actuation write: a
-            # slow filesystem may delay the next coordination tick, but never the
-            # protective command already selected for this sensor frame.
+            # Submit after the protective stop. The single-slot durable worker
+            # runs fsync separately; brain execution/publication stays fenced until
+            # acknowledgement. Disk time is reported separately, never discarded.
             journal_started = time.perf_counter()
             runtime.flush_terminal_records()
             journal_duration = time.perf_counter() - journal_started
