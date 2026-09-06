@@ -2,6 +2,9 @@
 
 Start the existing dashboard server and open **http://127.0.0.1:8000/edge-lab.html**.
 The warehouse dashboard also links to it under **Deployment → Virtual edge lab**.
+The lab reuses the dashboard's 3D renderer and warehouse/robot assets, driven by live
+snapshots from the UDP sensor/actuator loop. **3D warehouse** is the default;
+**2D map** is available as a diagnostic view and automatic WebGL fallback.
 
 ```bash
 source .venv/bin/activate
@@ -13,6 +16,9 @@ python backend/server.py
 1. Click **Start live demo**. Each board card displays the actual PID of a separate
    `edge_node.py` child process. The map moves from live physics snapshots; it is not
    prerecorded playback. Sensor and actuator frame counters come from the UDP bridge.
+   Drag to orbit and scroll to zoom. Choose **Top down** for clear aisle visibility,
+   or select a robot and choose **Follow robot**. Clicking a 3D robot or its controller
+   heading selects the same robot in both panels. **Expand view** enlarges the floor.
 2. Point to the authenticated packet trace. A passive subscription observes the
    multicast messages. The WMS announces tasks; it does not select winners.
 3. After the 20-second run, show completed tasks, measured contacts and per-process
@@ -20,6 +26,13 @@ python backend/server.py
 4. Click **Run sensor-loss demo**. AMR01 loses sensor input at 3 seconds for 2 seconds.
    Its controller emits a zero-speed safety stop, then recovers when frames resume.
    The end report shows the measured response and whether the test passed.
+   The stopped robot's warning halo and wheels follow the same live data. Task and
+   cargo fields come from optional read-only telemetry emitted by its edge process;
+   the renderer does not infer pickup from proximity to a box.
+   **Actual speed** comes from the physics model; the command line is the controller's
+   requested velocity. A zero-speed command initiates braking within the configured
+   acceleration envelope. The reported sensor-loss response measures time to the stop
+   command, not the time until the robot body has completely stopped.
 5. Alternatively, click a controller's **Disconnect sensor · 2s** button during a
    normal run. This suppresses actual sensor datagrams. Manual fault requests are
    included in the evidence download; precise stop-response timing is reported only
@@ -41,6 +54,29 @@ Live completion counts are observed announcements; the end result uses the node
 reports. Packet counts measure what the observer received, not guaranteed delivery
 to every peer. Computation timing appears after node shutdown. Stopping early marks
 the result cancelled and never yields a passing full-completion verdict.
+
+3D movement is interpolated only between received positions, never extrapolated beyond
+the latest snapshot. Safety-stop positions take precedence. A `run_id` resets the
+scene between runs, while page reloads reattach to the existing processes. Completed
+task IDs drive the delivered cargo markers. The existing dashboard playback is unchanged.
+
+For developers, the edge node's `--visual-telemetry` flag adds task state, cargo and a
+bounded eight-cell route to actuator packets. It defaults off outside the live lab.
+The original `v`, `omega`, `safety_stop` and timestamp command contract is preserved.
+Run `node --test tests/test_live_twin.mjs` for the live-frame adapter/interpolation
+tests, and `python -m pytest -q` for Python regressions.
+
+## Integration verification (2026-09-06)
+
+The 3D sensor-loss browser run completed 3/3 tasks, with zero contacts, zero measured
+control-loop overruns, and a 203.9 ms response to the stop command. Camera switching,
+selection, 2D fallback, cargo completion and evidence download were exercised.
+Manual sensor interruption also verified braking to rest, stationary rendered wheels
+and recovery. One manual run finished 3/3 tasks with zero contacts but recorded four
+20 ms computation-budget overruns (maximum 38.73 ms across the nodes), so its result
+correctly failed the timing gate. The UI exposes maximum loop time and the overrun
+count alongside p99. A desktop OS with simultaneous graphics work is not a hard
+real-time platform; no timing gate has been relaxed for presentation.
 
 One run is allowed at a time. Closing/reloading the browser does not stop robot
 processes: they finish their bounded 20-second run. **Stop run** requests graceful

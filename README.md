@@ -61,10 +61,12 @@ See [`docs/18-REAL-AMR-INTEGRATION.md`](docs/18-REAL-AMR-INTEGRATION.md).
 
 For a visual demonstration, start `python backend/server.py` and open
 **http://127.0.0.1:8000/edge-lab.html**. The virtual edge lab displays actual process
-IDs, live UDP sensor/command traffic, moving simulated robots, and a clickable
+IDs, live UDP sensor/command traffic, the existing 3D warehouse and robot assets, and a clickable
 sensor-disconnection experiment. See the
 [one-minute walkthrough](docs/19-VIRTUAL-EDGE-LAB.md). Board illustrations represent
 onboard computers; this screen does not emulate Raspberry Pi CPU/GPIO hardware.
+Orbit, top-down and follow cameras share selection with the controller cards; a 2D
+fallback is available. The scene follows received live positions and task/cargo status.
 
 ## Decentralized priority algorithm
 

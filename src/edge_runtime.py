@@ -22,6 +22,7 @@ import socket
 import statistics
 import time
 from dataclasses import dataclass, field, replace
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
@@ -186,7 +187,8 @@ class UdpJsonHardwareIO:
 
     def __init__(self, sensor_host: str, sensor_port: int,
                  actuator_host: str, actuator_port: int,
-                 max_packet_bytes: int = 65_535) -> None:
+                 max_packet_bytes: int = 65_535,
+                 visual_status: Callable[[], dict] | None = None) -> None:
         self.max_packet_bytes = max_packet_bytes
         self.sensor = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sensor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -198,6 +200,7 @@ class UdpJsonHardwareIO:
                       "actuator_frames": 0, "actuator_send_failed": 0}
         self._latest: Sensors | None = None
         self._received_at: float | None = None
+        self.visual_status = visual_status
 
     def read_sensors(self) -> tuple[Sensors | None, float | None]:
         while True:
@@ -222,12 +225,15 @@ class UdpJsonHardwareIO:
         return self._latest, self._received_at
 
     def write_actuation(self, actuation: Actuation, t: float) -> None:
-        payload = json.dumps({
+        frame = {
             "v": actuation.v,
             "omega": actuation.omega,
             "safety_stop": actuation.safety_stop,
             "t": t,
-        }, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        }
+        if self.visual_status is not None:
+            frame["visual_status"] = self.visual_status()
+        payload = json.dumps(frame, separators=(",", ":"), allow_nan=False).encode("utf-8")
         try:
             self.actuator.sendto(payload, self.actuator_target)
             self.stats["actuator_frames"] += 1
@@ -244,6 +250,22 @@ def _finite(value, minimum: float, maximum: float) -> float:
     if not math.isfinite(number) or not minimum <= number <= maximum:
         raise ValueError("numeric sensor value outside allowed range")
     return number
+
+
+def brain_visual_status(brain: AMRBrain) -> dict:
+    """Read-only, bounded telemetry for live rendering; never an input to control."""
+    task = brain.task
+    return {
+        "id": brain.rid, "state": brain.state,
+        "task": task.tid if task else None,
+        "carry": task.tid if task and brain.goal == task.drop else None,
+        "pick": list(task.pick) if task else None,
+        "drop": list(task.drop) if task else None,
+        "goal": list(brain.goal) if brain.goal else None,
+        "cargo_type": task.cargo_type if task else None,
+        "done": len(brain.completed),
+        "path": [list(cell) for cell in brain.path[brain.pidx:brain.pidx + 8]],
+    }
 
 
 def sensors_from_dict(data: object) -> Sensors:
@@ -463,6 +485,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--psk-env", default="SIH_FLEET_PSK")
     parser.add_argument("--allow-unauthenticated", action="store_true")
     parser.add_argument("--report", help="write the final JSON report to this path")
+    parser.add_argument("--visual-telemetry", action="store_true",
+                        help="include bounded read-only task status in actuator frames")
     parser.add_argument(
         "--terminal-journal",
         help=("completion journal path; default: platform user-state directory "
@@ -550,6 +574,7 @@ def main(argv: list[str] | None = None) -> int:
     hardware = UdpJsonHardwareIO(
         args.sensor_host, args.sensor_port,
         args.actuator_host, args.actuator_port,
+        visual_status=(lambda: brain_visual_status(brain)) if args.visual_telemetry else None,
     )
     report = run_edge_node(
         brain, transport, hardware, cfg=cfg, duration_s=args.duration,

@@ -28,6 +28,9 @@ def test_live_snapshots_sensor_fault_recovery_and_process_cleanup():
         nodes = state["snapshot"]["nodes"]
         assert len({n["pid"] for n in nodes}) == 3
         assert all(n["sensor_frames"] > 0 and n["actuator_frames"] > 0 for n in nodes)
+        assert all(n["visual_status"]["id"] == n["id"] for n in nodes)
+        assert all(len(n["visual_status"]["path"]) <= 8 for n in nodes)
+        assert state["run_id"]
         before_frames = nodes[1]["sensor_frames"]
         lab.cut_sensor("AMR01")
         cut = _wait(lab, lambda s: s["snapshot"]["nodes"][0]["sensor_cut"] and

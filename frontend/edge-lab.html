@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BIOS · Virtual edge lab</title>
   <link rel="stylesheet" href="/css/edge-lab.css">
+  <link rel="stylesheet" href="/css/edge-lab-3d.css">
   <script src="/js/edge-lab.js" defer></script>
 </head>
 <body>
@@ -27,8 +28,15 @@
     </section>
     <div class="workspace">
       <section class="floor panel"><div class="panel-title"><div><p class="eyebrow">LIVE DIGITAL WAREHOUSE</p><h2>Commands become movement</h2></div><span id="clock" class="mono">0.0 / 20.0 s</span></div>
-        <div class="map-wrap"><canvas id="map" aria-label="Live positions of three simulated AMRs in three separate lanes"></canvas><div id="map-empty">Start a run to connect the controllers.<br><small>Positions will come from the live physics loop.</small></div></div>
-        <div class="legend"><span><i class="pick"></i>Pickup</span><span><i class="drop"></i>Drop</span><span><i class="dock"></i>Charge dock</span><span>↑ Forward heading</span></div>
+        <div class="view-controls" aria-label="Warehouse view controls">
+          <div class="view-switch" role="group" aria-label="Renderer"><button id="view3d" aria-pressed="true">3D warehouse</button><button id="view2d" aria-pressed="false">2D map</button></div>
+          <label>Camera <select id="camera-mode" aria-label="Camera"><option value="overview">Orbit</option><option value="tactical">Top down</option><option value="chase">Follow robot</option></select></label>
+          <label>Robot <select id="selected-robot" aria-label="Robot"><option>AMR01</option><option>AMR02</option><option>AMR03</option></select></label>
+          <button id="fit-camera">Fit floor</button><button id="expand-view">Expand view</button>
+        </div>
+        <p id="view-notice" class="view-notice" role="status">3D assets from the warehouse dashboard · live UDP positions</p>
+        <div class="map-wrap"><canvas id="twin-live" aria-label="Live three-dimensional warehouse; drag to orbit, scroll to zoom, click a robot to select"></canvas><canvas id="map" hidden aria-label="Live positions of three simulated AMRs in three separate lanes"></canvas><div id="map-empty">Start a run to connect the controllers.<br><small>Positions will come from the live physics loop.</small></div></div>
+        <div class="legend"><span><i class="pick"></i>Pickup</span><span><i class="drop"></i>Drop</span><span><i class="dock"></i>Charge dock</span><span>Click a robot to inspect its controller</span></div>
         <p class="floor-note">Three isolated test lanes make the deployment interfaces easy to inspect. Use the warehouse dashboard for congestion benchmarks.</p>
         <div class="network"><div><b>WMS</b><small>Announces tasks only</small></div><span>↓</span><div class="bus"><b>Authenticated peer multicast</b><small id="bus-label">Bids · awards · intent · task completion</small></div></div>
         <div class="progress"><i id="progress"></i></div>

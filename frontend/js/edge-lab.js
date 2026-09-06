@@ -1,10 +1,14 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-const colors = ['#69e7bc', '#82b9ff', '#d5adff'];
+const colors = ['#35c6f4', '#46d39a', '#f5b843'];
 let latest = null;
 let busy = false;
 let connected = true;
 let packetCounts = {};
+let liveTwin = null;
+let viewMode = '3d';
+let selectedRobot = 'AMR01';
+let twinFailed = false;
 const labels = {BD:'Task bid', AW:'Auction award', TD:'Task completion', TN:'Task announced',
   HB:'Heartbeat', IN:'Movement intent', CL:'Spatial claim'};
 
@@ -14,8 +18,60 @@ for (let i = 0; i < 3; i++) {
   card.className = 'node'; card.id = rid; card.style.setProperty('--color', colors[i]);
   card.innerHTML = `<div class="board" aria-hidden="true"><div class="pins"></div><div class="chip">BIOS<small>EDGE NODE</small></div><div class="ports"></div><i class="led"></i><span class="board-label">VIRTUAL BOARD</span></div><div><div class="node-top"><h3>${rid}</h3><span class="badge">Offline</span></div><div class="node-data"><span class="datum">Process<b data-key="pid">—</b></span><span class="datum">Battery<b data-key="battery">—</b></span><span class="datum">Sensor frames<b data-key="sensor">—</b></span><span class="datum">Commands<b data-key="actuator">—</b></span><span class="datum">Peer packets<b data-key="peer">—</b></span><span class="datum">Sensor link<b data-key="link">—</b></span></div><div class="node-actions"><span class="command">Waiting for launch</span><button disabled>Disconnect sensor · 2s</button></div></div>`;
   card.querySelector('button').addEventListener('click', () => action('cut-sensor', {robot:rid}));
+  const selectButton = document.createElement('button');
+  selectButton.className = 'node-select'; selectButton.textContent = rid;
+  selectButton.setAttribute('aria-label', `Select ${rid} in warehouse`);
+  selectButton.addEventListener('click', () => selectRobot(rid));
+  card.querySelector('h3').replaceChildren(selectButton);
+  const taskLine = document.createElement('div'); taskLine.className = 'node-task';
+  taskLine.innerHTML = 'Task <b data-key="task">—</b> · Cargo <b data-key="cargo">—</b>';
+  card.querySelector('.node-data').after(taskLine);
+  const motionLine = document.createElement('span'); motionLine.className = 'datum';
+  motionLine.innerHTML = 'Actual speed<b data-key="speed">—</b>';
+  card.querySelector('.node-data').append(motionLine);
   $('controllers').append(card);
 }
+
+function selectRobot(rid) {
+  selectedRobot = rid; $('selected-robot').value = rid; liveTwin?.select(rid);
+  for (let i = 1; i <= 3; i++) {
+    const card = $(`AMR0${i}`), selected = card.id === rid;
+    card.classList.toggle('selected', selected);
+    card.querySelector('.node-select').setAttribute('aria-pressed', String(selected));
+  }
+}
+function setView(mode) {
+  viewMode = twinFailed ? '2d' : mode;
+  $('map').hidden = viewMode !== '2d'; $('twin-live').hidden = viewMode !== '3d';
+  $('view3d').setAttribute('aria-pressed', String(viewMode === '3d'));
+  $('view2d').setAttribute('aria-pressed', String(viewMode === '2d'));
+  $('camera-mode').disabled = viewMode !== '3d'; $('fit-camera').disabled = viewMode !== '3d';
+  liveTwin?.setVisible(viewMode === '3d');
+  if (viewMode === '2d') drawMap(latest?.snapshot);
+}
+function fallbackTo2D(message) {
+  twinFailed = true; $('view3d').disabled = true;
+  $('view-notice').textContent = message; setView('2d');
+}
+$('view3d').addEventListener('click', () => setView('3d'));
+$('view2d').addEventListener('click', () => setView('2d'));
+$('camera-mode').addEventListener('change', event => liveTwin?.setCamera(event.target.value));
+$('selected-robot').addEventListener('change', event => selectRobot(event.target.value));
+$('fit-camera').addEventListener('click', () => {
+  liveTwin?.fit(); if (liveTwin) $('camera-mode').value = liveTwin.camera;
+});
+$('expand-view').addEventListener('click', () => {
+  const expanded = document.querySelector('.workspace').classList.toggle('expanded');
+  $('expand-view').textContent = expanded ? 'Compact view' : 'Expand view';
+  $('expand-view').setAttribute('aria-pressed', String(expanded));
+  if (viewMode === '2d') requestAnimationFrame(() => drawMap(latest?.snapshot));
+});
+import('./edge-lab-twin.js').then(({LiveEdgeTwin}) => {
+  liveTwin = new LiveEdgeTwin($('twin-live'), selectRobot, fallbackTo2D);
+  liveTwin.select(selectedRobot); liveTwin.setCamera($('camera-mode').value);
+  liveTwin.receive(latest); setView(viewMode);
+}).catch(error => fallbackTo2D(`3D graphics unavailable (${error.message}). Showing live 2D telemetry.`));
+selectRobot(selectedRobot);
 
 async function api(path, payload) {
   const response = await fetch(`/api/edge-lab/${path}`, payload === undefined ? {cache:'no-store', signal:AbortSignal.timeout(2000)} : {
@@ -66,6 +122,12 @@ function render() {
   $('clock').textContent = `${time.toFixed(1)} / 20.0 s`;
   $('progress').style.width = `${Math.min(100,time/20*100)}%`;
   $('map-empty').hidden = !!snapshot;
+  $('twin-live').style.opacity = snapshot ? '1' : '0';
+  liveTwin?.setVisible(viewMode === '3d' && !!snapshot);
+  if (liveTwin && snapshot) {
+    try { liveTwin.receive(latest); }
+    catch (error) { fallbackTo2D(`3D display unavailable (${error.message}). Showing live 2D telemetry.`); }
+  }
   for (let i=0;i<3;i++) {
     const rid=`AMR0${i+1}`, card=$(rid), node=nodes.find(n=>n.id===rid);
     const body=snapshot?.world.robots.find(n=>n.id===rid);
@@ -73,13 +135,16 @@ function render() {
     value('pid',node?.pid || '—'); value('battery',body?`${(body.batt*100).toFixed(0)}%`:'—');
     value('sensor',node?.sensor_frames ?? '—'); value('actuator',node?.actuator_frames ?? '—');
     value('peer',node?.peer_packets_observed ?? '—');
+    value('speed', body ? `${Math.abs(body.v).toFixed(2)} m/s` : '—');
+    value('task', node?.visual_status?.task || 'None');
+    value('cargo', node?.visual_status?.carry ? 'On board' : 'Empty');
     value('link',node ? active ? node.sensor_cut?'Disconnected':'Connected' : 'Closed' : '—');
     card.querySelector('.badge').textContent = node ? !live ? active?'Waiting':'Exited' : node.command.safety_stop?'Safety stop':node.sensor_cut?'Sensor lost': 'Online' : 'Offline';
     const board=card.querySelector('.board'); board.classList.toggle('active',live);
     board.classList.toggle('cut',live && !!node?.sensor_cut);
     board.classList.toggle('pulse',live && node.peer_packets_observed !== packetCounts[rid]);
     packetCounts[rid]=node?.peer_packets_observed;
-    card.querySelector('button').disabled=busy || !live || !!node?.sensor_cut;
+    card.querySelector('.node-actions button').disabled=busy || !live || !!node?.sensor_cut;
     card.querySelector('.command').textContent = node ? !active ? 'Controller exited' : node.command.safety_stop?'STOP · v = 0':`v ${node.command.v.toFixed(2)} m/s · ω ${node.command.omega.toFixed(2)}`:'Waiting for launch';
   }
   const trace=$('trace'); trace.replaceChildren();
@@ -97,15 +162,19 @@ function render() {
   if (result) {
     $('result-title').textContent=result.cancelled?'Run stopped early':result.success?'Deployment run passed':'Run needs investigation';
     const fault=result.sensor_cut_evidence;
-    $('result-detail').textContent = fault ? `AMR01 sensor stop: ${fault.response_s === null?'not observed':`${(fault.response_s*1000).toFixed(1)} ms`}. Recovery: ${fault.recovered_after_sensor_return?'confirmed':'not observed'}. ${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.control_deadlines_met?'No measured control deadline misses.':'Control deadline misses recorded.'}` : `${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.separate_edge_nodes?'Three distinct process reports verified.':'Process verification incomplete.'} ${result.peer_messages_observed?'Peer communication observed at all nodes.':'Peer verification incomplete.'}`;
+    $('result-detail').textContent = fault ? `AMR01 sensor-loss stop command: ${fault.response_s === null?'not observed':`${(fault.response_s*1000).toFixed(1)} ms`}. Recovery: ${fault.recovered_after_sensor_return?'confirmed':'not observed'}. ${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.control_deadlines_met?'No measured control deadline misses.':'Control deadline misses recorded.'}` : `${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.separate_edge_nodes?'Three distinct process reports verified.':'Process verification incomplete.'} ${result.peer_messages_observed?'Peer communication observed at all nodes.':'Peer verification incomplete.'}`;
     const times=result.nodes.map(n=>`${n.robot_id}: ${n.runtime.loop_p99_ms.toFixed(2)} ms`);
     $('timing').textContent=`Measured p99 loop time / 20 ms budget: ${times.join(' · ')}`;
+    const misses=result.nodes.reduce((total,n)=>total+n.runtime.deadline_misses,0);
+    const maximum=Math.max(0,...result.nodes.map(n=>n.runtime.loop_max_ms));
+    $('timing').textContent+=` · Maximum ${maximum.toFixed(2)} ms · Deadline misses ${misses}`;
+    if(misses) $('result-detail').textContent+=` Timing gate failed: ${misses} control loops exceeded the 20 ms budget on this host.`;
   } else {
     $('result-title').textContent='Disconnect. Stop. Recover.';
     $('result-detail').textContent=latest?.mode==='sensor_demo'?'Automatic test: AMR01 sensor input is cut at 3 s and restored at 5 s. Watch its status, zero-speed stop, and subsequent recovery.':'Run the sensor-loss demo, or disconnect any sensor manually for 2 seconds. Watch the actual actuator command change while the other controllers keep running.';
     $('timing').textContent='Loop timing appears after the run finishes.';
   }
-  drawMap(snapshot);
+  if (viewMode === '2d') drawMap(snapshot);
 }
 
 function drawMap(snapshot) {
@@ -137,7 +206,7 @@ function drawMap(snapshot) {
     c.font='600 10px sans-serif';c.textAlign='center';c.fillStyle=colors[i];c.fillText(r.id,x,y-scale*.47);
   });
 }
-window.addEventListener('resize',()=>drawMap(latest?.snapshot));
+window.addEventListener('resize',()=>{ if (viewMode === '2d') drawMap(latest?.snapshot); });
 async function poll(){
   try {latest=await api('status');connected=true;render();}
   catch {connected=false;render();}

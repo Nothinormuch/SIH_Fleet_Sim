@@ -1,0 +1,35 @@
+/* Keep camera controls out of the warehouse and give both renderers a bounded viewport. */
+.workspace { grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr); }
+.view-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:16px 0 0; }
+.view-controls label { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:10px; }
+.view-controls button,.view-controls select { font:inherit; font-size:10px; padding:7px 9px; }
+.view-controls select { color:var(--text); background:#192436; border:1px solid var(--border); border-radius:6px; }
+.view-switch { display:flex; gap:3px; }
+.view-switch button[aria-pressed="true"] { border-color:var(--mint); color:var(--mint); }
+.view-notice { font-size:10px; color:var(--muted); margin:8px 0 0; }
+.map-wrap { height:clamp(270px, 36vh, 440px); min-height:0; flex:none; }
+.map-wrap canvas { position:absolute; inset:0; height:100%; width:100%; min-height:0; }
+.map-wrap canvas[hidden] { display:none; }
+.node { transition:border-color .15s,background .15s; }
+.node.selected { background:#1a2a3d; border-color:var(--color); }
+.node h3 { margin:0; }
+.node-select { background:none; border:0; padding:0; color:inherit; font-size:15px; font-weight:600; }
+.node-select:hover:enabled { background:none; text-decoration:underline; }
+.node-task { font-size:10px; color:var(--muted); margin-top:7px; }
+.node-task b { color:var(--text); font-weight:400; }
+.workspace.expanded { grid-template-columns:minmax(0,1fr); }
+.workspace.expanded .map-wrap { height:min(65vh,680px); }
+.workspace.expanded .controllers { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.workspace.expanded .node { grid-template-columns:1fr; }
+.workspace.expanded .board { display:none; }
+@media(max-width:980px) {
+  .workspace { grid-template-columns:1fr; }
+  .map-wrap { height:340px; }
+}
+@media(max-width:580px) {
+  .map-wrap { height:300px; }
+  .workspace.expanded .controllers { grid-template-columns:1fr; }
+  .workspace.expanded .map-wrap { height:55vh; }
+  .view-controls { gap:6px; }
+  .view-controls button,.view-controls select { padding:7px; }
+}

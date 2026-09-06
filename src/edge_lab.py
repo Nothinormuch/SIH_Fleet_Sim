@@ -60,7 +60,8 @@ class EdgeLab:
             self._stop.clear()
             self._cut_until.clear()
             self._state = {"state": "starting", "mode": mode, "snapshot": None,
-                           "result": None, "error": None, "faults": []}
+                           "result": None, "error": None, "faults": [],
+                           "run_id": secrets.token_hex(8)}
             self._thread = threading.Thread(target=self._run, args=(mode,),
                                             name="bios-edge-lab", daemon=True)
             self._thread.start()

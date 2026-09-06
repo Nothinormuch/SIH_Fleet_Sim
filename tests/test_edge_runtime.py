@@ -1,16 +1,17 @@
 """Deployment-boundary tests for real clocks, real UDP, and hardware packets."""
 
+import json
 import socket
 
 import pytest
 
 from src.amr import AMRBrain, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V6
 from src.distributed_demo import run_distributed_demo
-from src.edge_runtime import (EdgeRuntime, SystemdNotifier, actuation_from_dict,
+from src.edge_runtime import (EdgeRuntime, SystemdNotifier, UdpJsonHardwareIO, actuation_from_dict,
                               build_parser, sensors_from_dict, sensors_to_dict)
 from src.environment import open_floor
 from src.settings import DEFAULT
-from src.world import World
+from src.world import Actuation, World
 
 
 class FakeTransport:
@@ -45,6 +46,29 @@ def test_edge_node_default_policy_is_bios6():
     ])
 
     assert args.policy == POLICY_BIOS_PIBT_V6
+    assert not args.visual_telemetry
+
+
+def test_optional_visual_status_preserves_udp_actuator_contract():
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver:
+        receiver.bind(("127.0.0.1", 0))
+        receiver.settimeout(1)
+        status = {"id": "AMR01", "state": "to_drop", "carry": "T1"}
+        for provider in (None, lambda: status):
+            hardware = UdpJsonHardwareIO("127.0.0.1", 0, "127.0.0.1",
+                                          receiver.getsockname()[1], visual_status=provider)
+            try:
+                hardware.write_actuation(Actuation(v=.2, omega=.1), 3.0)
+                frame = json.loads(receiver.recvfrom(4096)[0])
+                actuation, timestamp = actuation_from_dict(frame)
+                assert actuation.v == .2 and actuation.omega == .1 and timestamp == 3.0
+                assert not actuation.safety_stop
+                if provider is None:
+                    assert set(frame) == {"v", "omega", "safety_stop", "t"}
+                else:
+                    assert frame["visual_status"] == status
+            finally:
+                hardware.close()
 
 
 def test_edge_runtime_uses_local_clock_and_emits_peer_traffic():

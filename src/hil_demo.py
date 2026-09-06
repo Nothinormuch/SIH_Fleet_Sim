@@ -60,6 +60,7 @@ class _NodeProcess:
     invalid_actuator_frames: int = 0
     stale_actuator_ticks: int = 0
     actuation_events: list[tuple[float, bool]] = field(default_factory=list)
+    visual_status: dict = field(default_factory=dict)
 
 
 def _encode_sensor_packet(sensors) -> bytes:
@@ -105,6 +106,9 @@ def _receive_actuations(nodes: list[_NodeProcess]) -> None:
                 node.invalid_actuator_frames += 1
                 continue
             node.last_actuation = actuation
+            status = payload.get("visual_status")
+            if isinstance(status, dict) and status.get("id") == node.rid:
+                node.visual_status = status
             node.command_gate.accept(actuation, time.monotonic())
             node.last_actuation_t = timestamp
             node.actuator_frames += 1
@@ -277,6 +281,8 @@ def run_hil_demo(
                 "--report", str(report_path),
             ]
             child_env = os.environ.copy()
+            if on_snapshot is not None:
+                command.append("--visual-telemetry")
             child_env["SIH_FLEET_PSK"] = shared_key
             process = subprocess.Popen(
                 command, cwd=repo_root, env=child_env,
@@ -363,7 +369,8 @@ def run_hil_demo(
                         "world": world.snapshot(), "map": world.env.to_json(),
                         "cell_m": DEFAULT.cell_m,
                         "duration_s": duration_s,
-                        "tasks": [{"id": t.tid, "pick": t.pick, "drop": t.drop} for t in tasks],
+                        "tasks": [{"id": t.tid, "pick": t.pick, "drop": t.drop,
+                                   "cargo_type": t.cargo_type} for t in tasks],
                         "observed_completed": sorted(observed_completions),
                         "packets": list(recent_packets),
                         "contacts": {kind: sum(e.kind == kind for e in world.contacts)
@@ -375,6 +382,7 @@ def run_hil_demo(
                             "sensor_frames": sensor_counts[n.rid],
                             "actuator_frames": n.actuator_frames,
                             "peer_packets_observed": observed_packets[n.rid],
+                            "visual_status": dict(n.visual_status),
                             "command": {"v": commands[n.rid].v,
                                         "omega": commands[n.rid].omega,
                                         "safety_stop": commands[n.rid].safety_stop},

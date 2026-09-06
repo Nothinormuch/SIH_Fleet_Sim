@@ -897,7 +897,10 @@ export class DigitalTwin {
   }
 
   _updateTaskCargo(frame, simTime) {
-    const timeline = this._timelineAt(simTime);
+    // Live telemetry supplies explicit completions; replay keeps its original timeline.
+    const timeline = Array.isArray(frame.completed_task_ids)
+      ? {completed: new Set(frame.completed_task_ids), active: new Map()}
+      : this._timelineAt(simTime);
     const activeByTask = new Map();
     for (const info of frame.fleet || []) {
       if (info.task) activeByTask.set(info.task, info);
@@ -1211,7 +1214,18 @@ export class DigitalTwin {
         || cameraMode === 'chase' || cameraMode === 'pov';
       group.userData.beacon.material.color.setHex(stateColour);
       group.userData.beacon.scale.setScalar(.82 + .25 * (1 + Math.sin(simTime * 5)) / 2);
-      for (const wheel of group.userData.wheels) wheel.rotation.x = -simTime * 4;
+      if (this.meta.live) {
+        // Live wheels move with measured travel, including freezing during a sensor stop.
+        const previous = group.userData.lastLivePose;
+        const distance = previous && simTime >= previous.t
+          ? Math.hypot(robot.x - previous.x, robot.y - previous.y) : 0;
+        group.userData.liveWheelAngle = (group.userData.liveWheelAngle || 0)
+          - distance * (robot.v < 0 ? -1 : 1) / .16;
+        for (const wheel of group.userData.wheels) wheel.rotation.x = group.userData.liveWheelAngle;
+        group.userData.lastLivePose = {x: robot.x, y: robot.y, t: simTime};
+      } else {
+        for (const wheel of group.userData.wheels) wheel.rotation.x = -simTime * 4;
+      }
       const carrying = Boolean(robot.carry || info.carry);
       group.userData.payload.visible = carrying;
       if (carrying) {
