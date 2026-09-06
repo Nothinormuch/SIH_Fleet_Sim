@@ -68,8 +68,9 @@ task catalogs or custom fleet sizes. It declares 78 candidate cases:
 
 Subsequent frozen candidate `83e22ca` failed the registered holdout on seed 2012:
 BIOS 7 completed 16/30 tasks while both V6 controls completed 30/30. Its source-pinned
-raw report is retained. Consequently 2000–2012 are now observed cases; only
-2013–2029 remain unobserved. Fixing the verified idle-corridor continuation defect
+raw report is retained. At that point 2000–2012 had been observed and
+2013–2029 remained unobserved; the later campaign described below expanded that
+observed range. Fixing the verified idle-corridor continuation defect
 requires a new complete fixed-range campaign, not relabeling the failed campaign
 or its completed-pairs-only statistics as a release pass.
 

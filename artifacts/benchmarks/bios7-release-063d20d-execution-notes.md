@@ -57,11 +57,26 @@ runs had zero contacts and passed all three current-source V6 nonregression gate
 
 The complete registered holdout is running from this frozen source. Old-source
 completed stages do not count as a passing prerequisite for the new source.
-Capacity, causal checks and latest-source live LAN timing must still finish and
+Capacity and latest-source live LAN timing must still finish and
 be recorded under their own correct scope before release approval.
 Workers use the same deterministic tasks, seeds, physical settings and strict
 V6 completion-time/message/byte comparison. The already observed seed range is
 not replaced by easier seeds or called untouched holdout evidence.
+
+The frozen-source causal checks finished all twelve workers. In the development
+SIH ten-AMR seed-0 case, V7 completed 30/30 tasks in 833.08 seconds versus 968.12
+for both V6 controls and V7 with passage release disabled: an exact 13.9487%
+reduction. Against current-source V6, messages fell from 112,641 to 99,296 and
+serialized bytes from 21,323,922 to 18,922,397. Every configuration had zero
+contacts. This is a known development case, not the registered holdout campaign.
+
+The doorway control (three AMRs, seed 2000) completed in 51.20 seconds with V7
+versus 54.88 with both V6 controls and release disabled. V7 also sent fewer
+messages and bytes. On the open-floor control, all four configurations completed
+12/12 tasks in 69.76 seconds with identical 2,601 messages and 491,832 bytes.
+Disabling passage release therefore removes the measured congestion benefit;
+there is no measured speed benefit on this open-floor case. These controlled
+ablations isolate a policy effect, not a universal improvement guarantee.
 
 The root backend on port 8001 was idle and was restarted to load this controller.
 Port 8000 and unrelated applications were not stopped. The prepared seven-round
