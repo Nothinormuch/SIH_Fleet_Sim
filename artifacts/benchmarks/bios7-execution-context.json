@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "scope": "Execution context for deterministic headless study artifacts; no benchmark outcome is modified.",
+  "candidate_source_commit": "12d1ac2",
+  "control_source_commit": "8e4ab51727e4fcd7f372de8b55b99c38cb213512",
+  "artifacts": [
+    "bios7-fixed-control-final-development.json",
+    "bios7-human-final-development.json",
+    "bios7-heldout-1000-1002.json",
+    "bios7-passage-release-ablation.json"
+  ],
+  "shared_host_load": "These campaigns overlapped a separate capacity-screen campaign on the same Mac. serial_execution in each report means serial workers inside that individual campaign, not exclusive use of the host.",
+  "valid_comparison_scope": "Deterministic simulated makespan, completion, contacts, message counts and source-paired semantic outputs. Headless wall/phase maxima must not be presented as unloaded live-controller or Raspberry Pi timing measurements.",
+  "lan_timing_pause": {
+    "campaign": "bios7-heldout-1000-1002.json",
+    "paused_coordinator_pid": 23772,
+    "current_worker_pid": 23789,
+    "method": "SIGSTOP to the coordinator only; the current worker completed normally. No worker was suspended, so its measured simulation execution was not extended by the coordinator pause.",
+    "boundary": "After the BIOS6 seed1000 worker, before its paired BIOS7 worker.",
+    "reason": "Keep CPU-intensive headless jobs stopped during a separate actual-LAN timing trial.",
+    "resumed_without_worker_timeout": true,
+    "resume_context": "Windows source-verification preflight required a packaging fix, so the coordinator resumed before any LAN success was established."
+  },
+  "second_lan_timing_pause": {
+    "campaign": "bios7-passage-release-ablation.json",
+    "paused_coordinator_pid": 24852,
+    "current_worker_pid": 24869,
+    "boundary": "During the first BIOS6 seed0 worker; the coordinator was stopped, but that worker was allowed to finish normally.",
+    "background_load": "The immediate LAN attempt was requested after Windows source preflight passed, while this headless worker and a separate capacity worker were still running. Do not describe the initial part of that LAN attempt as an unloaded-host trial.",
+    "worker_was_suspended": false,
+    "resumed_without_worker_timeout": true,
+    "subsequent_context": "The root agent confirmed no physical two-host measurement window started: the referee readiness timer expired before the Windows command was run. The coordinator resumed while readiness orchestration was being corrected."
+  }
+}
