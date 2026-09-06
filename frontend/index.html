@@ -86,7 +86,7 @@
         <div class="vital-track"><i class="vital-ghost" id="vitalChargeGhost"></i><i class="vital-fill" id="vitalChargeFill"></i></div>
       </div>
       <div class="vital margin" id="vitalMargin">
-        <div class="vital-head"><b>Safety margin</b><span id="vitalMarginVal">—</span></div>
+        <div class="vital-head"><b>Closest separation</b><span id="vitalMarginVal">—</span></div>
         <div class="vital-track"><i class="vital-ghost" id="vitalMarginGhost"></i><i class="vital-fill" id="vitalMarginFill"></i></div>
       </div>
     </div>
@@ -325,11 +325,11 @@
           <div class="scroller">
             <div class="frame">
               <h3>Contacts</h3>
-              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">A contact is any tick where two bodies came closer than their combined radii. Zero is the only passing score, and it is measured, not asserted.</p>
+              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">A recorded contact means simulated body footprints overlapped. Repeated contact events for the same pair are logged at most once per second. Zero recorded contacts is required; it is not physical safety certification.</p>
             </div>
             <div class="frame">
               <h3>Closest separation</h3>
-              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">The single tightest gap observed all run. It is the number that shows the safety field did work rather than got lucky.</p>
+              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">The smallest measured centre-to-centre separation between robot and human bodies during the run, including robot pairs. It is not the free gap between their surfaces or a certified braking margin. Read it alongside the contact counts.</p>
             </div>
             <div class="frame">
               <h3>Suppressed traffic</h3>

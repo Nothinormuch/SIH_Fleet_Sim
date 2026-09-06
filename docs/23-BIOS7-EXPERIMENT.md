@@ -124,7 +124,7 @@ be relabeled as the thirty fresh seeds in the later release plan.
 
 The [capacity screen](../artifacts/benchmarks/bios7-capacity-screen.json) completed
 its 3-, 10- and 25-robot cases without contacts. At 50 robots both policies
-completed 100/100 tasks but recorded **19 rack-contact ticks**, so expansion to
+completed 100/100 tasks but recorded **19 rack-contact events**, so expansion to
 100 robots stopped. The directed-layout capacity runs showed no V7 timing gain
 over V6. Fixed/scaled 50 used the same rounded map dimensions; they are not two
 independent geometries. This screen is a recorded failure, not release approval.

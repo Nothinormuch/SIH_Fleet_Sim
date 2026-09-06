@@ -220,3 +220,12 @@ assert.ok(!html.includes('Energy-risk bids blocked'));
 assert.ok(html.includes('8 tasks remained active when the 320.0 s evidence window ended.'));
 assert.ok(!html.includes('Workload completed'), 'a changed label must not hide incomplete work');
 """)
+
+
+def test_dashboard_explains_measured_separation_and_contact_event_semantics():
+    source = (ROOT / "frontend/index.html").read_text()
+    assert "centre-to-centre separation" in source
+    assert "at most once per second" in source
+    assert "<b>Closest separation</b>" in source
+    assert "<b>Safety margin</b>" not in source
+    assert "rather than got lucky" not in source

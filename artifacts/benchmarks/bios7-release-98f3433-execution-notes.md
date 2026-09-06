@@ -33,3 +33,27 @@ Final verdicts must come from completed raw stage reports. Missing/unrun stages,
 latest-source ten-controller live timing, and default-selection tests remain
 outstanding until explicitly verified. BIOS 6 remains the default; no remote has
 been pushed or merged by this step.
+
+## Completed checks
+
+The stress stage passed all 108 workers: BIOS 7 completed 36/36 cases and 318/318
+tasks with zero contacts and all strict current-V6 time/message/byte checks passing.
+The repeat stage passed all eight workers, including identical semantic outputs
+for both executions of each of its four configurations.
+
+Actual browser QA used the updated root backend on port 8001, whose controller
+sources match the frozen candidate. Grand Challenge's existing ten-AMR/five-worker
+profile, seed 1 and 800-second window, completed 20/20 tasks in 418.7 s with zero
+contacts. Its 4,188-frame recording loaded as BIOS 7; changing the draft selector
+had not relabelled the prior BIOS 6 recording. No browser errors were reported.
+This is UI workflow verification, not live multi-host timing evidence.
+
+Review also clarified two presentation semantics without changing measurements:
+World._record logs repeated pair contacts at most once per second, so nonzero
+counts are logged contact events, not an exhaustive count of overlapping ticks.
+The reported minimum separation is centre-to-centre, not surface gap or physical
+braking margin. Older notes calling nonzero counts "ticks" should be read with
+this correction. The zero-contact gate and all raw metrics are unchanged.
+The HTML explanations/HUD label were corrected and eight policy-profile tests
+passed. This HTML-only presentation update does not alter controller source or
+the frozen executable-source manifest; final browser reload verification follows.
