@@ -338,6 +338,19 @@ def brain_visual_status(brain: AMRBrain) -> dict:
         "cargo_type": task.cargo_type if task else None,
         "done": len(brain.completed),
         "path": [list(cell) for cell in brain.path[brain.pidx:brain.pidx + 8]],
+        # Bounded read-only diagnostics distinguish a peer hold from a geometric
+        # recovery stall. Local timestamps are not compared across controllers.
+        "coordination": {
+            "hold": brain._hold,
+            "blocked_on": brain.blocked_on,
+            "blocked_since": brain.blocked_since,
+            "stall_since": brain._stall_since,
+            "creep_until": brain._creep_until,
+            "recovery_target": (list(brain._cell_repair_target)
+                                if brain._cell_repair_target is not None else None),
+            "recovery_waypoints": [list(point) for point in brain._recovery_waypoints[:2]],
+            "retreat_reason": brain._retreat_for,
+        },
     }
 
 

@@ -50,9 +50,9 @@ class Actuation:
 
     v: float = 0.0            # m/s, forward positive
     omega: float = 0.0        # rad/s, CCW positive
-    # Set by Layer 0 only. The world does not treat it specially - it is recorded so
-    # the report can count how often the certified layer had to intervene, which is a
-    # far more interesting number than the collision count.
+    # Hard stop on both velocity axes, identical to the live adapter contract.
+    # A geometrically validated protective turn is a separate ordinary command;
+    # it must never depend on simulation ignoring a stop flag.
     safety_stop: bool = False
 
 
@@ -426,6 +426,7 @@ class World:
             cmd = cmds.get(rid, Actuation())
             if cmd.safety_stop:
                 st.safety_stops += 1
+                cmd = Actuation(safety_stop=True)
 
             # Rate-limit to the actuator envelope. A planner that assumes instant
             # velocity change is a planner whose collision guarantees do not transfer

@@ -7,7 +7,7 @@ import pytest
 
 from src.amr import AMRBrain, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V7
 from src.distributed_demo import run_distributed_demo
-from src.edge_runtime import (EdgeRuntime, SystemdNotifier, UdpJsonHardwareIO, actuation_from_dict,
+from src.edge_runtime import (EdgeRuntime, SystemdNotifier, UdpJsonHardwareIO, actuation_from_dict, brain_visual_status,
                               build_parser, sensors_from_dict, sensors_to_dict)
 from src.environment import open_floor
 from src.settings import DEFAULT
@@ -28,6 +28,24 @@ class FakeTransport:
 
     def close(self):
         pass
+
+
+def test_visual_coordination_diagnostics_are_bounded_and_detached():
+    brain = AMRBrain("A", open_floor(8, 8), DEFAULT, policy=POLICY_BIOS_PIBT_V7)
+    brain._hold = True
+    brain.blocked_on = "B"
+    brain._stall_since = 42.0
+    brain._cell_repair_target = (2, 3)
+    brain._recovery_waypoints = [(1.5, 2.5), (3.5, 4.5), (5.5, 6.5)]
+    row = brain_visual_status(brain)["coordination"]
+    assert row["hold"] and row["blocked_on"] == "B"
+    assert row["stall_since"] == 42.0
+    assert row["recovery_target"] == [2, 3]
+    assert len(row["recovery_waypoints"]) == 2
+    row["recovery_target"][0] = 99
+    row["recovery_waypoints"][0][0] = 99
+    assert brain._cell_repair_target == (2, 3)
+    assert brain._recovery_waypoints[0] == (1.5, 2.5)
 
 
 def _available_udp_port() -> int:

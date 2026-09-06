@@ -1,6 +1,15 @@
 # BIOS7 smaller-fleet demo release candidate
 
 Status: **release blocked by the completed two-laptop campaign; personal main has not been promoted**.
+
+Recovery checkpoint: the later command-contract and stationary-queue repairs
+passed 1,083 Python tests, including the two mixed-warehouse regression failures
+discovered during verification. The earlier single-host overlap and human runs
+also demonstrated the original live-adapter mismatch repair. These are separate
+source-pinned checkpoints, not a passing rerun of the failed LAN campaign. See
+[the complete recovery audit](../artifacts/deployment/contract-repair-20260906/README.md).
+The refined candidate still needs its registered performance and two-host gates.
+
 The `seven` branch prepares `BIOS_PIBT.7` with `auction_bundle` as the public
 launch defaults. The final SIH headless campaign passed, but the latest-source
 Mac/Windows campaign passed only two of seven sessions. This file is not release

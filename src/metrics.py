@@ -120,6 +120,7 @@ class PolicyResult:
     recovery_paths_rejected: int = 0
     recovery_staged_paths: int = 0
     recovery_braking_stops: int = 0
+    protective_turn_commands: int = 0
     auction_bids_sent: int = 0
     energy_bids_suppressed: int = 0
     energy_no_eligible_rounds: int = 0

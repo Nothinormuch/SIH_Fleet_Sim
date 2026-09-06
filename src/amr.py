@@ -108,6 +108,7 @@ CELL_ZONE_BASE = 1_000_000
 # claim. Map geometry, actuator limits and measured contact definitions are unchanged.
 RECOVERY_MAP_MARGIN_M = 0.10
 RECOVERY_SPEED_MPS = 0.20
+ADMITTED_RECOVERY_REASONS = ("duplicate-clearance", "pibt-clearance", "queue-clearance")
 PASSAGE_EXECUTION_REFRESH_S = 2.0
 MAX_PASSAGE_SESSION_PEERS = 1024
 MAX_RETIRED_PASSAGE_SESSIONS = 8
@@ -375,6 +376,10 @@ class AMRBrain:
         # traffic layer only ever counts *its own* holds it will report everything
         # healthy while nothing moves.
         self._stall_since: float | None = None
+        # Translation may be protected while an independently validated turn is
+        # allowed. Keep that recovery signal separate from the wire-level STOP,
+        # which must always brake both axes.
+        self._translation_protected = False
         # Block id -> when we first announced our intent to enter it. Entering is a
         # two-phase commit: announce, observe for a round, then go.
         self._gate_since: dict[int, float] = {}
@@ -449,6 +454,7 @@ class AMRBrain:
             "priority_waits": 0,
             "recovery_paths_rejected": 0, "recovery_staged_paths": 0,
             "recovery_braking_stops": 0,
+            "protective_turn_commands": 0,
             # Which verb BIOS_4 chose, per tick. Kept because "it completed 7 tasks" is
             # not a description of a policy - the mix of verbs is, and it is the only
             # way to tell a trained network apart from one that learned to always hold.
@@ -671,21 +677,20 @@ class AMRBrain:
 
         is_traffic_wait = (
             self.goal is not None and abs(act.v) <= 0.02
-            and (self._hold or act.safety_stop)
+            and (self._hold or self._translation_protected)
         )
         if is_traffic_wait:
             self.stats["nonproductive_wait_ticks"] += 1
         if self.policy in V6_PLUS_POLICIES:
             self._v6_track_wait(sensors, is_traffic_wait)
 
-        if act.safety_stop and self.goal is not None:
+        if self._translation_protected and self.goal is not None:
             if self._stall_since is None:
                 self._stall_since = t
         else:
-            # This timestamp represents a Layer-0 refusal, not generic lack of
-            # translation. Clear it as soon as safety releases—even if the next valid
-            # action is turn-in-place—or the stale flag recreates a traffic hold that
-            # prevents that recovery turn forever.
+            # Clear only when Layer 0 releases translation. A protective turn is
+            # not progress out of the blocked envelope; an ordinary navigation
+            # turn without a protective intervention still clears this timestamp.
             self._stall_since = None
 
         if t - self._t_hb >= 1.0 / self.cfg.rates.heartbeat_hz:
@@ -934,7 +939,14 @@ class AMRBrain:
 
     def _safety(self, sensors: Sensors, act: Actuation) -> Actuation:
         """The shared protective layer, plus a bounded mapped recovery backstop."""
+        if act.safety_stop:
+            # A geometric/driver hard stop cannot be converted into separating
+            # creep by the ordinary speed limiter, even with a nonzero input v.
+            self._translation_protected = True
+            self.stats["safety_stops"] += 1
+            return Actuation(0.0, 0.0, safety_stop=True)
         result = self._safety_base(sensors, act)
+        self._translation_protected = result.safety_stop
         if (self.policy in V6_PLUS_POLICIES
                 and self._cell_repair_target is not None):
             # Recovery remains bounded after the neighbouring body leaves the omni
@@ -943,8 +955,43 @@ class AMRBrain:
                                result.safety_stop)
             if not self._recovery_motion_clear(sensors, result):
                 self.stats["recovery_braking_stops"] += 1
+                self._translation_protected = True
                 return Actuation(0.0, 0.0, safety_stop=True)
+        if result.safety_stop:
+            # The controller adapter treats STOP as zero velocity on BOTH axes.
+            # Legacy headless physics treated this flag as telemetry and executed
+            # its nonzero omega anyway, so live robots could never perform the
+            # protective turn that headless recovery depended on. Issue a distinct
+            # ordinary turn only after checking the circular body's swept envelope;
+            # never weaken the adapter's hard-stop/watchdog contract.
+            turn = Actuation(0.0, result.omega)
+            if (not act.safety_stop and abs(turn.omega) > 1e-9
+                    and self._protective_turn_clear(sensors, turn)):
+                self.stats["protective_turn_commands"] += 1
+                return turn
+            return Actuation(0.0, 0.0, safety_stop=True)
         return result
+
+    def _protective_turn_clear(self, sensors: Sensors, turn: Actuation) -> bool:
+        """Validate a near-stationary turn of the simulated circular footprint.
+
+        A vendor vehicle with a different rotating footprint needs its own validated
+        envelope. This is neither a physical E-stop reset nor safety certification.
+        """
+        spec = self.cfg.robot
+        if abs(sensors.v) > 0.02:
+            return False  # Brake first; rotating a translating chassis sweeps an arc.
+        drift = abs(sensors.v) * spec.reaction_s + sensors.v ** 2 / (2 * spec.a_max)
+        margin = spec.safety_margin_m + drift
+        if sensors.clearance_omni_m <= margin:
+            return False
+        horizon = spec.reaction_s + abs(sensors.v) / spec.a_max
+        for det in sensors.detections:
+            predicted = (det.x + det.vx * horizon, det.y + det.vy * horizon)
+            if segment_point_distance((det.x, det.y), predicted, sensors.pose[:2]) <= (
+                    spec.radius_m + det.r + margin):
+                return False
+        return self._recovery_motion_clear(sensors, turn)
 
     def _safety_base(self, sensors: Sensors, act: Actuation) -> Actuation:
         """Protective stop. Local, unconditional, and deliberately ignorant.
@@ -1136,10 +1183,10 @@ class AMRBrain:
             start = end
         return True
 
-    def _recovery_route(self, sensors: Sensors, target: Cell):
-        """At most one staged metric waypoint within the current free cell.
+    def _recovery_route(self, sensors: Sensors, target: Cell, *, boundary_fallback=False):
+        """At most one staged metric waypoint within the current/admitted cell.
 
-        The at-most-81-point search is local and deterministic. It supplies a safe alternative
+        The at-most-113-point search is local and deterministic. It supplies a safe alternative
         to both corner-cutting and blindly recentering into the body we must yield to.
         It never changes the admitted destination cell or task ownership.
         """
@@ -1148,6 +1195,12 @@ class AMRBrain:
         # uncertainty band. Otherwise 2 cm observation jitter repeatedly alternates
         # between two equally marginal staged paths and can prevent any progress.
         plan_margin = max(RECOVERY_MAP_MARGIN_M + 0.05, self.cfg.robot.safety_margin_m)
+        if (self._recovery_waypoint_cell == target and self._recovery_waypoints
+                and self._recovery_route_clear(sensors, self._recovery_waypoints, plan_margin)):
+            # Repeated duplicate-cell repair must not discard a valid waypoint
+            # merely because it is now less than the NEW-plan minimum step away.
+            # The follower consumes it at its own tighter arrival tolerance.
+            return list(self._recovery_waypoints)
         if self._recovery_route_clear(sensors, (end,), plan_margin):
             return [end]
         centre = cell_center(sensors.cell, self.cfg.cell_m)
@@ -1171,9 +1224,41 @@ class AMRBrain:
                         or not self._recovery_route_clear(sensors, (point, end), plan_margin)):
                     continue
                 routes.append((dist(start, point) + dist(point, end), point))
-        if not routes:
+        if routes:
+            return [min(routes)[1], end]
+        if not boundary_fallback:
             return None
-        return [min(routes)[1], end]
+        # A stopped chassis may lie beyond the centre-biased sample lattice,
+        # especially just before crossing a cell boundary. In a close cluster,
+        # every old staging point can then approach the neighbour even though a
+        # safe tangent departure exists in the outer strip of this SAME cell.
+        # Only after the original search fails, test at most 32 boundary/
+        # measured-axis intersections in the current and ALREADY ADMITTED next
+        # cell. A turn exactly on their boundary can be too close to a neighbour
+        # to execute robustly with pose jitter; staging farther into the admitted
+        # cell supplies room to turn without opening an unreserved third cell. The
+        # full swept footprint, every detected body, and unchanged map margins
+        # still validate both segments. Existing successful routes are unchanged.
+        epsilon = 1e-6
+        for stage_cell in sorted({sensors.cell, target}):
+            stage_centre = cell_center(stage_cell, self.cfg.cell_m)
+            lo_x, lo_y = (coordinate * self.cfg.cell_m + epsilon
+                          for coordinate in stage_cell)
+            hi_x, hi_y = ((coordinate + 1) * self.cfg.cell_m - epsilon
+                          for coordinate in stage_cell)
+            xs = sorted({lo_x, hi_x, stage_centre[0], clamp(start[0], lo_x, hi_x)})
+            ys = sorted({lo_y, hi_y, stage_centre[1], clamp(start[1], lo_y, hi_y)})
+            for x in xs:
+                for y in ys:
+                    point = (x, y)
+                    if (dist(start, point) < 0.12 or dist(point, end) < 0.12
+                            or any(dist(point, (d.x, d.y)) < self.cfg.robot.radius_m
+                                   + d.r + self.cfg.robot.omni_stop_m + plan_margin
+                                   for d in sensors.detections)
+                            or not self._recovery_route_clear(sensors, (point, end), plan_margin)):
+                        continue
+                    routes.append((dist(start, point) + dist(point, end), point))
+        return [min(routes)[1], end] if routes else None
 
     def _install_recovery_route(self, t: float, sensors: Sensors,
                                 target: Cell, route) -> None:
@@ -1193,6 +1278,21 @@ class AMRBrain:
         self._cell_repair_target = None
         self._recovery_waypoint_cell = None
         self._recovery_waypoints = []
+
+    def _commit_admitted_recovery(self, t: float, sensors: Sensors,
+                                  target: Cell, route, reason: str) -> None:
+        """Commit one metric transition, with bounded lifetime and normal admission."""
+        self.path, self.path_times, self.pidx = [sensors.cell, target], [], 1
+        self._install_recovery_route(t, sensors, target, route)
+        self.retreat_target = target
+        self._retreat_for = reason
+        self._retreat_block_cid = None
+        self._retreat_origin = sensors.cell
+        self._retreat_contested = None
+        self._retreat_since = t
+        self.state = ST_RETREAT
+        self._hold = True
+        self._track_block(t, True, "cell-gate")
 
     def _recovery_motion_clear(self, sensors: Sensors, act: Actuation) -> bool:
         """Swept next-command + emergency-braking envelope at the physics rate.
@@ -1260,7 +1360,8 @@ class AMRBrain:
         if (self._recovery_waypoint_cell != target or not self._recovery_waypoints
                 or not self._recovery_route_clear(sensors, self._recovery_waypoints)):
             if t - self._recovery_plan_t >= 1.0 / self.cfg.rates.reactive_hz - 1e-9:
-                route = self._recovery_route(sensors, target)
+                route = self._recovery_route(
+                    sensors, target, boundary_fallback=self._retreat_for in ADMITTED_RECOVERY_REASONS)
                 self._recovery_plan_t = t
                 if route:
                     self._install_recovery_route(t, sensors, target, route)
@@ -1276,8 +1377,13 @@ class AMRBrain:
         if abs(error) > 0.12:
             return (Actuation(0.0, 0.0) if abs(sensors.v) > 0.04 else
                     Actuation(0.0, clamp(2.2 * error, -spec.omega_max, spec.omega_max)))
+        # A staged waypoint may be the point where the following segment becomes
+        # clearance-safe. Stopping 25 mm short can leave that segment inadmissible
+        # forever. Approach intermediate points more closely; the switch still
+        # requires a fresh complete-segment check and the same braking backstop.
+        stop_offset = 0.005 if len(self._recovery_waypoints) > 1 else 0.025
         speed = min(RECOVERY_SPEED_MPS,
-                    math.sqrt(2 * spec.a_max * max(0.0, dist(pos, waypoint) - 0.025)))
+                    math.sqrt(2 * spec.a_max * max(0.0, dist(pos, waypoint) - stop_offset)))
         return Actuation(speed, clamp(1.8 * error, -spec.omega_max, spec.omega_max))
 
     def _v6_clearance_unstick(self, t: float, sensors: Sensors, *,
@@ -1441,6 +1547,45 @@ class AMRBrain:
 
     # ================================================================== Layer 1
 
+    def _yield_for_stationary_gridlock(self, t: float, sensors: Sensors,
+                                      blocker_id: str | None) -> bool:
+        """Open space for a trapped leader without waiving destination admission.
+
+        A fan-in queue has no wait-for cycle: everyone waits for the front robot,
+        but that leader can be enclosed by their continuous footprints. After a
+        sustained protective stall, a follower may take ONE separating step. The
+        existing geometry search and normal block/cell leases still decide whether
+        the step is physically feasible and admitted; no task changes owner.
+        """
+        if (self.policy not in V6_PLUS_POLICIES or not self.circulation.enabled
+                or self.task is None or self.state == ST_RETREAT
+                or self._stall_since is None or self.blocked_since is None
+                or t - self._stall_since < self.cfg.traffic.deadlock_wait_s
+                or t - self.blocked_since < self.cfg.traffic.livelock_progress_s):
+            return False
+        blocker = self.peers.get(blocker_id or "")
+        fresh = self._peer_stale_after_s()
+        if (blocker is None or t - blocker.last_seen > fresh
+                or blocker.state in (ST_CHARGING, ST_RETREAT)
+                or not any(peer.rid != blocker.rid and peer.blocked_on == blocker.rid
+                           and t - peer.last_seen <= fresh
+                           for peer in self.peers.values())):
+            return False
+        # Do not retreat merely because a radio update describes a queue. The
+        # current scanner must also see its leader stationary beside this chassis.
+        if not any(dist((d.x, d.y), blocker.pose[:2]) <= 0.15
+                   and math.hypot(d.vx, d.vy) <= 0.02 for d in sensors.detections):
+            return False
+        if not self._v6_clearance_unstick(t, sensors):
+            return False
+        target = self._cell_repair_target
+        self._commit_admitted_recovery(
+            t, sensors, target, self._recovery_waypoints, "queue-clearance")
+        self._record_decision(t, "QUEUE_CLEARANCE",
+                              "One leased separating step to free a trapped stationary leader",
+                              blocker=blocker.rid, target_cell=list(target))
+        return True
+
     def _traffic_loop(self, t: float, sensors: Sensors,
                       outbox: list[msg.Message]) -> None:
         """Decide whether to enter the next cell. Advisory information only."""
@@ -1452,6 +1597,24 @@ class AMRBrain:
             # hand the baseline some of our own mechanism and flatter our result.
             self._hold = self._schedule_holds(t)
             self._track_block(t, False, None)
+            return
+
+        if self.state == ST_RETREAT and self._retreat_for in ADMITTED_RECOVERY_REASONS:
+            # A committed, bounded metric escape survives noisy cell-boundary
+            # crossings. It does NOT inherit the generic give-way admission bypass:
+            # occupancy, corridor tokens and ordinary destination arbitration still
+            # apply. Do not let PIBT replace the validated intermediate waypoint.
+            nxt = self._next_cell()
+            loser = next((p.rid for p in sorted(self.peers.values(), key=lambda p: p.rid)
+                          if p.cell == nxt), None)
+            if loser is None and nxt is not None:
+                loser = self._block_conflict(t, sensors.cell, nxt, self._arbitration_key())
+                if loser is None:
+                    loser = (self._cell_lease_conflict(t, sensors.cell, nxt)
+                             if self.circulation.enabled else
+                             self._bios_v3_cell_coordinate(t, sensors, nxt))
+            self._hold = loser is not None
+            self._track_block(t, self._hold, loser)
             return
 
         if (self.state == ST_RETREAT
@@ -1630,6 +1793,9 @@ class AMRBrain:
                     # The outside robot has room to pull aside. Reversing the inside
                     # robot into its followers only moves the jam deeper into the lane.
                     waiting_for_block = True
+
+        if self._yield_for_stationary_gridlock(t, sensors, loser_to):
+            return
 
         if loser_to is not None:
             self._hold = True
@@ -2308,6 +2474,23 @@ class AMRBrain:
             if abs(sensors.v) > 0.25:
                 self.stats["priority_waits"] += 1
                 return "pibt-brake"
+            if self.policy in V6_PLUS_POLICIES:
+                # A discrete inherited move can be replaced every 100 ms while
+                # the differential-drive chassis is still turning. Commit its
+                # validated metric transition once, rather than steering toward
+                # alternating side cells without ever translating. The destination
+                # remains subject to occupancy and normal admission on every tick.
+                route = self._recovery_route(sensors, chosen)
+                if route is None:
+                    route = self._recovery_route(sensors, chosen, boundary_fallback=True)
+                if route is None:
+                    self.stats["priority_waits"] += 1
+                    return "pibt-geometry"
+                self._commit_admitted_recovery(t, sensors, chosen, route, "pibt-clearance")
+                self.epoch += 1
+                self.stats["priority_forced_moves"] += 1
+                self._creep_until = t + 6.0
+                return "cell-gate"
             self.path = [sensors.cell, chosen]
             self.path_times = []
             self.pidx = 1
@@ -2428,6 +2611,13 @@ class AMRBrain:
                 route = self._recovery_route(sensors, cell)
                 if route is not None:
                     recovery_routes[cell] = route
+            # Preserve all previous successful choices. Expand the local search
+            # only when the entire original duplicate-cell escape set is blocked.
+            if not recovery_routes:
+                for cell in options:
+                    route = self._recovery_route(sensors, cell, boundary_fallback=True)
+                    if route is not None:
+                        recovery_routes[cell] = route
             options = [cell for cell in options if cell in recovery_routes]
         if not options:
             self._hold = True
@@ -2455,7 +2645,8 @@ class AMRBrain:
         self.state = self._state_for_task()
         self._creep_until = max(self._creep_until, t + 6.0)
         if self.policy in V6_PLUS_POLICIES:
-            self._install_recovery_route(t, sensors, target, recovery_routes[target])
+            self._commit_admitted_recovery(
+                t, sensors, target, recovery_routes[target], "duplicate-clearance")
         else:
             self._cell_repair_target = target
         self.stats["priority_forced_moves"] += 1
@@ -2957,6 +3148,11 @@ class AMRBrain:
                         or self._cell_repair_target is None)
             retreat_budget = (6.0 + 2 * self.cfg.cell_m / RECOVERY_SPEED_MPS
                               if validated_recovery else 6.0)
+            if validated_recovery and self._retreat_for in ADMITTED_RECOVERY_REASONS:
+                # Layer 0 caps close-body departure at 0.12 m/s, below the normal
+                # recovery speed. Bound this two-cell manoeuvre using that actual
+                # cap; otherwise a safe departure expires just before centering.
+                retreat_budget = 6.0 + 2 * self.cfg.cell_m / min(RECOVERY_SPEED_MPS, 0.12)
             safe_bay = self._is_safe_retreat_bay(self.retreat_target)
             lane_occupied = (self._retreat_block_cid is not None and any(
                 self.blocks.id_of(p.cell) == self._retreat_block_cid
@@ -2986,6 +3182,8 @@ class AMRBrain:
                     self._creep_until = t + 6.0
                     return
             if done or retreat_age > retreat_budget:
+                if self._retreat_for in ADMITTED_RECOVERY_REASONS:
+                    self._clear_recovery_route()
                 self.retreat_target = None
                 self._retreat_for = None
                 self._retreat_block_cid = None
