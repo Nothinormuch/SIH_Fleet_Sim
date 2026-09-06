@@ -13,13 +13,14 @@ from src.settings import DEFAULT
 from src.world import World
 
 
-def _observer(policy=POLICY_BIOS_PIBT_V7, *, session="owner-session"):
+def _observer(policy=POLICY_BIOS_PIBT_V7, *, session="owner-session", reverse=False):
     env = chokepoint_warehouse(length=13)
     brain = AMRBrain("A", env, DEFAULT, policy=policy,
                      allocation_policy="auction_bundle")
     world = World(env, DEFAULT, seed=0)
     world.add_robot("A", (2, 2))
-    task = Task("JOB", (2, 4), (22, 4), auction_epoch=3)
+    pick, drop = ((22, 4), (2, 4)) if reverse else ((2, 4), (22, 4))
+    task = Task("JOB", pick, drop, auction_epoch=3)
     brain._ensure_task_identity(task)
     brain.open_tasks[task.tid] = task
     brain._task_claims[task.tid] = (3, 2.0, "B", 100.0)
@@ -95,6 +96,24 @@ def test_exit_junction_reentry_revokes_at_use_time_before_next_sample():
     _position(brain, (19, 4), 1.02)
     assert brain._v7_pending_corridors(task, 1.02) == {0: (6, 4)}
     assert brain._v7_passage_observed_at == 1.0
+
+
+@pytest.mark.parametrize("reverse", (False, True))
+def test_turning_out_of_either_exit_releases_admission_only_after_junction_clear(reverse):
+    brain, task, sensors = _observer(reverse=reverse)
+    original_claim = brain._task_claims[task.tid]
+    _position(brain, (12, 4), 0.0)
+    brain._v7_observe_passages(0.0, sensors)
+    mouth = 5 if reverse else 19
+    _position(brain, (mouth, 4), 1.0)
+    brain._v7_observe_passages(1.0, sensors)
+    assert brain._v7_pending_corridors(task, 1.0)
+    _position(brain, (mouth, 3), 2.0)
+    brain._v7_observe_passages(2.0, sensors)
+    assert brain._v7_pending_corridors(task, 2.0) == {}
+    assert brain._task_claims[task.tid] == original_claim
+    assert brain.completed_tasks == set()
+    assert not brain._claims  # No physical token was invented by admission release.
 
 
 def test_stale_pose_epoch_change_and_expiry_never_establish_release():
