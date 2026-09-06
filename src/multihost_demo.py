@@ -53,7 +53,10 @@ def source_fingerprint(root: Path = ROOT) -> str:
     """Pin controller, simulation and bridge source, not merely a possibly dirty HEAD."""
     paths = sorted((root / "src").glob("*.py"))
     paths += [root / "edge_node.py", root / "multihost_demo.py"]
-    hashes = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+    # Paths are part of the signed manifest. Native str(Path) uses backslashes
+    # on Windows, so byte-identical checkouts previously disagreed with macOS.
+    # Normalize names only; keep hashing the exact, unmodified source bytes.
+    hashes = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in paths}
     return hashlib.sha256(_json(hashes)).hexdigest()
 

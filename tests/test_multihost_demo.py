@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import copy
 import json
+from pathlib import PurePosixPath, PureWindowsPath
 import socket
 import time
 
@@ -11,8 +12,44 @@ import pytest
 from src import messages as msg
 from src.amr import Task
 from src.multihost_demo import (AuthChannel, _completion_owner, _line, _reserve_sensor, _timing_pass, accept_agent, make_config,
-                                run_agent, run_referee, validate_config)
+                                run_agent, run_referee, source_fingerprint, validate_config)
 from src.task_protocol import CompletionCertificate, task_descriptor_hash
+
+
+def test_source_fingerprint_is_portable_but_still_checks_exact_bytes():
+    contents = {"src/brain.py": b"brain = 7\n", "edge_node.py": b"node\n",
+                "multihost_demo.py": b"demo\n"}
+
+    class SourcePath:
+        def __init__(self, name, path_type):
+            self.name, self.path_type = name, path_type
+
+        def glob(self, pattern):
+            assert self.name == "src" and pattern == "*.py"
+            return [SourcePath("src/brain.py", self.path_type)]
+
+        def relative_to(self, root):
+            return self.path_type(self.name)
+
+        def read_bytes(self):
+            return contents[self.name]
+
+    class SourceRoot:
+        def __init__(self, path_type):
+            self.path_type = path_type
+
+        def __truediv__(self, name):
+            return SourcePath(name, self.path_type)
+
+    posix = SourceRoot(PurePosixPath)
+    windows = SourceRoot(PureWindowsPath)
+    expected = source_fingerprint(posix)
+    assert source_fingerprint(windows) == expected
+    contents["src/brain.py"] = b"brain = 8\n"
+    assert source_fingerprint(windows) != expected
+    # No CRLF normalization: the exact source-byte check remains intentional.
+    contents["src/brain.py"] = b"brain = 7\r\n"
+    assert source_fingerprint(windows) != expected
 
 
 def _channels():
