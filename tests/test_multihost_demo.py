@@ -216,6 +216,9 @@ def test_two_host_agents_loopback_smoke_does_not_claim_two_physical_hosts():
         referee = pool.submit(run_referee, config, key, 5)
         time.sleep(.15)
         mac = pool.submit(run_agent, config, "mac", key)
+        # Real operators do not launch both terminals in the same millisecond.
+        # The early host must keep getting fresh sensors before the full roster.
+        time.sleep(.6)
         windows = pool.submit(run_agent, config, "windows", key)
         result = referee.result(timeout=35)
         assert mac.result(timeout=5)["failure"] is None
@@ -228,6 +231,7 @@ def test_two_host_agents_loopback_smoke_does_not_claim_two_physical_hosts():
     assert not result["referee_forwards_peer_messages"]
     assert all(result["actuator_frames"].values())
     assert result["contacts"] == {"robot-robot": 0, "robot-human": 0, "robot-rack": 0}
+    assert not any(result["unexpected_stale_motion_rejected"].values())
     assert sum(len(r["nodes"]) for r in result["host_reports"].values()) == 3
     assert all(n["bridge"]["invalid_frames"] == 0
                for r in result["host_reports"].values() for n in r["nodes"])

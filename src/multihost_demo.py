@@ -508,7 +508,10 @@ def run_referee(config: dict, key: bytes, ready_timeout_s: float = 120,
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind((config["referee_ip"], config["bridge_port"]))
     listener.listen(4)
-    listener.settimeout(0.1)
+    # An early host already runs its normal controller/watchdog. Keep sensors at
+    # the control cadence while the other operator opens a terminal; a 100 ms
+    # accept timeout aged whole batches beyond the 100 ms command-causality gate.
+    listener.settimeout(1 / DEFAULT.rates.world_hz)
     channels, started_hosts, host_reports = {}, {}, {}
     last_seen, last_stamp, latest_status = {}, {}, {}
     events, command_events = [], {rid: deque(maxlen=100_000) for rid in ids}
