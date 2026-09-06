@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
+import errno
 import hashlib
 import hmac
 import ipaddress
 import json
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import platform
 import secrets
 import shlex
@@ -37,7 +38,7 @@ from .task_allocation import ALLOCATION_AUCTION_BUNDLE
 from .task_protocol import CompletionCertificate, task_descriptor_hash
 from .transport import DEFAULT_GROUP, UdpMulticastTransport
 from .vendor_adapter import SafeCommandGate
-from .world import World
+from .world import Actuation, World
 
 PROTOCOL = 1
 MAX_FRAME = 2_000_000
@@ -106,11 +107,55 @@ def _timing_pass(report: dict) -> bool:
                for field in ("scheduling_late_ticks", "skipped_schedule_slots"))
 
 
+def _readiness_budget(config: dict) -> float:
+    value = config.get("readiness_timeout_s", 120)
+    if type(value) not in (int, float) or not math.isfinite(value) or not 1 <= value <= 3600:
+        raise ValueError("readiness_timeout_s must be finite and between 1 and 3600 seconds")
+    return float(value)
+
+
+def _controller_lifetime(config: dict) -> float:
+    # A controller may receive idle sensors for the entire readiness period. Its
+    # lifetime must include that period, the measured run, and shutdown allowance.
+    return _readiness_budget(config) + config["duration_s"] + 30
+
+
+def _failure_recovery_evidence(events: list[dict], completions: list[dict],
+                               confirmed_stops: dict) -> list[dict]:
+    failures = [event for event in events if event["type"] == "controller_stop"]
+    stopped = {event["robot"] for event in failures}
+    rows = []
+    for event in failures:
+        confirmed = confirmed_stops.get(event["robot"])
+        recovery = next((done for done in completions
+                         if done["task"] == event["task"] and done["owner"] not in stopped
+                         and confirmed is not None
+                         and done["t"] > max(event["t"], confirmed["observed_at_s"])), None)
+        rows.append({"robot": event["robot"], "task": event["task"],
+                     "requested_at_s": event["t"], "active_at_stop": event["active_at_stop"],
+                     "process_exit": confirmed, "recovery": recovery,
+                     "pass": bool(event["active_at_stop"] and confirmed is not None and recovery)})
+    return rows
+
+
+def _stop_confirmation(frame: dict, host: str, owners: dict, expected: set,
+                       previous: dict, observed_at_s: float) -> tuple[str, dict]:
+    rid = frame["robot"]
+    if owners.get(rid) != host or rid not in expected or rid in previous:
+        raise ValueError("unexpected, duplicate or foreign controller-stop confirmation")
+    evidence = {key: frame[key] for key in ("delay_s", "exit_code", "forced")}
+    delay = evidence["delay_s"]
+    if (type(delay) not in (int, float) or not math.isfinite(delay) or not 0 <= delay <= 8
+            or type(evidence["exit_code"]) is not int or type(evidence["forced"]) is not bool):
+        raise ValueError("invalid controller-stop confirmation")
+    return rid, {"observed_at_s": observed_at_s, "process_exit": evidence}
+
+
 def make_config(mac_ip: str, windows_ip: str, robots: int = 3,
                 scenario: str = "deployment_socket_acceptance", duration_s: float = 25,
                 seed: int = 0, policy: str = POLICY_BIOS_PIBT_V6,
                 bridge_port: int = 29600, peer_port: int = 29601,
-                sensor_cut: bool = True) -> dict:
+                sensor_cut: bool = True, readiness_timeout_s: float = 1800) -> dict:
     if not 3 <= robots <= 10:
         raise ValueError("use 3 through 10 AMRs for the live two-host proof")
     for address in (mac_ip, windows_ip):
@@ -130,6 +175,7 @@ def make_config(mac_ip: str, windows_ip: str, robots: int = 3,
         "referee_ip": mac_ip, "bridge_port": bridge_port, "peer_port": peer_port,
         "group": DEFAULT_GROUP, "robots": robots, "scenario": scenario,
         "duration_s": duration_s, "seed": seed, "policy": policy,
+        "readiness_timeout_s": readiness_timeout_s,
         "allocation_policy": ALLOCATION_AUCTION_BUNDLE,
         "hosts": {
             "mac": {"ip": mac_ip, "indices": list(range(local_count))},
@@ -140,6 +186,7 @@ def make_config(mac_ip: str, windows_ip: str, robots: int = 3,
         "source_sha256": source_fingerprint(),
     }
     sc = _scenario(config)
+    _readiness_budget(config)
     _supported_scenario(sc, robots)
     config["workload_sha256"] = workload_fingerprint(sc, DEFAULT,
                                                      config["allocation_policy"])
@@ -151,6 +198,7 @@ def validate_config(config: dict) -> None:
         raise ValueError("incompatible multi-host protocol")
     if config.get("source_sha256") != source_fingerprint():
         raise ValueError("source mismatch: copy the exact candidate to both computers")
+    _readiness_budget(config)
     sc = _scenario(config)
     if config.get("workload_sha256") != workload_fingerprint(
             sc, DEFAULT, config["allocation_policy"]):
@@ -287,43 +335,110 @@ def accept_agent(sock: socket.socket, address: str, config: dict,
     return host, channel
 
 
-def connect_agent(config: dict, host: str, key: bytes) -> AuthChannel:
+def connect_agent(config: dict, host: str, key: bytes,
+                  connect_timeout_s: float = 10) -> AuthChannel:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(10)
-    sock.bind((config["hosts"][host]["ip"], 0))
-    sock.connect((config["referee_ip"], config["bridge_port"]))
-    challenge = _line(sock)
-    if (challenge.get("protocol") != PROTOCOL
-            or challenge.get("session") != config["session"]
-            or challenge.get("config") != config_fingerprint(config)):
-        sock.close()
-        raise ValueError("referee configuration/session mismatch")
-    body = {"host": host, "challenge": challenge, "nonce": secrets.token_hex(32)}
-    sock.sendall(_json({"body": body, "mac": _proof(key, body)}) + b"\n")
-    channel = AuthChannel(sock, key, hashlib.sha256(_json(body)).hexdigest(), "agent")
-    # Verify the server also possesses the key BEFORE spawning any controller.
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        frames = channel.poll()
-        if frames:
-            if frames[0] != {"type": "authenticated", "host": host}:
-                raise ValueError("unexpected authentication acknowledgement")
-            channel.pending_frames.extend(frames[1:])
-            return channel
-        time.sleep(0.005)
-    channel.close()
-    raise TimeoutError("referee authentication timed out")
-
-
-def _stop_process(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
     try:
-        process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
-        process.wait(timeout=5)
-    except (OSError, subprocess.TimeoutExpired):
-        process.kill()
-        process.wait(timeout=3)
+        sock.settimeout(connect_timeout_s)
+        sock.bind((config["hosts"][host]["ip"], 0))
+        try:
+            sock.connect((config["referee_ip"], config["bridge_port"]))
+        except TimeoutError as exc:
+            raise OSError(errno.ETIMEDOUT, "referee TCP connection timed out") from exc
+        challenge = _line(sock)
+        if (challenge.get("protocol") != PROTOCOL
+                or challenge.get("session") != config["session"]
+                or challenge.get("config") != config_fingerprint(config)):
+            raise ValueError("referee configuration/session mismatch")
+        body = {"host": host, "challenge": challenge, "nonce": secrets.token_hex(32)}
+        sock.sendall(_json({"body": body, "mac": _proof(key, body)}) + b"\n")
+        channel = AuthChannel(sock, key, hashlib.sha256(_json(body)).hexdigest(), "agent")
+        # Verify the server also possesses the key BEFORE spawning any controller.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            frames = channel.poll()
+            if frames:
+                if frames[0] != {"type": "authenticated", "host": host}:
+                    raise ValueError("unexpected authentication acknowledgement")
+                channel.pending_frames.extend(frames[1:])
+                return channel
+            time.sleep(0.005)
+        raise TimeoutError("referee authentication timed out")
+    except BaseException:
+        sock.close()
+        raise
+
+
+def _connect_when_ready(config: dict, host: str, key: bytes, wait_s: float) -> AuthChannel:
+    """Retry absent listeners only; never retry authentication or session failures."""
+    if not math.isfinite(wait_s) or not 0 <= wait_s <= 3600:
+        raise ValueError("connection wait must be between 0 and 3600 seconds")
+    deadline = time.monotonic() + wait_s
+    while True:
+        try:
+            return connect_agent(config, host, key,
+                                 connect_timeout_s=min(10, max(.01, deadline - time.monotonic()))
+                                 if wait_s else 10)
+        except OSError as exc:
+            # Only an OS connect error can retry. A post-connect handshake timeout
+            # has no errno and must fail closed instead of hiding a wrong session.
+            if exc.errno not in (errno.ECONNREFUSED, errno.ETIMEDOUT,
+                                 errno.ENETUNREACH, errno.EHOSTUNREACH):
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("referee connection wait expired") from exc
+            time.sleep(min(.25, remaining))
+
+
+def _request_node_stop(node: dict, now: float) -> None:
+    """Request a fault stop without blocking the live bridge for sibling robots."""
+    if "stop_requested_at" in node:
+        return
+    if node["process"].poll() is not None:
+        raise RuntimeError("controller exited before its scheduled failure injection")
+    node["stop_requested_at"] = now
+    node["process"].send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
+
+
+def _poll_node_stop(node: dict, now: float) -> bool:
+    if "stop_requested_at" not in node or "stop_confirmed_after_s" in node:
+        return False
+    if node["process"].poll() is not None:
+        node["stop_confirmed_after_s"] = now - node["stop_requested_at"]
+        return True
+    age = now - node["stop_requested_at"]
+    if age > 8:
+        raise TimeoutError("scheduled controller stop did not terminate within eight seconds")
+    if age > 5 and not node.get("stop_kill_requested"):
+        node["process"].kill()
+        node["stop_kill_requested"] = True
+    return False
+
+
+def _stop_nodes(nodes: dict) -> list[str]:
+    """Stop siblings together with one eight-second budget, not eight per node."""
+    pending = {rid: node["process"] for rid, node in nodes.items()
+               if node["process"].poll() is None}
+    for process in pending.values():
+        try:
+            process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
+        except OSError:
+            pass  # poll below resolves concurrent exits; one failure cannot skip siblings
+    for seconds, force in ((5, False), (3, True)):
+        if force:
+            for process in pending.values():
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+        deadline = time.monotonic() + seconds
+        while pending:
+            pending = {rid: process for rid, process in pending.items() if process.poll() is None}
+            if not pending or time.monotonic() >= deadline:
+                break
+            time.sleep(.01)
+    return sorted(pending)
 
 
 def _free_udp() -> socket.socket:
@@ -355,9 +470,9 @@ def _reserve_sensor(config: dict, index: int) -> socket.socket:
     raise RuntimeError(f"no free bounded sensor port for AMR{index + 1:02d}")
 
 
-def run_agent(config: dict, host: str, key: bytes) -> dict:
+def run_agent(config: dict, host: str, key: bytes, *, connect_wait_s: float = 0) -> dict:
     validate_config(config)
-    channel = connect_agent(config, host, key)
+    channel = _connect_when_ready(config, host, key, connect_wait_s)
     nodes: dict[str, dict] = {}
     sender = _free_udp()
     failure: str | None = None
@@ -386,7 +501,7 @@ def run_agent(config: dict, host: str, key: bytes) -> dict:
                        str(actuator.getsockname()[1]), "--visual-telemetry",
                        "--terminal-journal", str(temp_root / f"{rid}-terminal.json"),
                        "--report", str(report_path),
-                       "--duration", str(config["duration_s"] + 180)]
+                       "--duration", str(_controller_lifetime(config))]
             child_env = os.environ.copy()
             child_env["SIH_FLEET_PSK"] = key.decode("utf-8")
             process = subprocess.Popen(command, cwd=ROOT, env=child_env,
@@ -416,7 +531,7 @@ def run_agent(config: dict, host: str, key: bytes) -> dict:
                     if rid not in nodes:
                         raise ValueError("referee tried to stop a foreign robot")
                     stop_expected.add(rid)
-                    _stop_process(nodes[rid]["process"])
+                    _request_node_stop(nodes[rid], time.monotonic())
                 for rid, payload in frame["sensors"].items():
                     if rid not in nodes or rid in stop_expected:
                         raise ValueError("sensor frame is bound to another/stopped robot")
@@ -425,6 +540,11 @@ def run_agent(config: dict, host: str, key: bytes) -> dict:
                 break
             actuations = {}
             for rid, node in nodes.items():
+                if _poll_node_stop(node, time.monotonic()):
+                    channel.send({"type": "controller_stopped", "robot": rid,
+                                  "delay_s": node["stop_confirmed_after_s"],
+                                  "exit_code": node["process"].returncode,
+                                  "forced": bool(node.get("stop_kill_requested"))})
                 receive_deadline = time.perf_counter() + .002
                 for _ in range(64):
                     if time.perf_counter() >= receive_deadline:
@@ -463,8 +583,10 @@ def run_agent(config: dict, host: str, key: bytes) -> dict:
     except (OSError, ValueError, KeyError, RuntimeError, KeyboardInterrupt) as exc:
         failure = f"{type(exc).__name__}: {exc}"
     finally:
+        remaining = _stop_nodes(nodes)
+        if remaining:
+            failure = (failure + "; " if failure else "") + "controller cleanup failed: " + ", ".join(remaining)
         for node in nodes.values():
-            _stop_process(node["process"])
             node["log"].close()
             node["socket"].close()
         sender.close()
@@ -479,7 +601,13 @@ def run_agent(config: dict, host: str, key: bytes) -> dict:
             missing.append({"robot": rid, "exit_code": node["process"].returncode,
                             "log_tail": (temp_root / f"{rid}.log").read_text()[-2000:]})
     result = {"type": "report", "host": host, "nodes": reports, "missing": missing,
-              "failure": failure, "expected_stops": sorted(stop_expected)}
+              "failure": failure, "expected_stops": sorted(stop_expected),
+              "controller_lifetime_s": _controller_lifetime(config),
+              "confirmed_stops": {rid: {"delay_s": node["stop_confirmed_after_s"],
+                                        "exit_code": node["process"].returncode,
+                                        "forced": bool(node.get("stop_kill_requested"))}
+                                  for rid, node in nodes.items()
+                                  if "stop_confirmed_after_s" in node}}
     try:
         channel.send(result)
     except OSError:
@@ -492,6 +620,9 @@ def run_agent(config: dict, host: str, key: bytes) -> dict:
 def run_referee(config: dict, key: bytes, ready_timeout_s: float = 120,
                 on_snapshot=None) -> dict:
     validate_config(config)
+    if (not math.isfinite(ready_timeout_s)
+            or not 0 < ready_timeout_s <= _readiness_budget(config)):
+        raise ValueError("referee readiness timeout exceeds the pinned controller readiness budget")
     sc = _scenario(config)
     world = World(sc.env, DEFAULT, seed=config["seed"])
     world.human_randomized = sc.human_randomized
@@ -527,6 +658,7 @@ def run_referee(config: dict, key: bytes, ready_timeout_s: float = 120,
     expected_stale_motion = dict.fromkeys(ids, 0)
     frame_counts = dict.fromkeys(ids, 0)
     expected_stops: set[str] = set()
+    observed_stop_exits: dict[str, dict] = {}
     obstacles_added: set[str] = set()
     obstacles_removed: set[str] = set()
     cut_start = cut_end = None
@@ -585,6 +717,12 @@ def run_referee(config: dict, key: bytes, ready_timeout_s: float = 120,
                         command_events[rid].append((time.monotonic(), command.safety_stop))
                 elif frame["type"] == "report":
                     host_reports[host] = frame
+                elif frame["type"] == "controller_stopped":
+                    rid, evidence = _stop_confirmation(frame, host, owners, expected_stops,
+                                                       observed_stop_exits, world.t)
+                    observed_stop_exits[rid] = evidence
+                    events.append({"type": "controller_stop_confirmed", "robot": rid,
+                                   "t": world.t, **evidence})
                 else:
                     raise ValueError("unexpected agent frame")
 
@@ -680,7 +818,8 @@ def run_referee(config: dict, key: bytes, ready_timeout_s: float = 120,
                 referee_late_ticks += 1
             if any(now - last_seen[host] > 1 for host in channels):
                 raise TimeoutError("host bridge stopped responding")
-            commands = {rid: gate.command(now) for rid, gate in gates.items()}
+            commands = {rid: (Actuation(safety_stop=True) if rid in expected_stops
+                              else gate.command(now)) for rid, gate in gates.items()}
             world.step(dt, commands)
             for rid in ids:
                 motion_events[rid].append((now, abs(world.robots[rid].v)))
@@ -771,11 +910,15 @@ def run_referee(config: dict, key: bytes, ready_timeout_s: float = 120,
     event_gate = (len(expected_stops) == len(sc.robot_fail_at)
                   and len(obstacles_added) == len(sc.obstacles)
                   and all(e.clear_at is None or e.oid in obstacles_removed for e in sc.obstacles))
-    recovered_failures = all(
-        e["active_at_stop"] and any(c["task"] == e["task"] and c["owner"] != e["robot"]
-                                   and c["owner"] not in expected_stops and c["t"] > e["t"]
-                                   for c in completion_events)
-        for e in events if e["type"] == "controller_stop")
+    confirmed_stops = {
+        rid: {**evidence, "observed_at_s": observed_stop_exits[rid]["observed_at_s"]}
+        for host, report in host_reports.items()
+        for rid, evidence in report.get("confirmed_stops", {}).items()
+        if owners.get(rid) == host and rid in observed_stop_exits
+        and observed_stop_exits[rid]["process_exit"] == evidence}
+    event_gate = event_gate and expected_stops == set(confirmed_stops)
+    recovery_evidence = _failure_recovery_evidence(events, completion_events, confirmed_stops)
+    recovered_failures = all(row["pass"] for row in recovery_evidence)
     cross_host_peers = {
         r["robot_id"]: sorted(peer for peer in r.get("peer_sources", [])
                               if peer in owners and owners[peer] != owners[r["robot_id"]])
@@ -817,6 +960,20 @@ def run_referee(config: dict, key: bytes, ready_timeout_s: float = 120,
             "reported_completed_after_shutdown": sorted(final_reported),
             "sensor_cut_evidence": cut_evidence, "control_deadlines_met": timing,
             "event_coverage": event_gate, "failure_work_recovered": recovered_failures,
+            "fault_coverage": {
+                "sensor_loss": {"requested": bool(config["sensor_cut"]),
+                                "pass": None if cut_evidence is None else cut_evidence["pass"]},
+                "controller_failure": {"requested_count": len(sc.robot_fail_at),
+                                       "confirmed_count": len(confirmed_stops),
+                                       "recoveries": recovery_evidence,
+                                       "pass": recovered_failures if sc.robot_fail_at else None},
+                "blocked_aisle": {"requested_count": len(sc.obstacles),
+                                  "inserted_count": len(obstacles_added),
+                                  "cleared_count": len(obstacles_removed),
+                                  "pass": event_gate if sc.obstacles else None}},
+            "scenario_features": {"humans": len(sc.humans),
+                                  "human_randomized": sc.human_randomized,
+                                  "isolated_lanes": config["scenario"] == "deployment_socket_acceptance"},
             "events": events, "actuator_frames": frame_counts,
             "stale_motion_frames_rejected": stale_motion,
             "expected_sensor_cut_stale_motion_rejected": expected_stale_motion,
@@ -834,6 +991,105 @@ def run_referee(config: dict, key: bytes, ready_timeout_s: float = 120,
             "claim_boundary": "Measured hosts only; software physics, not physical safety certification."}
 
 
+def _manifest_path(directory: Path, value: str) -> Path:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise ValueError("manifest paths must be relative paths using forward slashes")
+    if PurePosixPath(value).is_absolute() or PureWindowsPath(value).drive or ".." in value.split("/"):
+        raise ValueError("manifest paths may not escape the manifest directory")
+    devices = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
+               *(f"LPT{i}" for i in range(1, 10))}
+    if any(":" in part or "\x00" in part or part.endswith((".", " "))
+           or part.split(".", 1)[0].upper() in devices for part in value.split("/")):
+        raise ValueError("manifest paths must name portable ordinary files, not device/stream paths")
+    resolved = (directory / value).resolve()
+    if not resolved.is_relative_to(directory):
+        raise ValueError("manifest symlink escapes the manifest directory")
+    return resolved
+
+
+def load_campaign(manifest: Path, host: str) -> list[dict]:
+    """Validate a data-only campaign completely before launching any controller."""
+    manifest = manifest.resolve()
+    raw = json.loads(manifest.read_text(encoding="utf-8"))
+    if (not isinstance(raw, dict) or set(raw) != {"schema", "entries"}
+            or type(raw["schema"]) is not int or raw["schema"] != 1
+            or not isinstance(raw["entries"], list) or not 1 <= len(raw["entries"]) <= 32):
+        raise ValueError("campaign requires schema 1 and between 1 and 32 entries")
+    rows, sessions, outputs, key_hashes, bridges = [], set(), set(), set(), set()
+    inputs = {manifest}
+    for entry in raw["entries"]:
+        if not isinstance(entry, dict) or set(entry) != {"config", "key_file", "output"}:
+            raise ValueError("campaign entries contain config, key_file and output only")
+        paths = {name: _manifest_path(manifest.parent, value) for name, value in entry.items()}
+        config = json.loads(paths["config"].read_text(encoding="utf-8"))
+        validate_config(config)
+        if host not in config["hosts"]:
+            raise ValueError("campaign host is not configured")
+        key = paths["key_file"].read_text(encoding="utf-8").strip().encode("utf-8")
+        if len(key) < 32:
+            raise ValueError("campaign key must contain at least 32 characters")
+        key_hash = hashlib.sha256(key).digest()
+        if key_hash in key_hashes:
+            raise ValueError("each campaign session requires its own peer authentication key")
+        if config["session"] in sessions or paths["output"] in outputs:
+            raise ValueError("campaign sessions and output paths must be unique")
+        bridge = (config["referee_ip"], config["bridge_port"])
+        if bridge in bridges:
+            raise ValueError("campaign sessions require distinct referee TCP ports to avoid shutdown races")
+        if paths["output"].exists():
+            raise ValueError("refusing to overwrite an existing campaign output")
+        sessions.add(config["session"])
+        bridges.add(bridge)
+        key_hashes.add(key_hash)
+        outputs.add(paths["output"])
+        inputs.update((paths["config"], paths["key_file"]))
+        rows.append({**paths, "configuration": config, "key": key})
+    if outputs & inputs:
+        raise ValueError("campaign outputs may not replace configuration, key or manifest inputs")
+    return rows
+
+
+def run_agent_campaign(manifest: Path, host: str, connect_wait_s: float = 1800) -> int:
+    if not math.isfinite(connect_wait_s) or not 0 < connect_wait_s <= 3600:
+        raise ValueError("campaign connection wait must be between 0 and 3600 seconds")
+    rows = load_campaign(manifest, host)
+    healthy = True
+    for index, row in enumerate(rows, 1):
+        print(f"Session {index}/{len(rows)}: {row['configuration']['scenario']} "
+              f"({row['configuration']['robots']} AMRs); waiting for its referee.", flush=True)
+        # Exclusive creation prevents overwriting another process that raced the
+        # upfront check. Preserve even an interrupted attempt instead of retrying it.
+        row["output"].parent.mkdir(parents=True, exist_ok=True)
+        with row["output"].open("x", encoding="utf-8") as output:
+            interrupted = False
+            try:
+                result = run_agent(row["configuration"], host, row["key"],
+                                   connect_wait_s=connect_wait_s)
+            except (OSError, ValueError, KeyError, RuntimeError, KeyboardInterrupt) as exc:
+                interrupted = isinstance(exc, KeyboardInterrupt)
+                result = {"type": "report", "host": host, "nodes": [], "missing": [],
+                          "failure": f"{type(exc).__name__}: {exc}"}
+            result["campaign"] = {"index": index, "sessions": len(rows),
+                                  "session": row["configuration"]["session"],
+                                  "experiment_pass_scope": "Consult the corresponding referee report."}
+            output.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
+        expected = len(row["configuration"]["hosts"][host]["indices"])
+        session_healthy = (not result["failure"] and not result["missing"]
+                           and len(result["nodes"]) == expected)
+        healthy = healthy and session_healthy
+        print(f"Session {index}: host report saved; host lifecycle "
+              f"{'complete' if session_healthy else 'FAILED'}. No performance pass is implied.", flush=True)
+        if result["failure"]:
+            print(result["failure"], flush=True)
+        if interrupted:
+            return 130
+        if not session_healthy:
+            print("Campaign stopped after this failed host session; remaining sessions were not run.", flush=True)
+            break
+    print("Inspect referee reports for full completion, contacts, timing and actual multi-host proof.", flush=True)
+    return 0 if healthy else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -847,9 +1103,14 @@ def main(argv: list[str] | None = None) -> int:
     prepare.add_argument("--seed", type=int, default=0)
     prepare.add_argument("--bridge-port", type=int, default=29600)
     prepare.add_argument("--peer-port", type=int, default=29601)
+    prepare.add_argument("--readiness-timeout", type=float, default=1800)
     prepare.add_argument("--no-sensor-cut", action="store_true")
     prepare.add_argument("--windows-repo", default=r"C:\BIOS7")
     prepare.add_argument("--output", required=True)
+    campaign = sub.add_parser("campaign-agent", help="Run an ordered, pinned data-only campaign on one host")
+    campaign.add_argument("--manifest", required=True)
+    campaign.add_argument("--host", choices=("mac", "windows"), required=True)
+    campaign.add_argument("--connect-wait", type=float, default=1800)
     for name in ("agent", "referee"):
         command = sub.add_parser(name)
         command.add_argument("--config", required=True)
@@ -862,10 +1123,12 @@ def main(argv: list[str] | None = None) -> int:
             command.add_argument("--no-view", action="store_true",
                                  help="Do not publish the passive local dashboard snapshot")
     args = parser.parse_args(argv)
+    if args.command == "campaign-agent":
+        return run_agent_campaign(Path(args.manifest), args.host, args.connect_wait)
     if args.command == "prepare":
         config = make_config(args.mac_ip, args.windows_ip, args.robots, args.scenario,
                              args.duration, args.seed, args.policy, args.bridge_port,
-                             args.peer_port, not args.no_sensor_cut)
+                             args.peer_port, not args.no_sensor_cut, args.readiness_timeout)
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         if output.exists() or output.with_suffix(".key").exists():

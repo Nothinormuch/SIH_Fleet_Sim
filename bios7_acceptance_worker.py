@@ -80,8 +80,12 @@ def main():
     start_wall, start_cpu = time.perf_counter(), time.process_time()
     result = run_scenario(scenario, request["policy"], seed=scenario.seed, cfg=cfg,
                           allocation_policy=allocation).to_dict()
+    config = dataclasses.asdict(cfg)
     json.dump({
-        "result": result, "config": dataclasses.asdict(cfg),
+        "result": result, "config": config,
+        "config_sha256": hashlib.sha256(json.dumps(
+            config, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+        "controller_source_root": str(root),
         "physical_config": physical,
         "scenario_input_sha256": hashlib.sha256(json.dumps(
             request["scenario"], sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
@@ -90,7 +94,8 @@ def main():
         "max_rss_platform_units": (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                                    if resource is not None else None),
         "memory_scope": "ru_maxrss bytes on macOS, KiB on Linux; process peak",
-        "timing_scope": "serial headless simulation wall/CPU; not live controller latency",
+        "timing_scope": "headless process wall/CPU on current host; other workloads may share "
+                        "the host; not live controller latency or hard-real-time evidence",
     }, sys.stdout, allow_nan=False)
     sys.stdout.write("\n")
 

@@ -2,14 +2,17 @@
 
 from concurrent.futures import ThreadPoolExecutor
 import copy
+import errno
 import json
 from pathlib import PurePosixPath, PureWindowsPath
 import socket
 import time
+from unittest.mock import Mock
 
 import pytest
 
 from src import messages as msg
+from src import multihost_demo as demo
 from src.amr import Task
 from src.multihost_demo import (AuthChannel, _completion_owner, _line, _reserve_sensor, _timing_pass, accept_agent, make_config,
                                 run_agent, run_referee, source_fingerprint, validate_config)
@@ -203,6 +206,219 @@ def test_missing_or_nonfinite_timing_evidence_cannot_pass():
     report["full_cycle"]["loop_max_ms"] = float("nan")
     assert not _timing_pass(report)
     assert not _timing_pass({})
+
+
+def test_controller_lifetime_covers_whole_pinned_readiness_and_run():
+    config = make_config("127.0.0.1", "127.0.0.1", duration_s=25,
+                         readiness_timeout_s=1800)
+    assert demo._controller_lifetime(config) == 1855
+    with pytest.raises(ValueError, match="readiness budget"):
+        run_referee(config, b"x" * 32, ready_timeout_s=1801)
+    for invalid in (True, 0, -1, 3601, float("nan")):
+        with pytest.raises(ValueError, match="readiness_timeout_s"):
+            make_config("127.0.0.1", "127.0.0.1", readiness_timeout_s=invalid)
+
+
+def test_scheduled_failure_requests_stop_without_blocking_other_controllers():
+    process = Mock()
+    process.poll.return_value = None
+    node = {"process": process}
+    demo._request_node_stop(node, 10)
+    demo._request_node_stop(node, 11)
+    process.send_signal.assert_called_once()
+    process.wait.assert_not_called()
+    demo._poll_node_stop(node, 14)
+    process.kill.assert_not_called()
+    demo._poll_node_stop(node, 15.1)
+    process.kill.assert_called_once()
+    process.wait.assert_not_called()
+    process.poll.return_value = 0
+    process.returncode = 0
+    demo._poll_node_stop(node, 15.2)
+    assert node["stop_confirmed_after_s"] == pytest.approx(5.2)
+
+
+def test_scheduled_failure_cannot_claim_an_already_dead_or_unstoppable_controller():
+    process = Mock()
+    process.poll.return_value = 1
+    with pytest.raises(RuntimeError, match="before its scheduled failure"):
+        demo._request_node_stop({"process": process}, 10)
+    process.poll.return_value = None
+    with pytest.raises(TimeoutError, match="eight seconds"):
+        demo._poll_node_stop({"process": process, "stop_requested_at": 10}, 18.1)
+
+
+def test_shutdown_signals_all_siblings_before_waiting_and_survives_one_signal_error(monkeypatch):
+    first, second = Mock(), Mock()
+    signalled = set()
+
+    def first_signal(_signal):
+        signalled.add("AMR01")
+        raise ProcessLookupError("exit race")
+
+    def second_signal(_signal):
+        signalled.add("AMR02")
+
+    first.send_signal.side_effect = first_signal
+    second.send_signal.side_effect = second_signal
+    first.poll.side_effect = lambda: 0 if len(signalled) == 2 else None
+    second.poll.side_effect = lambda: 0 if len(signalled) == 2 else None
+    assert demo._stop_nodes({"AMR01": {"process": first}, "AMR02": {"process": second}}) == []
+    first.wait.assert_not_called()
+    second.wait.assert_not_called()
+
+
+def test_failure_recovery_requires_confirmed_exit_active_work_and_new_surviving_owner():
+    events = [{"type": "controller_stop", "robot": "AMR01", "task": "JOB-1",
+               "active_at_stop": True, "t": 2.0}]
+    done = [{"task": "JOB-1", "owner": "AMR02", "t": 3.0}]
+    confirmed = {"AMR01": {"exit_code": 0, "delay_s": .04, "observed_at_s": 2.1}}
+    assert demo._failure_recovery_evidence(events, done, confirmed)[0]["pass"]
+    assert not demo._failure_recovery_evidence(events, done, {})[0]["pass"]
+    for owner, t in (("AMR01", 3.0), ("AMR02", 1.9)):
+        invalid = [{"task": "JOB-1", "owner": owner, "t": t}]
+        assert not demo._failure_recovery_evidence(events, invalid, confirmed)[0]["pass"]
+    events[0]["active_at_stop"] = False
+    assert not demo._failure_recovery_evidence(events, done, confirmed)[0]["pass"]
+
+
+def test_completion_before_observed_delayed_exit_cannot_prove_failure_recovery():
+    events = [{"type": "controller_stop", "robot": "AMR01", "task": "JOB-1",
+               "active_at_stop": True, "t": 2.0}]
+    done = [{"task": "JOB-1", "owner": "AMR02", "t": 4.0}]
+    confirmed = {"AMR01": {"exit_code": 0, "delay_s": 5.0, "observed_at_s": 7.1}}
+    assert not demo._failure_recovery_evidence(events, done, confirmed)[0]["pass"]
+    done[0]["t"] = 7.2
+    assert demo._failure_recovery_evidence(events, done, confirmed)[0]["pass"]
+
+
+def test_live_exit_confirmation_is_owned_expected_unique_and_uses_referee_time():
+    frame = {"robot": "AMR01", "delay_s": .05, "exit_code": 0, "forced": False}
+    owners, expected = {"AMR01": "mac"}, {"AMR01"}
+    rid, evidence = demo._stop_confirmation(frame, "mac", owners, expected, {}, 2.1)
+    assert rid == "AMR01" and evidence["observed_at_s"] == 2.1
+    for host, stopped, previous in (("windows", expected, {}), ("mac", set(), {}),
+                                    ("mac", expected, {rid: evidence})):
+        with pytest.raises(ValueError, match="confirmation"):
+            demo._stop_confirmation(frame, host, owners, stopped, previous, 2.2)
+    with pytest.raises(ValueError, match="invalid"):
+        demo._stop_confirmation({**frame, "delay_s": float("nan")}, "mac", owners, expected, {}, 2.1)
+
+
+@pytest.mark.parametrize("robots", [3, 10])
+@pytest.mark.parametrize("scenario", ["edge_overlap", "edge_chokepoint", "edge_human_crossing",
+                                      "blocked_aisle", "robot_failure_reassignment"])
+def test_shared_floor_and_fault_profiles_have_supported_pinned_inputs(robots, scenario):
+    # This verifies configuration support only, not liveness, timing or completion.
+    config = make_config("127.0.0.1", "127.0.0.1", robots=robots, scenario=scenario,
+                         duration_s=180, sensor_cut=False)
+    validate_config(config)
+    assert len(demo._scenario(config).starts) == robots
+
+
+def _campaign_fixture(tmp_path, sessions=2):
+    entries = []
+    for index in range(sessions):
+        config = make_config("127.0.0.1", "127.0.0.1", bridge_port=29600 + index * 2)
+        (tmp_path / f"session-{index}.json").write_text(json.dumps(config), encoding="utf-8")
+        (tmp_path / f"session-{index}.key").write_text(str(index) * 32, encoding="utf-8")
+        entries.append({"config": f"session-{index}.json", "key_file": f"session-{index}.key",
+                        "output": f"reports/session-{index}.json"})
+    manifest = tmp_path / "campaign.json"
+    manifest.write_text(json.dumps({"schema": 1, "entries": entries}), encoding="utf-8")
+    return manifest
+
+
+def test_campaign_validates_every_config_before_start_and_refuses_old_outputs(tmp_path, monkeypatch):
+    manifest = _campaign_fixture(tmp_path)
+    assert len(demo.load_campaign(manifest, "windows")) == 2
+    bad = json.loads((tmp_path / "session-1.json").read_text())
+    bad["source_sha256"] = "outdated"
+    (tmp_path / "session-1.json").write_text(json.dumps(bad))
+    runner = Mock()
+    monkeypatch.setattr(demo, "run_agent", runner)
+    with pytest.raises(ValueError, match="source mismatch"):
+        demo.run_agent_campaign(manifest, "windows")
+    runner.assert_not_called()
+    assert not (tmp_path / "reports").exists()
+    _campaign_fixture(tmp_path)
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "reports/session-0.json").write_text("previous evidence")
+    with pytest.raises(ValueError, match="overwrite"):
+        demo.load_campaign(manifest, "windows")
+    assert (tmp_path / "reports/session-0.json").read_text() == "previous evidence"
+
+
+@pytest.mark.parametrize("value", ["../report.json", "/tmp/report.json", "C:/report.json",
+                                  "C:report.json", "nested\\report.json", "reports/file:stream",
+                                  "reports/NUL.json", "COM1/output.json", "reports/trailing."])
+def test_campaign_rejects_paths_outside_its_directory(tmp_path, value):
+    with pytest.raises(ValueError, match="manifest"):
+        demo._manifest_path(tmp_path, value)
+
+
+def test_campaign_rejects_symlink_escape_and_reused_peer_key(tmp_path):
+    manifest = _campaign_fixture(tmp_path)
+    (tmp_path / "escape").symlink_to(tmp_path.parent, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlink"):
+        demo._manifest_path(tmp_path, "escape/report.json")
+    (tmp_path / "session-1.key").write_text((tmp_path / "session-0.key").read_text())
+    with pytest.raises(ValueError, match="own peer authentication key"):
+        demo.load_campaign(manifest, "windows")
+
+
+def test_campaign_rejects_reused_tcp_listener_but_allows_shared_peer_udp_port(tmp_path):
+    manifest = _campaign_fixture(tmp_path)
+    rows = demo.load_campaign(manifest, "windows")
+    assert len({row["configuration"]["peer_port"] for row in rows}) == 1
+    config = rows[1]["configuration"]
+    config["bridge_port"] = rows[0]["configuration"]["bridge_port"]
+    (tmp_path / "session-1.json").write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="distinct referee TCP ports"):
+        demo.load_campaign(manifest, "windows")
+
+
+def test_campaign_runs_ordered_sessions_but_never_claims_experiment_pass(tmp_path, monkeypatch, capsys):
+    manifest = _campaign_fixture(tmp_path)
+    seen = []
+
+    def agent(config, host, key, *, connect_wait_s):
+        seen.append(config["session"])
+        return {"nodes": [{}], "missing": [], "failure": None, "host": host}
+
+    monkeypatch.setattr(demo, "run_agent", agent)
+    assert demo.run_agent_campaign(manifest, "windows", 1) == 0
+    assert len(set(seen)) == 2
+    for index in range(2):
+        report = json.loads((tmp_path / f"reports/session-{index}.json").read_text())
+        assert report["campaign"]["index"] == index + 1
+        assert "success" not in report
+    assert "No performance pass is implied" in capsys.readouterr().out
+
+
+def test_campaign_preserves_failed_attempt_and_does_not_start_remaining_sessions(tmp_path, monkeypatch):
+    manifest = _campaign_fixture(tmp_path)
+    runner = Mock(side_effect=ValueError("session mismatch"))
+    monkeypatch.setattr(demo, "run_agent", runner)
+    assert demo.run_agent_campaign(manifest, "windows", 1) == 1
+    runner.assert_called_once()
+    first = json.loads((tmp_path / "reports/session-0.json").read_text())
+    assert first["failure"] == "ValueError: session mismatch"
+    assert not (tmp_path / "reports/session-1.json").exists()
+
+
+def test_campaign_connection_retry_never_retries_authentication_failure(monkeypatch):
+    monkeypatch.setattr(demo.time, "sleep", lambda _: None)
+    channel = object()
+    connector = Mock(side_effect=[ConnectionRefusedError(errno.ECONNREFUSED, "not listening"), channel])
+    monkeypatch.setattr(demo, "connect_agent", connector)
+    assert demo._connect_when_ready({}, "windows", b"x" * 32, 1) is channel
+    assert connector.call_count == 2
+    connector.reset_mock(side_effect=True)
+    connector.side_effect = ValueError("wrong authentication")
+    with pytest.raises(ValueError, match="authentication"):
+        demo._connect_when_ready({}, "windows", b"x" * 32, 1)
+    connector.assert_called_once()
 
 
 def test_sensor_ports_are_disjoint_and_busy_ports_have_bounded_fallback():

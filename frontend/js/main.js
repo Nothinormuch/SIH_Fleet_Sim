@@ -1,4 +1,5 @@
 import { DigitalTwin } from './digital-twin.js';
+import { policyProfile } from './policy-profile.js';
 
 /* App shell: fetch a run, play it back, keep the panel in sync.
  *
@@ -188,18 +189,19 @@ async function boot() {
 function updatePolicyProfile() {
   const policy = el('policy').value;
   const allocation = el('allocationPolicy').value;
-  const isV6 = policy === 'BIOS_PIBT.6';
-  el('bios6Intelligence')?.classList.toggle('is-v6', isV6);
+  const profileInfo = policyProfile(policy);
+  el('bios6Intelligence')?.classList.toggle('is-v6', profileInfo.predictive);
   const proof = el('predictiveProof');
-  if (proof) proof.hidden = !isV6;
+  if (proof) proof.hidden = !profileInfo.predictive;
   const profile = el('launchProfile');
   if (profile) {
-    profile.textContent = isV6
-      ? `BIOS 6.0 · ${allocation} · predictive edge`
-      : `${policy.replaceAll('_', ' ')} · ${allocation} · energy gate`;
+    profile.textContent = `${profileInfo.title} · ${allocation} · ${profileInfo.predictive ? 'predictive edge' : 'energy gate'}`;
   }
   const mode = el('collectiveMode');
-  if (mode) mode.textContent = isV6 ? 'PREDICTIVE EDGE' : 'V6 NOT SELECTED';
+  if (mode) mode.textContent = profileInfo.mode;
+  document.querySelectorAll('[data-policy-title]').forEach(node => {
+    node.textContent = profileInfo.title;
+  });
 }
 
 function renderScenarioGallery(showcase) {
@@ -285,6 +287,7 @@ function syncSeed99Mode() {
 
 function fill(select, values, preferred) {
   const labels = {
+    'BIOS_PIBT.7': 'BIOS 7.0 · Corridor release',
     'BIOS_PIBT.6': 'BIOS 6.0 · Predictive',
     'BIOS_PIBT.5': 'BIOS 5.0 · Energy-aware',
     'BIOS_PIBT.3': 'BIOS 3.0 · Priority traffic',
@@ -1127,12 +1130,12 @@ function renderCollectiveIntelligence(frame) {
   const metrics = el('collectiveMetrics');
   const stream = el('thoughtStream');
   if (!metrics || !stream || !App.data) return;
-  const isV6 = App.data.meta.policy === 'BIOS_PIBT.6';
-  el('bios6Intelligence')?.classList.toggle('is-v6', isV6);
-  el('collectiveMode').textContent = isV6 ? 'PREDICTIVE EDGE' : 'V6 NOT SELECTED';
-  if (!isV6) {
-    metrics.innerHTML = '<p class="muted">Select BIOS_PIBT.6 to activate predictive telemetry.</p>';
-    stream.innerHTML = '<p class="muted">This policy does not publish BIOS 6 decision reasons.</p>';
+  const profileInfo = policyProfile(App.data.meta.policy);
+  el('bios6Intelligence')?.classList.toggle('is-v6', profileInfo.predictive);
+  el('collectiveMode').textContent = profileInfo.mode;
+  if (!profileInfo.predictive) {
+    metrics.innerHTML = '<p class="muted">Select BIOS 6 or 7 to inspect predictive telemetry.</p>';
+    stream.innerHTML = '<p class="muted">This reference policy does not publish predictive decision reasons.</p>';
     return;
   }
 
@@ -1146,6 +1149,9 @@ function renderCollectiveIntelligence(frame) {
     <div class="metric"><span>Predictive reroutes</span><b>${Number(s.predictive_reroutes || 0)}</b></div>
     <div class="metric"><span>Packets suppressed</span><b class="good">${suppressed.toLocaleString()}</b></div>
     <div class="metric"><span>Decision events</span><b>${Number(s.decision_events || 0)}</b></div>`;
+  if (profileInfo.passageRelease) {
+    metrics.innerHTML += `<div class="metric"><span>Passage-release observations</span><b>${Number(s.v7_passage_releases || 0)}</b></div>`;
+  }
 
   const visible = App.decisionEvents
     .filter(decision => decision.t <= frame.t + 1e-6)
@@ -1248,6 +1254,7 @@ function updateManagerDot(frame) {
   if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'
       || routePolicy === 'BIOS_PIBT.3' || routePolicy === 'BIOS_PIBT.5'
       || routePolicy === 'BIOS_PIBT.6'
+      || routePolicy === 'BIOS_PIBT.7'
       || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot up';
     text.textContent = 'edge-only peer coordination · no manager';
