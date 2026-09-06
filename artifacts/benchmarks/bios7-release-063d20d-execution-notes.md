@@ -39,6 +39,12 @@ not reported as a successful suite.
 
 ## Release evidence still required
 
+The new stress stage completed all 108 workers and passed: 36/36 V7 cases,
+318/318 tasks, zero contacts, and per-case makespan/message/byte nonregression
+against current-source V6. Every declared human/fault coverage check was exercised.
+Its robot-failure scenario contains one recovery job; this is not a claim of
+recovery from every failure in a fully loaded warehouse.
+
 New regression50 and the complete registered holdout were started from this frozen
 source. Old-source completed stages do not count as a passing prerequisite for
 the new source. Stress, repeats, capacity, causal checks and latest-source live LAN
