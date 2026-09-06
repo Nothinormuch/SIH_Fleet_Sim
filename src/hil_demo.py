@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -203,6 +204,9 @@ def run_hil_demo(
     sensor_cut_robot: str | None = None,
     sensor_cut_at_s: float = 0.0,
     sensor_cut_duration_s: float = 0.0,
+    on_snapshot: Callable[[dict], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    sensor_cut_control: Callable[[str], bool] | None = None,
 ) -> dict:
     """Run N public edge-node executables against a socket-only physics referee."""
     if robots < 3:
@@ -302,15 +306,27 @@ def run_hil_demo(
         ticks = max(1, int(duration_s / dt))
         window_started = time.monotonic()
         next_tick = window_started
+        cancelled = False
+        observed_packets = {rid: 0 for rid in robot_ids}
+        observed_completions: set[str] = set()
+        recent_packets: list[dict] = []
+        sensor_counts = {rid: 0 for rid in robot_ids}
         for tick in range(ticks):
+            if should_stop is not None and should_stop():
+                cancelled = True
+                break
             elapsed_s = tick * dt
+            cut_nodes = set()
             for node in nodes:
                 sensor_is_cut = (
                     node.rid == sensor_cut_robot
                     and sensor_cut_at_s <= elapsed_s
                     < sensor_cut_at_s + sensor_cut_duration_s
                 )
+                if sensor_cut_control is not None:
+                    sensor_is_cut = sensor_is_cut or sensor_cut_control(node.rid)
                 if sensor_is_cut:
+                    cut_nodes.add(node.rid)
                     continue
                 sensor_socket.sendto(
                     _encode_sensor_packet(
@@ -318,6 +334,7 @@ def run_hil_demo(
                     ),
                     node.sensor_target,
                 )
+                sensor_counts[node.rid] += 1
             next_tick += dt
             time.sleep(max(0.0, next_tick - time.monotonic()))
             _receive_actuations(nodes)
@@ -327,6 +344,42 @@ def run_hil_demo(
                 for node in nodes
             }
             world.step(dt, commands)
+            if on_snapshot is not None:
+                # Observe a multicast subscription; never forward or inject peer traffic.
+                for packet in task_source.poll():
+                    if packet.src not in observed_packets:
+                        continue
+                    observed_packets[packet.src] += 1
+                    if packet.type == msg.TASK_DONE:
+                        observed_completions.add(str(packet.body.get("task", "")))
+                    recent_packets.append({
+                        "src": packet.src, "type": packet.type,
+                        "seq": packet.seq, "t": round(world.t, 2),
+                        "task": packet.body.get("task"),
+                    })
+                recent_packets = recent_packets[-24:]
+                if tick % max(1, round(DEFAULT.rates.world_hz / 10)) == 0 or tick == ticks - 1:
+                    on_snapshot({
+                        "world": world.snapshot(), "map": world.env.to_json(),
+                        "cell_m": DEFAULT.cell_m,
+                        "duration_s": duration_s,
+                        "tasks": [{"id": t.tid, "pick": t.pick, "drop": t.drop} for t in tasks],
+                        "observed_completed": sorted(observed_completions),
+                        "packets": list(recent_packets),
+                        "contacts": {kind: sum(e.kind == kind for e in world.contacts)
+                                     for kind in ("robot-robot", "robot-human", "robot-rack")},
+                        "nodes": [{
+                            "id": n.rid, "pid": n.process.pid,
+                            "running": n.process.poll() is None,
+                            "sensor_cut": n.rid in cut_nodes,
+                            "sensor_frames": sensor_counts[n.rid],
+                            "actuator_frames": n.actuator_frames,
+                            "peer_packets_observed": observed_packets[n.rid],
+                            "command": {"v": commands[n.rid].v,
+                                        "omega": commands[n.rid].omega,
+                                        "safety_stop": commands[n.rid].safety_stop},
+                        } for n in nodes],
+                    })
             failed = [node for node in nodes if node.process.poll() is not None]
             if failed:
                 raise RuntimeError(
@@ -417,10 +470,11 @@ def run_hil_demo(
         }
     success = all((distinct_processes, hardware_boundary, peers_observed,
                    authenticated, deadlines_met, contact_free, task_gate,
-                   sensor_cut_gate, not process_failures))
+                   sensor_cut_gate, not process_failures, not cancelled))
     pi_model = _raspberry_pi_model()
     result = {
         "success": success,
+        "cancelled": cancelled,
         "proof_scope": "closed_loop_software_in_the_loop",
         "physical_amr_tested": False,
         "raspberry_pi_tested": pi_model is not None,

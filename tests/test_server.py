@@ -69,6 +69,20 @@ def _expect_error(fn, code: int):
 # ------------------------------------------------------------------ basics
 
 
+def test_virtual_edge_lab_routes_and_validation(base_url):
+    _, body, _ = _get(f"{base_url}/api/edge-lab/status")
+    assert body["state"] == "idle"
+    with urllib.request.urlopen(f"{base_url}/edge-lab.html") as response:
+        assert response.status == 200
+        assert b"Three robots. Three independent brains." in response.read()
+    _expect_error(lambda: _post(f"{base_url}/api/edge-lab/start", {"mode": "bad"}), 400)
+    _expect_error(lambda: _post(f"{base_url}/api/edge-lab/cut-sensor", {"robot": "AMR01"}), 409)
+    request = urllib.request.Request(f"{base_url}/api/edge-lab/start", data=b'{}',
+                                     headers={"Content-Type": "application/json",
+                                              "Origin": "https://example.com"})
+    _expect_error(lambda: urllib.request.urlopen(request), 403)
+
+
 def test_scenarios_lists_bios4(base_url):
     _, body, _ = _get(f"{base_url}/api/scenarios")
     assert "BIOS_4" in body["policies"]

@@ -58,6 +58,7 @@ Full method, provenance and caveats: **[12. Benchmark and Evidence](12-BENCHMARK
 | 16 | [Demo Runbook](16-DEMO-RUNBOOK.md) | Pre-flight, the timed demo script, the evidence walk, and 15+ anticipated judge questions |
 | 17 | [Presentation Script](17-PRESENTATION-SCRIPT.md) | The five-minute spoken script: the words, the six points where a judge takes over, and the comparison the pitch hangs on |
 | 18 | [Real AMR Integration](18-REAL-AMR-INTEGRATION.md) | The vendor adapter, configurable site, closed-loop socket proof, Pi test, commissioning ladder, and exact claim boundary |
+| 19 | [Virtual Edge Lab](19-VIRTUAL-EDGE-LAB.md) | Live process cards, socket telemetry, moving robots, interactive sensor faults and downloadable run evidence |
 
 ---
 

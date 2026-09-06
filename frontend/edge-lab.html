@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BIOS · Virtual edge lab</title>
+  <link rel="stylesheet" href="/css/edge-lab.css">
+  <script src="/js/edge-lab.js" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/">BIOS <span>6.0</span></a><span class="header-label">DEPLOYMENT LAB / 01</span><a href="/">Warehouse dashboard ↗</a></header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">FROM SIMULATION TO ONBOARD COMPUTING</p><h1>Three robots. Three independent brains.</h1><p class="lead">Watch real BIOS processes exchange messages and drive a simulated warehouse through live sensor and motor interfaces.</p></div><span class="scope">SOFTWARE IN THE LOOP<br><small>Virtual onboard computers · current host</small></span></section>
+    <section class="toolbar" aria-label="Demo controls">
+      <button id="start" class="primary">Start live demo <span>20 s →</span></button>
+      <button id="fault-demo">Run sensor-loss demo</button>
+      <button id="stop" disabled>Stop run</button>
+      <button id="download" disabled>Download evidence ↓</button>
+      <span id="status" role="status">Ready to launch</span>
+    </section>
+    <p id="error" class="error" role="alert" hidden></p>
+    <section class="metrics" aria-label="Measured results">
+      <div><span>Independent processes</span><strong id="process-count">—</strong><small>Actual operating-system PIDs</small></div>
+      <div><span>Tasks completed</span><strong id="completion">— / 3</strong><small id="completion-note">Confirmed in the final node reports</small></div>
+      <div><span>Measured contacts</span><strong id="contacts">—</strong><small>Robot / robot · human · rack</small></div>
+      <div><span>Peer packets observed</span><strong id="packets">—</strong><small>Authenticated multicast at the observer</small></div>
+    </section>
+    <div class="workspace">
+      <section class="floor panel"><div class="panel-title"><div><p class="eyebrow">LIVE DIGITAL WAREHOUSE</p><h2>Commands become movement</h2></div><span id="clock" class="mono">0.0 / 20.0 s</span></div>
+        <div class="map-wrap"><canvas id="map" aria-label="Live positions of three simulated AMRs in three separate lanes"></canvas><div id="map-empty">Start a run to connect the controllers.<br><small>Positions will come from the live physics loop.</small></div></div>
+        <div class="legend"><span><i class="pick"></i>Pickup</span><span><i class="drop"></i>Drop</span><span><i class="dock"></i>Charge dock</span><span>↑ Forward heading</span></div>
+        <p class="floor-note">Three isolated test lanes make the deployment interfaces easy to inspect. Use the warehouse dashboard for congestion benchmarks.</p>
+        <div class="network"><div><b>WMS</b><small>Announces tasks only</small></div><span>↓</span><div class="bus"><b>Authenticated peer multicast</b><small id="bus-label">Bids · awards · intent · task completion</small></div></div>
+        <div class="progress"><i id="progress"></i></div>
+      </section>
+      <section class="controllers" aria-label="Virtual onboard computer cards" id="controllers"></section>
+    </div>
+    <section class="lower">
+      <div class="panel packet-panel"><div class="panel-title"><div><p class="eyebrow">OBSERVED ON THE NETWORK</p><h2>Live packet trace</h2></div><span class="tag">PASSIVE LISTENER</span></div><div id="trace" class="trace" aria-label="Recent authenticated network packets">No packets received yet.</div></div>
+      <div class="panel result-panel"><p class="eyebrow">DEMONSTRATE THE FAILURE PATH</p><h2 id="result-title">Disconnect. Stop. Recover.</h2><p id="result-detail">Run the sensor-loss demo: AMR01 loses sensor input at 3 seconds, stops, then receives fresh data again at 5 seconds. The other controllers keep running.</p><p id="timing" class="mono">Loop timing appears after the run finishes.</p></div>
+    </section>
+    <footer><b>What is real:</b> BIOS processes, UDP messages, command watchdogs and measured execution. <b>What is simulated:</b> robot bodies, sensors and the warehouse. The board illustrations represent onboard computers; Raspberry Pi CPU/GPIO emulation and physical hardware timing are not part of this demo.</footer>
+  </main>
+</body>
+</html>

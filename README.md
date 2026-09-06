@@ -59,6 +59,13 @@ tested. Facility geometry and robot limits are supplied through
 `config/site.example.json`; announcement-only WMS jobs use `config/tasks.example.json`.
 See [`docs/18-REAL-AMR-INTEGRATION.md`](docs/18-REAL-AMR-INTEGRATION.md).
 
+For a visual demonstration, start `python backend/server.py` and open
+**http://127.0.0.1:8000/edge-lab.html**. The virtual edge lab displays actual process
+IDs, live UDP sensor/command traffic, moving simulated robots, and a clickable
+sensor-disconnection experiment. See the
+[one-minute walkthrough](docs/19-VIRTUAL-EDGE-LAB.md). Board illustrations represent
+onboard computers; this screen does not emulate Raspberry Pi CPU/GPIO hardware.
+
 ## Decentralized priority algorithm
 
 The default route policy is `BIOS_PIBT.6`; the frozen peer allocator is `auction`, and

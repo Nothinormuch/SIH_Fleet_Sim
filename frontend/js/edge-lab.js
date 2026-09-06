@@ -1,0 +1,146 @@
+'use strict';
+const $ = (id) => document.getElementById(id);
+const colors = ['#69e7bc', '#82b9ff', '#d5adff'];
+let latest = null;
+let busy = false;
+let connected = true;
+let packetCounts = {};
+const labels = {BD:'Task bid', AW:'Auction award', TD:'Task completion', TN:'Task announced',
+  HB:'Heartbeat', IN:'Movement intent', CL:'Spatial claim'};
+
+for (let i = 0; i < 3; i++) {
+  const rid = `AMR0${i + 1}`;
+  const card = document.createElement('article');
+  card.className = 'node'; card.id = rid; card.style.setProperty('--color', colors[i]);
+  card.innerHTML = `<div class="board" aria-hidden="true"><div class="pins"></div><div class="chip">BIOS<small>EDGE NODE</small></div><div class="ports"></div><i class="led"></i><span class="board-label">VIRTUAL BOARD</span></div><div><div class="node-top"><h3>${rid}</h3><span class="badge">Offline</span></div><div class="node-data"><span class="datum">Process<b data-key="pid">—</b></span><span class="datum">Battery<b data-key="battery">—</b></span><span class="datum">Sensor frames<b data-key="sensor">—</b></span><span class="datum">Commands<b data-key="actuator">—</b></span><span class="datum">Peer packets<b data-key="peer">—</b></span><span class="datum">Sensor link<b data-key="link">—</b></span></div><div class="node-actions"><span class="command">Waiting for launch</span><button disabled>Disconnect sensor · 2s</button></div></div>`;
+  card.querySelector('button').addEventListener('click', () => action('cut-sensor', {robot:rid}));
+  $('controllers').append(card);
+}
+
+async function api(path, payload) {
+  const response = await fetch(`/api/edge-lab/${path}`, payload === undefined ? {cache:'no-store', signal:AbortSignal.timeout(2000)} : {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload), signal:AbortSignal.timeout(5000)
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+async function action(path, payload={}) {
+  if (busy) return;
+  busy = true; $('error').hidden = true; render();
+  try { latest = await api(path, payload); connected = true; }
+  catch (error) { $('error').textContent = error.message; $('error').hidden = false; }
+  finally { busy = false; render(); }
+}
+$('start').addEventListener('click', () => action('start', {mode:'normal'}));
+$('fault-demo').addEventListener('click', () => action('start', {mode:'sensor_demo'}));
+$('stop').addEventListener('click', () => action('stop'));
+$('download').addEventListener('click', () => {
+  if (!latest?.result) return;
+  const blob = new Blob([JSON.stringify({result:latest.result, manual_sensor_faults:latest.faults}, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = 'bios-virtual-edge-evidence.json'; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+function render() {
+  const state = latest?.state || 'idle';
+  const active = ['starting','running','stopping'].includes(state);
+  const live = connected && state === 'running' && latest.snapshot_age_s < 1;
+  $('start').disabled = busy || active; $('fault-demo').disabled = busy || active;
+  $('stop').disabled = busy || !active || state === 'stopping';
+  $('download').disabled = !latest?.result;
+  const names = {idle:'Ready to launch',starting:'Launching three edge processes…',running:'● Live · real UDP sockets',stopping:'Stopping edge processes…',cancelled:'Run stopped · partial evidence',finished:'Run finished · evidence recorded',failed:'Run failed'};
+  $('status').textContent = !connected ? 'Disconnected from dashboard server' :
+    state === 'running' && !live ? 'Telemetry delayed · last received positions' : names[state];
+  if (latest?.error) { $('error').textContent = latest.error; $('error').hidden = false; }
+  const snapshot = latest?.snapshot;
+  const result = latest?.result;
+  const nodes = snapshot?.nodes || [];
+  $('process-count').textContent = snapshot ? `${nodes.filter(n => n.running).length} / 3` : '—';
+  $('completion').textContent = result ? `${result.tasks_completed} / ${result.tasks_announced}` : snapshot ? `${snapshot.observed_completed.length} / ${snapshot.tasks.length}` : '— / 3';
+  $('completion-note').textContent = result ? 'Confirmed by the final node reports' : 'Live completion announcements · final verification pending';
+  $('contacts').textContent = snapshot ? Object.values(result?.contacts || snapshot.contacts).reduce((a,b)=>a+b,0) : '—';
+  $('packets').textContent = snapshot ? nodes.reduce((a,n)=>a+n.peer_packets_observed,0).toLocaleString() : '—';
+  const time = snapshot?.world.t || 0;
+  $('clock').textContent = `${time.toFixed(1)} / 20.0 s`;
+  $('progress').style.width = `${Math.min(100,time/20*100)}%`;
+  $('map-empty').hidden = !!snapshot;
+  for (let i=0;i<3;i++) {
+    const rid=`AMR0${i+1}`, card=$(rid), node=nodes.find(n=>n.id===rid);
+    const body=snapshot?.world.robots.find(n=>n.id===rid);
+    const value=(key,v)=>{card.querySelector(`[data-key="${key}"]`).textContent=v;};
+    value('pid',node?.pid || '—'); value('battery',body?`${(body.batt*100).toFixed(0)}%`:'—');
+    value('sensor',node?.sensor_frames ?? '—'); value('actuator',node?.actuator_frames ?? '—');
+    value('peer',node?.peer_packets_observed ?? '—');
+    value('link',node ? active ? node.sensor_cut?'Disconnected':'Connected' : 'Closed' : '—');
+    card.querySelector('.badge').textContent = node ? !live ? active?'Waiting':'Exited' : node.command.safety_stop?'Safety stop':node.sensor_cut?'Sensor lost': 'Online' : 'Offline';
+    const board=card.querySelector('.board'); board.classList.toggle('active',live);
+    board.classList.toggle('cut',live && !!node?.sensor_cut);
+    board.classList.toggle('pulse',live && node.peer_packets_observed !== packetCounts[rid]);
+    packetCounts[rid]=node?.peer_packets_observed;
+    card.querySelector('button').disabled=busy || !live || !!node?.sensor_cut;
+    card.querySelector('.command').textContent = node ? !active ? 'Controller exited' : node.command.safety_stop?'STOP · v = 0':`v ${node.command.v.toFixed(2)} m/s · ω ${node.command.omega.toFixed(2)}`:'Waiting for launch';
+  }
+  const trace=$('trace'); trace.replaceChildren();
+  if (!snapshot?.packets.length) trace.textContent='No packets received yet.';
+  else for (const p of [...snapshot.packets].reverse().slice(0,18)) {
+    const row=document.createElement('div'); row.className='packet';
+    for (const [tag,text] of [['span',`${p.t.toFixed(1)}s`],['b',p.src],['span',`${labels[p.type] || p.type}${p.task ? ` · ${p.task}`:''}`],['span',`#${p.seq}`]]) {
+      const el=document.createElement(tag); el.textContent=text; row.append(el);
+    }
+    trace.append(row);
+  }
+  const panel=document.querySelector('.result-panel');
+  panel.classList.toggle('success',!!result?.success);
+  panel.classList.toggle('failed',!!result && !result.success);
+  if (result) {
+    $('result-title').textContent=result.cancelled?'Run stopped early':result.success?'Deployment run passed':'Run needs investigation';
+    const fault=result.sensor_cut_evidence;
+    $('result-detail').textContent = fault ? `AMR01 sensor stop: ${fault.response_s === null?'not observed':`${(fault.response_s*1000).toFixed(1)} ms`}. Recovery: ${fault.recovered_after_sensor_return?'confirmed':'not observed'}. ${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.control_deadlines_met?'No measured control deadline misses.':'Control deadline misses recorded.'}` : `${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.separate_edge_nodes?'Three distinct process reports verified.':'Process verification incomplete.'} ${result.peer_messages_observed?'Peer communication observed at all nodes.':'Peer verification incomplete.'}`;
+    const times=result.nodes.map(n=>`${n.robot_id}: ${n.runtime.loop_p99_ms.toFixed(2)} ms`);
+    $('timing').textContent=`Measured p99 loop time / 20 ms budget: ${times.join(' · ')}`;
+  } else {
+    $('result-title').textContent='Disconnect. Stop. Recover.';
+    $('result-detail').textContent=latest?.mode==='sensor_demo'?'Automatic test: AMR01 sensor input is cut at 3 s and restored at 5 s. Watch its status, zero-speed stop, and subsequent recovery.':'Run the sensor-loss demo, or disconnect any sensor manually for 2 seconds. Watch the actual actuator command change while the other controllers keep running.';
+    $('timing').textContent='Loop timing appears after the run finishes.';
+  }
+  drawMap(snapshot);
+}
+
+function drawMap(snapshot) {
+  const canvas=$('map'), box=canvas.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+  if (canvas.width!==Math.round(box.width*dpr)||canvas.height!==Math.round(box.height*dpr)) {
+    canvas.width=Math.round(box.width*dpr);canvas.height=Math.round(box.height*dpr);
+  }
+  const c=canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,box.width,box.height);
+  if (!snapshot) return;
+  const map=snapshot.map, scale=Math.min((box.width-44)/map.width,(box.height-36)/map.height);
+  const ox=(box.width-map.width*scale)/2, oy=(box.height-map.height*scale)/2;
+  const xy=(x,y)=>[ox+x*scale,box.height-oy-y*scale];
+  for(let y=0;y<map.height;y++)for(let x=0;x<map.width;x++){
+    const [px,py]=xy(x,y+1); const cell=map.grid[y][x];
+    c.fillStyle=cell===1?'#253449':'#172536';c.fillRect(px+1,py+1,scale-2,scale-2);
+    if(cell===1){c.fillStyle='#30425a';c.fillRect(px+4,py+scale*.3,scale-8,2);c.fillRect(px+4,py+scale*.7,scale-8,2);}
+    if(cell===3){c.strokeStyle='#69e7bc';c.lineWidth=1.5;c.beginPath();c.arc(px+scale/2,py+scale/2,scale*.24,0,Math.PI*2);c.stroke();}
+  }
+  for(const t of snapshot.tasks){for(const [key,color,label] of [['pick','#ffca79','P'],['drop','#82b9ff','D']]){
+    const [x,y]=xy(t[key][0]+.5,t[key][1]+.5);c.fillStyle=color;c.globalAlpha=.18;c.fillRect(x-scale*.31,y-scale*.31,scale*.62,scale*.62);c.globalAlpha=1;
+    c.font=`600 ${Math.max(10,scale*.21)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(label,x,y);
+  }}
+  snapshot.world.robots.forEach((r,i)=>{
+    const [x,y]=xy(r.x/snapshot.cell_m,r.y/snapshot.cell_m);const n=snapshot.nodes.find(n=>n.id===r.id);
+    c.save();c.translate(x,y);c.rotate(-r.th);c.fillStyle=colors[i];c.shadowColor=colors[i];c.shadowBlur=8;
+    c.beginPath();c.roundRect(-scale*.24,-scale*.21,scale*.48,scale*.42,scale*.09);c.fill();c.shadowBlur=0;c.fillStyle='#0c1a26';c.fillRect(-scale*.12,-scale*.15,scale*.23,scale*.3);
+    c.fillStyle='white';c.beginPath();c.moveTo(scale*.3,0);c.lineTo(scale*.17,-scale*.08);c.lineTo(scale*.17,scale*.08);c.fill();c.restore();
+    c.strokeStyle=n.sensor_cut?'#ffca79':colors[i];c.lineWidth=1.5;c.beginPath();c.arc(x,y,scale*.34,0,Math.PI*2);c.stroke();
+    c.font='600 10px sans-serif';c.textAlign='center';c.fillStyle=colors[i];c.fillText(r.id,x,y-scale*.47);
+  });
+}
+window.addEventListener('resize',()=>drawMap(latest?.snapshot));
+async function poll(){
+  try {latest=await api('status');connected=true;render();}
+  catch {connected=false;render();}
+  setTimeout(poll,150);
+}
+render();poll();
