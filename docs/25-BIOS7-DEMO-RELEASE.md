@@ -1,6 +1,19 @@
 # BIOS7 smaller-fleet demo release candidate
 
-Status: **completion repaired, but release remains blocked by live timing; personal main has not been promoted**.
+Status: **software-prototype release pending latest-source headless gates;
+personal main has not been promoted. Live timing qualification remains failed**.
+
+The user approved software-prototype publication after the latest-source SIH
+gates pass, with failed live-timing results retained. This supersedes the earlier
+timing prerequisite for prototype publication only; it does not certify deployment.
+The latest frozen `be01a30` durable-worker candidate completed **47/47 tasks with
+zero contacts** across seven Mac/Windows rounds. **Four of seven** passed all
+strict gates; chokepoint, human crossing and failure recovery still failed timing.
+No stale motion was accepted and no unexpected stale motion was rejected.
+See [the latest LAN audit](../artifacts/deployment/lan-campaign-20260906T142520Z-mq62vkk7/REVIEW.md)
+and [the approved scope](24-BIOS7-RELEASE-CHECKLIST.md).
+The following checkpoints are historical, not substitutes for current-source
+acceptance evidence.
 
 Recovery checkpoint: the later command-contract and stationary-queue repairs
 passed 1,083 Python tests, including the two mixed-warehouse regression failures
@@ -13,8 +26,9 @@ with zero contacts, but only **3/7 rounds passed all gates**. Ten-AMR overlap,
 chokepoint, human crossing and failure-recovery rounds still failed timing;
 the failure round also rejected 47 unexpected stale motion frames (none applied).
 See [the repaired-candidate LAN audit](../artifacts/deployment/lan-campaign-20260906T132632Z-zql84vyj/REVIEW.md).
-The refined candidate still needs its latest-source registered performance gates
-and a passing latest-source two-host timing campaign.
+That checkpoint did not pass its strict deployment timing gates. The latest
+candidate still needs its registered software performance gates; deployment timing
+qualification remains separate under the approved scope above.
 
 The `seven` branch prepares `BIOS_PIBT.7` with `auction_bundle` as the public
 launch defaults. The earlier frozen-source SIH headless campaign passed. The

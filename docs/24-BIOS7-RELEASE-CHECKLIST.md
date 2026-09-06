@@ -4,6 +4,25 @@ Status: candidate verification in progress. This checklist does not approve a
 release or change the default policy. Personal `main` and collaborator `main` are
 not modified by running tests.
 
+## Approved software-prototype scope (September 6, 2026)
+
+The user explicitly approved publication as a **software-prototype release after
+the latest-source SIH checks pass**, while retaining failed Mac live-timing results.
+This supersedes the earlier requirement that every live 20 ms deadline must pass
+before *software-prototype* publication. It does not turn any failed report into
+a pass, relax the live timing measurement, or approve physical deployment.
+
+Mandatory headless completion, zero-contact, SIH time-reduction, current-V6
+nonregression, stress/coverage, repeatability and regression checks below remain
+unchanged. The current two-host evidence must be reported separately, including
+any timing/freshness failures. The physical/deployment timing qualification stays
+unapproved until its own gates pass. Do not describe the prototype as hard-real-time,
+Raspberry Pi-tested, certified, universally compatible or universally successful.
+
+If the software gates pass, promote personal `main` and publish collaborator
+branch `seven` only. Keep collaborator `main` untouched. Until then publication
+remains pending. This explicit scope decision is not a retroactive benchmark pass.
+
 Scope update, September 6 at approximately 10:51 UTC: the user requested that
 100-AMR tests be deferred for the imminent demonstration. The active capacity
 queue was stopped before reaching any 100-AMR worker; its original raw plan and

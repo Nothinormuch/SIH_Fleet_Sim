@@ -1,0 +1,150 @@
+{
+  "attempted_sessions": 7,
+  "expected_sessions": 7,
+  "physical_amr_tested": false,
+  "scope": "networked_software_in_the_loop",
+  "sessions": [
+    {
+      "contacts": {
+        "robot-human": 0,
+        "robot-rack": 0,
+        "robot-robot": 0
+      },
+      "control_deadlines_met": true,
+      "failure": null,
+      "index": 1,
+      "launcher_exit": 0,
+      "real_multihost": true,
+      "report": "/Users/sakshamkatiyar/Desktop/SIH_Fleet_Priority/artifacts/deployment/lan-campaign-20260906T142520Z-mq62vkk7/01-deployment_socket_acceptance-3/referee.json",
+      "robots": 3,
+      "scenario": "deployment_socket_acceptance",
+      "session": "31af67d6e125c2528c30df8f6721840c",
+      "software_boundary_pass": true,
+      "success": true,
+      "tasks_announced": 3,
+      "tasks_completed": 3
+    },
+    {
+      "contacts": {
+        "robot-human": 0,
+        "robot-rack": 0,
+        "robot-robot": 0
+      },
+      "control_deadlines_met": true,
+      "failure": null,
+      "index": 2,
+      "launcher_exit": 0,
+      "real_multihost": true,
+      "report": "/Users/sakshamkatiyar/Desktop/SIH_Fleet_Priority/artifacts/deployment/lan-campaign-20260906T142520Z-mq62vkk7/02-edge_overlap-3/referee.json",
+      "robots": 3,
+      "scenario": "edge_overlap",
+      "session": "80f660efb6f194b5decc6d55cbc40dc4",
+      "software_boundary_pass": true,
+      "success": true,
+      "tasks_announced": 3,
+      "tasks_completed": 3
+    },
+    {
+      "contacts": {
+        "robot-human": 0,
+        "robot-rack": 0,
+        "robot-robot": 0
+      },
+      "control_deadlines_met": true,
+      "failure": null,
+      "index": 3,
+      "launcher_exit": 0,
+      "real_multihost": true,
+      "report": "/Users/sakshamkatiyar/Desktop/SIH_Fleet_Priority/artifacts/deployment/lan-campaign-20260906T142520Z-mq62vkk7/03-edge_overlap-10/referee.json",
+      "robots": 10,
+      "scenario": "edge_overlap",
+      "session": "b0d6c5fdfd6d148fbe15d0ca09ac6eff",
+      "software_boundary_pass": true,
+      "success": true,
+      "tasks_announced": 10,
+      "tasks_completed": 10
+    },
+    {
+      "contacts": {
+        "robot-human": 0,
+        "robot-rack": 0,
+        "robot-robot": 0
+      },
+      "control_deadlines_met": false,
+      "failure": null,
+      "index": 4,
+      "launcher_exit": 1,
+      "real_multihost": true,
+      "report": "/Users/sakshamkatiyar/Desktop/SIH_Fleet_Priority/artifacts/deployment/lan-campaign-20260906T142520Z-mq62vkk7/04-edge_chokepoint-10/referee.json",
+      "robots": 10,
+      "scenario": "edge_chokepoint",
+      "session": "40c32ae2796b374994949dbecb759e9b",
+      "software_boundary_pass": false,
+      "success": false,
+      "tasks_announced": 10,
+      "tasks_completed": 10
+    },
+    {
+      "contacts": {
+        "robot-human": 0,
+        "robot-rack": 0,
+        "robot-robot": 0
+      },
+      "control_deadlines_met": false,
+      "failure": null,
+      "index": 5,
+      "launcher_exit": 1,
+      "real_multihost": true,
+      "report": "/Users/sakshamkatiyar/Desktop/SIH_Fleet_Priority/artifacts/deployment/lan-campaign-20260906T142520Z-mq62vkk7/05-edge_human_crossing-10/referee.json",
+      "robots": 10,
+      "scenario": "edge_human_crossing",
+      "session": "a5c621953c4f2d56fe78ec3893a194e3",
+      "software_boundary_pass": false,
+      "success": false,
+      "tasks_announced": 10,
+      "tasks_completed": 10
+    },
+    {
+      "contacts": {
+        "robot-human": 0,
+        "robot-rack": 0,
+        "robot-robot": 0
+      },
+      "control_deadlines_met": true,
+      "failure": null,
+      "index": 6,
+      "launcher_exit": 0,
+      "real_multihost": true,
+      "report": "/Users/sakshamkatiyar/Desktop/SIH_Fleet_Priority/artifacts/deployment/lan-campaign-20260906T142520Z-mq62vkk7/06-blocked_aisle-10/referee.json",
+      "robots": 10,
+      "scenario": "blocked_aisle",
+      "session": "c3fef9756b1cecc14753517c6880c4ee",
+      "software_boundary_pass": true,
+      "success": true,
+      "tasks_announced": 10,
+      "tasks_completed": 10
+    },
+    {
+      "contacts": {
+        "robot-human": 0,
+        "robot-rack": 0,
+        "robot-robot": 0
+      },
+      "control_deadlines_met": false,
+      "failure": null,
+      "index": 7,
+      "launcher_exit": 1,
+      "real_multihost": true,
+      "report": "/Users/sakshamkatiyar/Desktop/SIH_Fleet_Priority/artifacts/deployment/lan-campaign-20260906T142520Z-mq62vkk7/07-robot_failure_reassignment-10/referee.json",
+      "robots": 10,
+      "scenario": "robot_failure_reassignment",
+      "session": "15ab251ca7980cf480db19fb56c155eb",
+      "software_boundary_pass": false,
+      "success": false,
+      "tasks_announced": 1,
+      "tasks_completed": 1
+    }
+  ],
+  "success": false,
+  "unrun_sessions": 0
+}
