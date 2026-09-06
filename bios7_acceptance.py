@@ -137,10 +137,11 @@ def compare_pair(baseline: dict, candidate: dict) -> dict:
     context = {"candidate_safe": safe, "baseline_safe": baseline_safe,
         "baseline_safety_scope": "completed_run" if b["completed_all"] else "observed_prefix_only",
         "baseline_future_safety_known": bool(b["completed_all"]),
-        "valid_for_full_execution_safety_comparison": safe and baseline_safe and b["completed_all"],
+        "valid_for_full_execution_safety_comparison": (
+            safe and baseline_safe and b["completed_all"] and c["completed_all"]),
         "baseline_contacts": {field: b[field] for field in CONTACT_FIELDS},
         "candidate_contacts": {field: c[field] for field in CONTACT_FIELDS},
-        "valid_for_performance_claim": safe and baseline_safe,
+        "valid_for_performance_claim": safe and baseline_safe and c["completed_all"],
         "nonregression": nonregression, "nonregression_evidence": nonregression_evidence,
         "metric_deltas": {field: c[field] - b[field] if field in b and field in c else None
                            for field in NONREGRESSION_FIELDS}}

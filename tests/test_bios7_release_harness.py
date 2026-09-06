@@ -107,6 +107,22 @@ def test_partial_unsafe_or_invalid_runs_cannot_pass(change):
     assert summarize(document)["declared_headless_stage_pass"] is False
 
 
+@pytest.mark.parametrize("baseline_complete", [True, False])
+def test_incomplete_candidate_cannot_claim_full_safety_or_performance(baseline_complete):
+    compared = compare_pair(row(completed_all=baseline_complete,
+        tasks_completed=30 if baseline_complete else 20),
+        row(completed_all=False, tasks_completed=20))
+    assert compared["verdict"] == "incomplete"
+    assert compared["candidate_safe"] is True  # Observed prefix remains contact-free.
+    assert compared["valid_for_full_execution_safety_comparison"] is False
+    assert compared["valid_for_performance_claim"] is False
+    assert compared["reduction_pct"] is None
+    assert compared["reduction_lower_bound_pct"] is None
+    assert all(value is None for value in compared["nonregression"].values())
+    assert summarize(report(completed_all=False, tasks_completed=20))[
+        "declared_headless_stage_pass"] is False
+
+
 def test_timeout_stays_censored_and_external_resource_timeout_has_no_score():
     compared = compare_pair(row(completed_all=False, sim_seconds=1200), row())
     assert compared["kind"] == "right_censored_lower_bound"

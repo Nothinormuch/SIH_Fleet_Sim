@@ -187,21 +187,40 @@ async function boot() {
 }
 
 function updatePolicyProfile() {
-  const policy = el('policy').value;
   const allocation = el('allocationPolicy').value;
-  const profileInfo = policyProfile(policy);
+  const draftProfile = policyProfile(el('policy').value);
+  const profile = el('launchProfile');
+  if (profile) {
+    profile.textContent = `${draftProfile.title} · ${allocation} · ${draftProfile.predictive ? 'predictive edge' : 'energy gate'}`;
+  }
+  // Deployment controls only arm the next request. Titles and evidence badges
+  // describe the recording on screen, including while a new request is pending
+  // or has failed. Never relabel measured BIOS 6 playback as a BIOS 7 result.
+  const profileInfo = policyProfile(App.data?.meta?.policy);
   el('bios6Intelligence')?.classList.toggle('is-v6', profileInfo.predictive);
   const proof = el('predictiveProof');
   if (proof) proof.hidden = !profileInfo.predictive;
-  const profile = el('launchProfile');
-  if (profile) {
-    profile.textContent = `${profileInfo.title} · ${allocation} · ${profileInfo.predictive ? 'predictive edge' : 'energy gate'}`;
-  }
   const mode = el('collectiveMode');
-  if (mode) mode.textContent = profileInfo.mode;
+  if (mode) mode.textContent = App.data ? profileInfo.mode : 'NO RECORDING LOADED';
   document.querySelectorAll('[data-policy-title]').forEach(node => {
     node.textContent = profileInfo.title;
   });
+  updateRecordingScenarioTitle();
+}
+
+function updateRecordingScenarioTitle() {
+  const title = el('activeScenarioTitle');
+  if (!title) return;
+  const meta = App.data?.meta;
+  if (!meta) {
+    title.textContent = 'No recording loaded';
+    return;
+  }
+  const scenario = App.showcase.find(item => item.id === meta.scenario);
+  // The server may execute Seed 99 instead of the selected gallery scenario.
+  // Use executed metadata, not the current selector or requested scenario name.
+  title.textContent = meta.seed_99_demo ? 'Seed 99 · Launch Gridlock'
+    : scenario?.title || String(meta.scenario || 'Recorded simulation').replaceAll('_', ' ');
 }
 
 function renderScenarioGallery(showcase) {
@@ -240,7 +259,7 @@ function selectScenarioProfile(id, announce = true) {
   el('seed').value = profile.seed;
   el('duration').value = profile.duration;
   App.seed99Active = false;
-  el('activeScenarioTitle').textContent = profile.title;
+  updateRecordingScenarioTitle();
   el('activeScenarioEyebrow').textContent = profile.eyebrow;
   el('activeScenarioDescription').textContent = profile.description;
   const deployTitle = el('deployTitle');
@@ -248,7 +267,7 @@ function selectScenarioProfile(id, announce = true) {
   document.querySelectorAll('.scenario-card').forEach(card => {
     card.classList.toggle('active', card.dataset.scenario === id);
   });
-  if (announce) setStatus(`${profile.title} selected · energy-aware auction is active.`);
+  if (announce) setStatus(`${profile.title} selected for the next launch.`);
 }
 
 function syncSeed99Mode() {
@@ -263,7 +282,7 @@ function syncSeed99Mode() {
     // same thing. The server also reports the requested and executed scenario names.
     el('robots').value = 6;
     el('duration').value = 180;
-    el('activeScenarioTitle').textContent = 'Seed 99 · Launch Gridlock';
+    updateRecordingScenarioTitle();
     el('activeScenarioEyebrow').textContent = 'Six-AMR congestion proof';
     el('activeScenarioDescription').textContent =
       'Six AMRs begin in a measured mutual standstill, negotiate locally, separate, and complete their fixed tasks.';
@@ -276,7 +295,7 @@ function syncSeed99Mode() {
   if (profile) {
     el('robots').value = profile.robots;
     el('duration').value = profile.duration;
-    el('activeScenarioTitle').textContent = profile.title;
+    updateRecordingScenarioTitle();
     el('activeScenarioEyebrow').textContent = profile.eyebrow;
     el('activeScenarioDescription').textContent = profile.description;
     const deployTitle = el('deployTitle');
@@ -528,6 +547,7 @@ async function run() {
     window.BiosBoot?.stage('simulation');
 
     App.data = payload;
+    updatePolicyProfile();
     App.auctionEvents = payload.frames.flatMap(f => f.auction_events || []);
     const seenDecisions = new Set();
     App.decisionEvents = payload.frames.flatMap(frame =>
