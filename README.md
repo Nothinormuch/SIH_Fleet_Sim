@@ -70,8 +70,11 @@ fallback is available. The scene follows received live positions and task/cargo 
 
 ## Decentralized priority algorithm
 
-The default route policy is `BIOS_PIBT.6`; the frozen peer allocator is `auction`, and
-the released Auction V2 allocator is selectable as `auction_bundle`. BIOS 6 combines V5's
+The `seven` release candidate prepares `BIOS_PIBT.7` plus Auction V2
+(`auction_bundle`) as the public launch defaults. **Promotion to personal main is
+pending final acceptance and two-host checks**; see the
+[candidate release notes](docs/25-BIOS7-DEMO-RELEASE.md). Plain `auction` and the
+earlier route policies remain selectable controls. BIOS 6 combines V5's
 battery-aware priority/deadline cargo allocation with event-triggered communication,
 bounded predictive hints and measured recovery escalation. Every AMR broadcasts a
 frozen lexicographic priority plus its next-cell intent. On grid-like rack maps it
@@ -224,13 +227,14 @@ explicit passage-release ablation.
 | `BIOS_PIBT.2` | Strongly connected directed routes, two-phase destination-cell leases, merge priority and route-discontinuity repair. | V3 traffic foundation and retained benchmark. |
 | `BIOS_PIBT.3` | V2 traffic plus replicated batch auction, drop admission, bounded directional waves, completion gossip and invariant repair. | Retained decentralized comparison policy. |
 | `BIOS_PIBT.5` | V3 invariants plus full-commitment energy admission, payload/cargo factors, priority/deadline ordering, a live three-robot candidate set, bounded bid bundles and charging re-entry. | Frozen decentralized release baseline. |
-| `BIOS_PIBT.6` | V5 plus event-triggered traffic, decaying peer congestion experience, soft anonymous-moving-object forecasts, charger contention avoidance, load-aware idle clearing, churn recovery and decision traces. | Default fully decentralized route policy; supports frozen Auction and released Auction V2 allocation. |
+| `BIOS_PIBT.6` | V5 plus event-triggered traffic, decaying peer congestion experience, soft anonymous-moving-object forecasts, charger contention avoidance, load-aware idle clearing, churn recovery and decision traces. | Retained previous route policy; supports frozen Auction and released Auction V2 allocation. |
+| `BIOS_PIBT.7` | V6 plus execution-identity-checked corridor passage release; physical traffic ownership and safety checks remain authoritative. | Prepared smaller-fleet demo default on `seven`; final promotion gates pending. |
 
 The additional `central` policy is a centralized prioritized-space-time A* reference;
 `hierarchical` adds peer fallback when its fleet manager is unavailable. The
 [documented reference execution limitations](docs/23-BIOS7-EXPERIMENT.md#important-centralized-reference-limitation)
 prevent treating their current results as proof of superiority over validated
-industrial planners. `BIOS_PIBT.7` remains experimental until its release gates pass;
+industrial planners. `BIOS_PIBT.7` remains a release candidate until its release gates pass;
 it adds execution-identity-checked corridor passage release to the shared controller.
 
 Task ownership is selected independently of the route policy. `auction` lets peers
@@ -311,8 +315,8 @@ bounded future work. See
 [`docs/BIOS6_AUCTION_V2_RELEASE.md`](docs/BIOS6_AUCTION_V2_RELEASE.md) and the checked-in
 JSON evidence for the exact gates and limitations.
 
-The strict SIH acceptance benchmark now passes all 90 paired seeds across 4-, 6- and
-8-robot fleets with the released default stack: `BIOS_PIBT.6` plus Auction V2
+The historical strict SIH acceptance benchmark passed all 90 paired seeds across 4-, 6- and
+8-robot fleets with the then-default stack: `BIOS_PIBT.6` plus Auction V2
 (`auction_bundle`). The candidate completes 30/30 runs at every fleet size; stop-and-wait
 completes 0/30 before the fixed 1200 s cutoff. The minimum conservative per-seed
 completion-time reduction bounds are **65.22%**, **50.63%** and **33.46%** respectively,

@@ -6,6 +6,11 @@ The lab reuses the dashboard's 3D renderer and warehouse/robot assets, driven by
 snapshots from the UDP sensor/actuator loop. **3D warehouse** is the default;
 **2D map** is available as a diagnostic view and automatic WebGL fallback.
 
+The `seven` release candidate selects BIOS7 and Auction V2 by default; BIOS6 remains
+an explicit control. Choose 3–10 AMRs and the named overlapping-path, chokepoint,
+human, blocked-aisle or failure profile for a stronger demonstration. Release
+status and measured scope are recorded in [the candidate notes](25-BIOS7-DEMO-RELEASE.md).
+
 ```bash
 source .venv/bin/activate
 python backend/server.py

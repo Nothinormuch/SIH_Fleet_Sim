@@ -1,6 +1,8 @@
 # BIOS 7: bounded corridor passage release (experimental)
 
-BIOS 7 is selectable as `BIOS_PIBT.7`; BIOS 6 remains the default. This candidate
+The `seven` branch now prepares `BIOS_PIBT.7` as its public launch default; personal
+main remains unchanged pending final release checks. See the
+[smaller-fleet release candidate notes](25-BIOS7-DEMO-RELEASE.md). This candidate
 keeps Auction V2 and the existing traffic/safety hierarchy. It does not introduce
 a central winner selector, increase robot speed, shrink robot bodies, relax the
 20 ms control budget or claim a universal completion guarantee.
@@ -147,7 +149,7 @@ attribute their effect solely to the V7 passage-release algorithm.
 
 The [release checklist](24-BIOS7-RELEASE-CHECKLIST.md) defines the new frozen-source
 campaign and hardware boundaries. Until it passes, these repairs remain under
-verification, BIOS 6 remains the default, and earlier failures stay visible.
+verification, personal main is not promoted, and earlier failures stay visible.
 
 The subsequent idle-corridor drain repair and topology-derived exit-junction
 clearance are documented in the [seed-2012 development evidence](../artifacts/benchmarks/bios7-exit-apron-development-notes.md).

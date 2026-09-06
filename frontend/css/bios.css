@@ -1087,6 +1087,9 @@ body.sheet-open .rail { opacity: .3; }
 .field select, .field input { width: 100%; padding: 8px 9px; font-size: 12px; }
 .field.span-2 { grid-column: 1 / -1; }
 .field.span-3 { grid-column: 1 / -1; }
+.window-mode { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 11px; color: var(--dim); }
+.window-mode input { accent-color: var(--accent); margin: 0; }
+.window-hint { margin: 7px 0 0; font-size: 11px; line-height: 1.5; color: var(--dim); }
 
 /* The launch button. This is the one control on the whole screen that gets to
    look ceremonial, because pressing it is the moment the demo actually starts. */

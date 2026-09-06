@@ -5,7 +5,7 @@ import socket
 
 import pytest
 
-from src.amr import AMRBrain, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V6
+from src.amr import AMRBrain, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V7
 from src.distributed_demo import run_distributed_demo
 from src.edge_runtime import (EdgeRuntime, SystemdNotifier, UdpJsonHardwareIO, actuation_from_dict,
                               build_parser, sensors_from_dict, sensors_to_dict)
@@ -39,13 +39,14 @@ def _available_udp_port() -> int:
         sock.close()
 
 
-def test_edge_node_default_policy_is_bios6():
+def test_edge_node_default_policy_is_bios7():
     args = build_parser().parse_args([
         "--robot-id", "AMR01", "--robot-index", "0",
         "--sensor-port", "5001", "--actuator-port", "5002",
     ])
 
-    assert args.policy == POLICY_BIOS_PIBT_V6
+    assert args.policy == POLICY_BIOS_PIBT_V7
+    assert args.allocation_policy == "auction_bundle"
     assert not args.visual_telemetry
 
 

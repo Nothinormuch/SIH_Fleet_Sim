@@ -26,11 +26,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from .amr import AMRBrain, POLICY_BIOS_PIBT_V6, Task
+from .amr import AMRBrain, Task
+from .release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY
 from .scenarios import SCENARIOS
 from .settings import DEFAULT, Config
 from .site_config import SiteConfigError, load_site_config
-from .task_allocation import ALLOCATION_AUCTION, ALLOCATION_PREASSIGNED
+from .task_allocation import ALLOCATION_PREASSIGNED
 from .terminal_journal import TerminalJournal, TerminalJournalError
 from .transport import DEFAULT_GROUP, DEFAULT_PORT, UdpMulticastTransport
 from .world import Actuation, Detection, Sensors
@@ -569,8 +570,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="validated facility map and AMR profile JSON")
     parser.add_argument("--robots", type=int)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--policy", default=POLICY_BIOS_PIBT_V6)
-    parser.add_argument("--allocation-policy", default=ALLOCATION_AUCTION)
+    parser.add_argument("--policy", default=DEFAULT_ROUTE_POLICY)
+    parser.add_argument("--allocation-policy", default=DEFAULT_ALLOCATION_POLICY)
     parser.add_argument("--group", default=DEFAULT_GROUP)
     parser.add_argument("--peer-port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--interface", default="0.0.0.0")

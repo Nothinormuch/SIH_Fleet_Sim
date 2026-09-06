@@ -39,7 +39,7 @@ python tools/package_lan_campaign.py --rounds sensor3,overlap3
 Omit `--rounds` for the complete seven-round plan: isolated sensor-loss proof,
 3/10-AMR overlapping paths, and ten-AMR chokepoint, human, blocked-aisle and process
 failure cases. A selected subset is not evidence for the unrun rounds. All packages
-explicitly select the experimental BIOS 7 policy until its release gates pass.
+explicitly pin the BIOS 7 policy. Preparing a package does not pass its release gates.
 
 The command prints a new private ZIP path, its SHA256 checksum, Windows extraction
 instructions and the Mac campaign command. The ZIP contains session keys: do not
@@ -101,8 +101,8 @@ the deployment boundary and actual cross-host peer communication. It is **not** 
 traffic-performance comparison. It deliberately interrupts the first Windows AMR's
 sensor input at three seconds for two seconds and checks stopping and recovery.
 
-The default policy is BIOS 6. For the experimental BIOS 7 candidate, explicitly
-add `--policy BIOS_PIBT.7` when preparing the session. Policy is pinned in the
+The `seven` candidate's default policy is BIOS 7. To reproduce the previous control,
+explicitly add `--policy BIOS_PIBT.6` when preparing the session. Policy is pinned in the
 configuration and cannot be changed silently between the two computers.
 
 ### Passive live warehouse view

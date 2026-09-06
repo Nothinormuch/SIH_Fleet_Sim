@@ -1,5 +1,13 @@
 # 08. EDGE DEPLOYMENT
 
+**Historical audit note:** the line references, default-policy table and measured
+host results below describe the earlier BIOS6 snapshot. They are not measurements
+of the BIOS7 candidate. Current public launch defaults and release status are in
+[the BIOS7 demo notes](25-BIOS7-DEMO-RELEASE.md); current interface commissioning is
+in [Real-AMR Integration](18-REAL-AMR-INTEGRATION.md) and
+[Multi-host Deployment](22-MULTIHOST-DEPLOYMENT.md). Older measured evidence is
+retained under its original version, not relabelled after changing defaults.
+
 > This document establishes how the same coordination code that produces the benchmark evidence runs as one independent operating-system process per robot on edge hardware, and states precisely which parts of that claim are measured, which are implemented but unmeasured, and which have never touched a physical Raspberry Pi.
 
 **Audience:** SIH judges and BEL evaluators assessing requirement 15, and teammates who must launch the multi-process demonstration live and answer "but has it actually run on a Pi?"

@@ -54,6 +54,7 @@ const App = {
   presentationMode: false,
   showcase: [],
   seed99Active: false,
+  autoRunWindow: true,
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -73,11 +74,12 @@ async function boot() {
 
   try {
     const r = await fetch('/api/scenarios');
-    const { scenarios, showcase, policies, allocation_policies } = await r.json();
+    const { scenarios, showcase, policies, allocation_policies,
+      default_policy, default_allocation_policy } = await r.json();
     App.showcase = showcase || [];
     fill(el('scenario'), scenarios, OPENING_SCENARIO);
-    fill(el('policy'), policies, 'BIOS_PIBT.6');
-    fill(el('allocationPolicy'), allocation_policies, 'auction_bundle');
+    fill(el('policy'), policies, default_policy || 'BIOS_PIBT.7');
+    fill(el('allocationPolicy'), allocation_policies, default_allocation_policy || 'auction_bundle');
     renderScenarioGallery(App.showcase);
     updatePolicyProfile();
     window.BiosBoot?.stage('library');
@@ -89,6 +91,15 @@ async function boot() {
   // Simulation controls
   el('runBtn').addEventListener('click', run);
   el('seed').addEventListener('input', syncSeed99Mode);
+  el('robots').addEventListener('input', syncRunWindow);
+  el('autoRunWindow').addEventListener('change', () => {
+    App.autoRunWindow = el('autoRunWindow').checked;
+    syncRunWindow();
+  });
+  el('duration').addEventListener('input', () => {
+    App.autoRunWindow = false;
+    syncRunWindow();
+  });
   el('policy').addEventListener('change', () => { syncPolicyUI(); updatePolicyProfile(); });
   el('allocationPolicy').addEventListener('change', updatePolicyProfile);
   el('trainBtn').addEventListener('click', startTraining);
@@ -251,6 +262,38 @@ function renderScenarioGallery(showcase) {
   selectScenarioProfile(opening, false);
 }
 
+// Presentation-only observation allowance. This is not a completion-time
+// prediction and never changes a benchmark, server request or loaded recording.
+function suggestedDemoWindow(profile, robots) {
+  if (!profile || !profile.id.startsWith('showcase_')
+      || !Number.isInteger(robots) || robots < 2 || robots > 100
+      || !(profile.robots > 0) || !(profile.duration > 0)) return null;
+  const scaled = Math.ceil(profile.duration * Math.max(1, robots / profile.robots) / 10) * 10;
+  // Match the existing API limits; do not silently submit an invalid job.
+  const cap = Math.min(900, Math.floor(24000 / robots / 10) * 10);
+  return {seconds: Math.min(scaled, cap), capped: scaled > cap};
+}
+
+function syncRunWindow() {
+  const checkbox = el('autoRunWindow');
+  const hint = el('runWindowHint');
+  const profile = App.showcase.find(item => item.id === el('scenario').value);
+  const suggestion = suggestedDemoWindow(profile, Number(el('robots').value));
+  const pinned = App.seed99Active || Number(el('seed').value) === SEED_99_DEMO;
+  if (checkbox) {
+    checkbox.checked = App.autoRunWindow;
+    checkbox.disabled = pinned || !suggestion;
+  }
+  if (pinned) {
+    if (hint) hint.textContent = 'Seed 99 keeps its fixed six-AMR, 180 s evidence window.';
+    return;
+  }
+  if (App.autoRunWindow && suggestion) el('duration').value = suggestion.seconds;
+  if (hint) hint.textContent = App.autoRunWindow && suggestion
+    ? `Automatic demo window: ${suggestion.seconds} s${suggestion.capped ? ' (server resource cap)' : ' (fleet-scaled)'}. Not a completion guarantee; edit Duration for a fixed cutoff.`
+    : 'Fixed observation window. Increasing the fleet can also add tasks; unfinished work stays visible in the result.';
+}
+
 function selectScenarioProfile(id, announce = true) {
   const profile = App.showcase.find(item => item.id === id);
   if (!profile) return;
@@ -259,6 +302,8 @@ function selectScenarioProfile(id, announce = true) {
   el('seed').value = profile.seed;
   el('duration').value = profile.duration;
   App.seed99Active = false;
+  App.autoRunWindow = true;
+  syncRunWindow();
   updateRecordingScenarioTitle();
   el('activeScenarioEyebrow').textContent = profile.eyebrow;
   el('activeScenarioDescription').textContent = profile.description;
@@ -282,6 +327,7 @@ function syncSeed99Mode() {
     // same thing. The server also reports the requested and executed scenario names.
     el('robots').value = 6;
     el('duration').value = 180;
+    syncRunWindow();
     updateRecordingScenarioTitle();
     el('activeScenarioEyebrow').textContent = 'Six-AMR congestion proof';
     el('activeScenarioDescription').textContent =
@@ -295,6 +341,8 @@ function syncSeed99Mode() {
   if (profile) {
     el('robots').value = profile.robots;
     el('duration').value = profile.duration;
+    App.autoRunWindow = true;
+    syncRunWindow();
     updateRecordingScenarioTitle();
     el('activeScenarioEyebrow').textContent = profile.eyebrow;
     el('activeScenarioDescription').textContent = profile.description;

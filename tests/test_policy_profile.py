@@ -42,7 +42,7 @@ const context = vm.createContext({
 const source = fs.readFileSync('./frontend/js/main.js', 'utf8')
   .replace(/^import .*;$/gm, '').replace(/\nboot\(\);\s*$/, '');
 vm.runInContext(source, context);
-const api = vm.runInContext('({App, updatePolicyProfile, selectScenarioProfile, syncSeed99Mode, run, renderSummary})', context);
+const api = vm.runInContext('({App, updatePolicyProfile, selectScenarioProfile, syncSeed99Mode, suggestedDemoWindow, syncRunWindow, run, renderSummary})', context);
 const loaded = (policy, scenario='showcase_chokepoint', extra={}) => ({
   meta: {policy, scenario, allocation_policy: 'auction_bundle', seed: 0,
     robots: 3, humans: 0, cell_m: 1.4, ...extra},
@@ -229,3 +229,46 @@ def test_dashboard_explains_measured_separation_and_contact_event_semantics():
     assert "<b>Closest separation</b>" in source
     assert "<b>Safety margin</b>" not in source
     assert "rather than got lucky" not in source
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required for launch-window contracts")
+def test_demo_window_scales_visible_draft_not_loaded_evidence():
+    run_main_contract("""
+api.App.data = loaded('BIOS_PIBT.6');
+api.selectScenarioProfile('showcase_chokepoint');
+assert.equal(Number(node('duration').value), 320);
+node('robots').value = '10'; api.syncRunWindow();
+assert.equal(Number(node('duration').value), 800);
+assert.ok(node('runWindowHint').textContent.includes('fleet-scaled'));
+assert.equal(api.App.data.meta.policy, 'BIOS_PIBT.6');
+assert.equal(api.App.data.meta.robots, 3);
+api.App.autoRunWindow = false;
+node('duration').value = '320'; node('robots').value = '12'; api.syncRunWindow();
+assert.equal(Number(node('duration').value), 320, 'manual cutoff must never be extended');
+assert.equal(node('autoRunWindow').checked, false);
+assert.ok(node('runWindowHint').textContent.includes('unfinished work stays visible'));
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required for launch-window contracts")
+def test_demo_window_respects_caps_invalid_input_custom_maps_and_pinned_seed():
+    run_main_contract("""
+const profile = api.App.showcase[0];
+for (const count of [0, 1, 2.5, NaN, Infinity, 101]) {
+  assert.equal(api.suggestedDemoWindow(profile, count), null);
+}
+assert.equal(api.suggestedDemoWindow({...profile, id: 'custom_abc'}, 10), null);
+assert.equal(api.suggestedDemoWindow(profile, 100).seconds, 240);
+assert.equal(api.suggestedDemoWindow(profile, 100).capped, true);
+api.selectScenarioProfile('showcase_chokepoint');
+node('robots').value = '10'; api.syncRunWindow();
+node('seed').value = '99'; api.syncSeed99Mode();
+assert.equal(Number(node('duration').value), 180);
+assert.equal(Number(node('robots').value), 6);
+api.syncRunWindow();
+assert.equal(Number(node('duration').value), 180);
+assert.equal(node('autoRunWindow').disabled, true);
+node('seed').value = '7'; api.syncSeed99Mode();
+assert.equal(Number(node('duration').value), 320);
+assert.equal(node('autoRunWindow').disabled, false);
+""")

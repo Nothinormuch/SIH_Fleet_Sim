@@ -28,13 +28,12 @@ import sys
 import tempfile
 import time
 
-from .amr import POLICY_BIOS_PIBT_V6
+from .release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY
 from . import messages as msg
 from .edge_runtime import actuation_from_dict, sensors_to_dict
 from .hil_demo import _announce_tasks, _raspberry_pi_model
 from .scenarios import SCENARIOS, workload_fingerprint
 from .settings import DEFAULT, NetSpec
-from .task_allocation import ALLOCATION_AUCTION_BUNDLE
 from .task_protocol import CompletionCertificate, task_descriptor_hash
 from .transport import DEFAULT_GROUP, UdpMulticastTransport
 from .vendor_adapter import SafeCommandGate
@@ -153,7 +152,7 @@ def _stop_confirmation(frame: dict, host: str, owners: dict, expected: set,
 
 def make_config(mac_ip: str, windows_ip: str, robots: int = 3,
                 scenario: str = "deployment_socket_acceptance", duration_s: float = 25,
-                seed: int = 0, policy: str = POLICY_BIOS_PIBT_V6,
+                seed: int = 0, policy: str = DEFAULT_ROUTE_POLICY,
                 bridge_port: int = 29600, peer_port: int = 29601,
                 sensor_cut: bool = True, readiness_timeout_s: float = 1800) -> dict:
     if not 3 <= robots <= 10:
@@ -176,7 +175,7 @@ def make_config(mac_ip: str, windows_ip: str, robots: int = 3,
         "group": DEFAULT_GROUP, "robots": robots, "scenario": scenario,
         "duration_s": duration_s, "seed": seed, "policy": policy,
         "readiness_timeout_s": readiness_timeout_s,
-        "allocation_policy": ALLOCATION_AUCTION_BUNDLE,
+        "allocation_policy": DEFAULT_ALLOCATION_POLICY,
         "hosts": {
             "mac": {"ip": mac_ip, "indices": list(range(local_count))},
             "windows": {"ip": windows_ip, "indices": list(range(local_count, robots))},
@@ -1099,7 +1098,7 @@ def main(argv: list[str] | None = None) -> int:
     prepare.add_argument("--robots", type=int, default=3)
     prepare.add_argument("--scenario", choices=sorted(SCENARIOS), default="deployment_socket_acceptance")
     prepare.add_argument("--duration", type=float, default=25)
-    prepare.add_argument("--policy", default=POLICY_BIOS_PIBT_V6)
+    prepare.add_argument("--policy", default=DEFAULT_ROUTE_POLICY)
     prepare.add_argument("--seed", type=int, default=0)
     prepare.add_argument("--bridge-port", type=int, default=29600)
     prepare.add_argument("--peer-port", type=int, default=29601)

@@ -13,6 +13,7 @@ import time
 
 from .hil_demo import run_hil_demo
 from .amr import POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7
+from .release_profile import DEFAULT_ROUTE_POLICY
 
 
 PROFILES = {
@@ -64,7 +65,7 @@ class EdgeLab:
 
     def start(self, mode: str = "normal", profile: str = "interfaces",
               robots: int = 3, seed: int = 0,
-              policy: str = POLICY_BIOS_PIBT_V6) -> dict:
+              policy: str = DEFAULT_ROUTE_POLICY) -> dict:
         if policy not in (POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7):
             raise ValueError("Lab policy must be BIOS_PIBT.6 or BIOS_PIBT.7")
         if mode not in ("normal", "sensor_demo"):

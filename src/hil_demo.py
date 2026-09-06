@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import messages as msg
-from .amr import POLICY_BIOS_PIBT_V6
+from .release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY
 from .edge_runtime import actuation_from_dict, sensors_to_dict
 from .scenarios import SCENARIOS
 from .settings import DEFAULT
@@ -212,8 +212,8 @@ def run_hil_demo(
     robots: int = 3,
     seed: int = 0,
     duration_s: float = 20.0,
-    policy: str = POLICY_BIOS_PIBT_V6,
-    allocation_policy: str = ALLOCATION_AUCTION_BUNDLE,
+    policy: str = DEFAULT_ROUTE_POLICY,
+    allocation_policy: str = DEFAULT_ALLOCATION_POLICY,
     group: str = DEFAULT_GROUP,
     peer_port: int = DEFAULT_PORT,
     interface: str = "0.0.0.0",
@@ -656,12 +656,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--robots", type=int, default=3)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--duration", type=float, default=20.0)
-    parser.add_argument("--policy", default=POLICY_BIOS_PIBT_V6)
+    parser.add_argument("--policy", default=DEFAULT_ROUTE_POLICY)
     parser.add_argument(
         "--allocation-policy",
         choices=(ALLOCATION_PREASSIGNED, ALLOCATION_AUCTION,
                  ALLOCATION_AUCTION_BUNDLE),
-        default=ALLOCATION_AUCTION_BUNDLE,
+        default=DEFAULT_ALLOCATION_POLICY,
     )
     parser.add_argument("--group", default=DEFAULT_GROUP)
     parser.add_argument("--peer-port", type=int, default=DEFAULT_PORT)

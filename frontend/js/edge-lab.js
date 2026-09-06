@@ -187,7 +187,7 @@ function render() {
     $('policy').value=latest.policy || 'BIOS_PIBT.6';
   }
   const shownPolicy = active || result ? latest?.policy : $('policy').value;
-  $('policy-label').textContent = shownPolicy === 'BIOS_PIBT.7' ? '7.0 · experimental' : '6.0';
+  $('policy-label').textContent = shownPolicy === 'BIOS_PIBT.7' ? '7.0' : '6.0';
   if ($('selected-robot').options.length !== count) {
     $('selected-robot').replaceChildren(...Array.from({length:count}, (_,i) => {
       const option=document.createElement('option'); option.textContent=`AMR${String(i+1).padStart(2,'0')}`; return option;

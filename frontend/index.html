@@ -244,10 +244,12 @@
                 <label class="field"><span>Seed</span><input type="number" id="seed" value="7" min="0"></label>
                 <label class="field"><span>Duration (s)</span><input type="number" id="duration" value="320" min="10" max="900" step="10"></label>
               </div>
+              <label class="window-mode"><input type="checkbox" id="autoRunWindow" checked><span>Scale demo window with fleet</span></label>
+              <p class="window-hint" id="runWindowHint" aria-live="polite">Observation limit, not a guaranteed completion time. Edit Duration to keep a fixed cutoff.</p>
               <button id="runBtn" class="launch">
                 <span class="launch-beam"></span>
                 <b>Launch</b>
-                <small id="launchProfile">BIOS 6.0 · auction · predictive edge</small>
+                <small id="launchProfile">BIOS 7.0 · auction_bundle · predictive edge</small>
               </button>
               <p class="status" id="status">Preparing the warehouse…</p>
             </div>

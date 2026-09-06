@@ -54,6 +54,7 @@ from src.scenarios import SCENARIOS, SHOWCASE_SCENARIOS  # noqa: E402
 from src.environment import DOCK, FREE, RACK, STATION, Warehouse  # noqa: E402
 from src.task_allocation import ALLOCATION_POLICIES  # noqa: E402
 from src.edge_lab import EdgeLab  # noqa: E402
+from src.release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY  # noqa: E402
 from backend.multihost_view import read_state as read_multihost_state  # noqa: E402
 
 _EDGE_LAB = EdgeLab()
@@ -175,12 +176,12 @@ def parse_run_request(payload: object) -> dict[str, object]:
         return value
 
     scenario = str(scalar("scenario", "open_floor_control"))
-    policy = str(scalar("policy", "BIOS_PIBT.6"))
+    policy = str(scalar("policy", DEFAULT_ROUTE_POLICY))
     policy = {
         "Already-Established_algorithm": POLICY_PRIORITIZED_SPACE_TIME,
         "stop-and-wait(Competition)": POLICY_STOP_WAIT_COMPETITION,
     }.get(policy, policy)
-    allocation_policy = str(scalar("allocation_policy", "auction_bundle"))
+    allocation_policy = str(scalar("allocation_policy", DEFAULT_ALLOCATION_POLICY))
     is_custom = scenario.startswith("custom_")
     if is_custom:
         if scenario not in CUSTOM_SCENARIOS:
@@ -434,7 +435,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(202, _EDGE_LAB.start(
                     payload.get("mode", "normal"), payload.get("profile", "interfaces"),
                     payload.get("robots", 3), payload.get("seed", 0),
-                    payload.get("policy", "BIOS_PIBT.6")))
+                    payload.get("policy", DEFAULT_ROUTE_POLICY)))
             if route == "/api/edge-lab/cut-sensor":
                 return self._json(200, _EDGE_LAB.cut_sensor(payload.get("robot")))
             if route == "/api/edge-lab/stop":
@@ -648,6 +649,8 @@ class Handler(BaseHTTPRequestHandler):
             "showcase": all_showcase,
             "policies": sorted(POLICIES),
             "allocation_policies": sorted(ALLOCATION_POLICIES),
+            "default_policy": DEFAULT_ROUTE_POLICY,
+            "default_allocation_policy": DEFAULT_ALLOCATION_POLICY,
         })
 
     def _api_run(self, payload: object) -> None:

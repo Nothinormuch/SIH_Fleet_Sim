@@ -88,6 +88,8 @@ def test_virtual_edge_lab_routes_and_validation(base_url):
 def test_scenarios_lists_bios4(base_url):
     _, body, _ = _get(f"{base_url}/api/scenarios")
     assert "BIOS_4" in body["policies"]
+    assert body["default_policy"] == "BIOS_PIBT.7"
+    assert body["default_allocation_policy"] == "auction_bundle"
 
 
 def _custom_floor(**overrides):

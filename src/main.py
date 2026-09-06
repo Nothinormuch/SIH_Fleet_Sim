@@ -40,11 +40,11 @@ from .amr import (AMRBrain, CENTRAL_POLICIES, POLICIES, POLICY_HIERARCHICAL,
 from .fleet_manager import FleetManager, MANAGER_ID
 from .geometry import Cell
 from .metrics import PolicyResult, compare, safety_report
+from .release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY
 from .scenarios import (SCENARIOS, SEED_99_DEMO_ROBOTS, SEED_99_DEMO_SEED,
                         Scenario, seed_99_congestion, workload_fingerprint)
 from .settings import Config, DEFAULT
-from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
-                               ALLOCATION_HUNGARIAN,
+from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
                                ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED,
                                ACTIVE_ALLOCATION_POLICIES,
                                validate_allocation_policy)
@@ -575,7 +575,7 @@ def _seed_99_demo_evidence(frames: list[dict]) -> dict:
 
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
                       seed: int = 0, duration: float | None = None,
-                      allocation_policy: str = ALLOCATION_AUCTION_BUNDLE,
+                      allocation_policy: str = DEFAULT_ALLOCATION_POLICY,
                       policy_model=None, **extra) -> dict:
     """One run, packaged for the web dashboard: map, every frame, and the summary.
 
@@ -751,11 +751,11 @@ def main(argv: list[str] | None = None) -> int:
         description="Headless AMR fleet simulation (SIH26123).")
     ap.add_argument("--scenario", default="crossing_chokepoint",
                     choices=sorted(SCENARIOS))
-    ap.add_argument("--policy", default=POLICY_BIOS_PIBT_V6,
+    ap.add_argument("--policy", default=DEFAULT_ROUTE_POLICY,
                     choices=sorted(POLICIES) + ["all"],
                     help="route/traffic policy")
     ap.add_argument("--allocation-policy", choices=sorted(ALLOCATION_POLICIES),
-                    default=ALLOCATION_AUCTION_BUNDLE,
+                    default=DEFAULT_ALLOCATION_POLICY,
                     help=("task allocator: decentralized auction, Hungarian "
                           "comparison, or preassigned workload"))
     ap.add_argument("--robots", type=int, default=None)
