@@ -1,6 +1,6 @@
 # BIOS7 smaller-fleet demo release candidate
 
-Status: **release blocked by the completed two-laptop campaign; personal main has not been promoted**.
+Status: **completion repaired, but release remains blocked by live timing; personal main has not been promoted**.
 
 Recovery checkpoint: the later command-contract and stationary-queue repairs
 passed 1,083 Python tests, including the two mixed-warehouse regression failures
@@ -8,14 +8,21 @@ discovered during verification. The earlier single-host overlap and human runs
 also demonstrated the original live-adapter mismatch repair. These are separate
 source-pinned checkpoints, not a passing rerun of the failed LAN campaign. See
 [the complete recovery audit](../artifacts/deployment/contract-repair-20260906/README.md).
-The refined candidate still needs its registered performance and two-host gates.
+The subsequent exact-source two-host campaign completed **47/47 declared jobs**
+with zero contacts, but only **3/7 rounds passed all gates**. Ten-AMR overlap,
+chokepoint, human crossing and failure-recovery rounds still failed timing;
+the failure round also rejected 47 unexpected stale motion frames (none applied).
+See [the repaired-candidate LAN audit](../artifacts/deployment/lan-campaign-20260906T132632Z-zql84vyj/REVIEW.md).
+The refined candidate still needs its latest-source registered performance gates
+and a passing latest-source two-host timing campaign.
 
 The `seven` branch prepares `BIOS_PIBT.7` with `auction_bundle` as the public
-launch defaults. The final SIH headless campaign passed, but the latest-source
-Mac/Windows campaign passed only two of seven sessions. This file is not release
-approval. See the [unaltered LAN evidence and audit](../artifacts/deployment/lan-campaign-20260906T114030Z-sje2va1r/REVIEW.md).
+launch defaults. The earlier frozen-source SIH headless campaign passed. The
+first Mac/Windows campaign passed only two of seven sessions, before the command
+and queue repairs above. This file is not release approval. See the
+[first LAN evidence and audit](../artifacts/deployment/lan-campaign-20260906T114030Z-sje2va1r/REVIEW.md).
 
-The LAN test completed 32/47 declared tasks with zero contacts across all seven
+That first LAN test completed 32/47 declared tasks with zero contacts across all seven
 sessions. Three-AMR sensor-loss and overlapping-path sessions passed. Ten-AMR
 overlap completed 2/10 jobs and human crossing completed 3/10. Chokepoint and
 blocked-aisle completed 10/10 each, and the one-job failure scenario recovered
