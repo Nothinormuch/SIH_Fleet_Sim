@@ -281,6 +281,11 @@ class AMRBrain:
         self._energy_required_cache: dict[
             tuple[Cell, str, Cell, Cell, str, float], tuple[float, float] | None
         ] = {}
+        # Per-brain FIFO bounds prevent a long-running task stream from growing
+        # static memoization indefinitely. Eviction only causes recomputation.
+        self._energy_cache_capacity = 2048
+        self._dock_distance_cache: dict[Cell, int | None] = {}
+        self._dock_distance_cache_capacity = 2048
         # block -> (entry mouth, immutable task ids in this directional batch)
         self._v3_corridor_waves: dict[int, tuple[Cell, tuple[str, ...]]] = {}
         self._task_corridor_cache: dict[tuple[Cell, Cell], dict[int, Cell]] = {}
@@ -4704,6 +4709,34 @@ class AMRBrain:
         estimate = self._task_estimate(task, start, extra_cost=extra_cost)
         return None if estimate is None else estimate[0]
 
+    def _store_static_energy_estimate(
+            self, key: tuple[Cell, str, Cell, Cell, str, float],
+            value: tuple[float, float] | None) -> None:
+        if key not in self._energy_required_cache \
+                and len(self._energy_required_cache) >= self._energy_cache_capacity:
+            self._energy_required_cache.pop(next(iter(self._energy_required_cache)))
+        self._energy_required_cache[key] = value
+
+    def _nearest_dock_steps(self, drop: Cell) -> int | None:
+        """Exact static return distance; dynamic task costs never affect this leg.
+
+        Warehouse/docks are immutable for this brain. A configured but unreachable
+        charger invalidates the commitment. No-dock legacy maps retain zero return
+        distance; that compatibility mode does not prove a return-to-dock reserve.
+        """
+        if drop in self._dock_distance_cache:
+            return self._dock_distance_cache[drop]
+        charger_cells = []
+        for dock in self.env.docks:
+            path = astar(self.env, drop, dock)
+            if path:
+                charger_cells.append(max(0, len(path) - 1))
+        steps = min(charger_cells) if charger_cells else (None if self.env.docks else 0)
+        if len(self._dock_distance_cache) >= self._dock_distance_cache_capacity:
+            self._dock_distance_cache.pop(next(iter(self._dock_distance_cache)))
+        self._dock_distance_cache[drop] = steps
+        return steps
+
     def _task_estimate(self, task: Task, start: Cell,
                        extra_cost: dict[Cell, float] | None = None,
                        edge_cost: dict[tuple[Cell, Cell], float] | None = None,
@@ -4712,14 +4745,17 @@ class AMRBrain:
         cache_key = (
             start, task.tid, task.pick, task.drop,
             task.cargo_type, float(task.cargo_weight))
-        cacheable = extra_cost is None and not edge_cost
+        # A* canonicalizes both None and empty dicts to the same zero-cost map.
+        # Nonempty live costs still bypass this static cache; battery/deadline
+        # eligibility is always evaluated by the caller against current inputs.
+        cacheable = not extra_cost and not edge_cost
         if cacheable and cache_key in self._energy_required_cache:
             return self._energy_required_cache[cache_key]
 
         cargo_factor = self._cargo_factor(task.cargo_type)
         if cargo_factor is None or task.cargo_weight < 0.0:
             if cacheable:
-                self._energy_required_cache[cache_key] = None
+                self._store_static_energy_estimate(cache_key, None)
             return None
         to_pick = astar(
             self.env, start, task.pick, extra_cost=extra_cost,
@@ -4729,14 +4765,13 @@ class AMRBrain:
             edge_cost=edge_cost)
         if not to_pick or not to_drop:
             if cacheable:
-                self._energy_required_cache[cache_key] = None
+                self._store_static_energy_estimate(cache_key, None)
             return None
-        charger_cells = []
-        for dock in self.env.docks:
-            path = astar(self.env, task.drop, dock)
-            if path:
-                charger_cells.append(max(0, len(path) - 1))
-        charger_steps = min(charger_cells) if charger_cells else 0
+        charger_steps = self._nearest_dock_steps(task.drop)
+        if charger_steps is None:
+            if cacheable:
+                self._store_static_energy_estimate(cache_key, None)
+            return None
         loaded_steps = max(0, len(to_drop) - 1)
         spec = self.cfg.robot
         traffic = self.cfg.traffic
@@ -4761,7 +4796,7 @@ class AMRBrain:
         required *= 1.0 + traffic.energy_uncertainty_frac
         result = (required, approach_s + loaded_s + handling_s)
         if cacheable:
-            self._energy_required_cache[cache_key] = result
+            self._store_static_energy_estimate(cache_key, result)
         return result
 
     def _future_sequence_estimate(
