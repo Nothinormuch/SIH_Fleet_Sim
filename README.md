@@ -117,24 +117,31 @@ are catalogued in [`docs/CRITIQUE.md`](docs/CRITIQUE.md); the short version:
   point relays peer frames — same radio, same hole. `tests/test_core.py` tests exactly
   this. The fix is a different link layer (802.11s, Wi-Fi Direct, UWB), which the
   statement never mentions.
-- **"Zero inter-robot collisions" is not a testable claim.** Absence over finitely many
-  runs bounds a rate; it does not establish zero. And over an asynchronous lossy channel
-  no protocol can guarantee agreement at all (Fischer–Lynch–Paterson).
-- **N ≥ 3 cannot test the hypothesis.** The justification for decentralising is scaling;
-  congestion and cascading deadlock appear north of 20 robots.
+- **Zero observed contacts is a finite test result, not universal safety.** Report
+  the scenarios, seeds, contact definition and observation window. The
+  [Fischer–Lynch–Paterson result](https://groups.csail.mit.edu/tds/papers/Lynch/jacm85.pdf)
+  says deterministic consensus cannot guarantee termination in every fully
+  asynchronous execution with even one possible crash, despite reliable messaging.
+  It does not say agreement is impossible or certify this robot protocol.
+- **N ≥ 3 tests the minimum function, not fleet-scale capacity.** Even a small
+  fleet can deadlock at a constrained passage. Larger-fleet claims need separate
+  tests that report floor space, workload, service capacity and network conditions.
 
 So this repository implements a **hierarchy**, and treats full decentralisation as a
 *degraded mode* rather than a superior architecture:
 
 | Layer | Rate | Where it runs | What it does |
 | --- | --- | --- | --- |
-| **0 — Safety** | 50 Hz | Onboard, certified, **never network-dependent** | Protective stop. Sized by own speed *and* closing speed. Sees anything, including things that do not broadcast. |
+| **0 — Safety** | 50 Hz target | Onboard software; **not certified** | Sensor-based stop command using modeled speed and closing speed; does not require a peer message. Coverage depends on valid sensor inputs. |
 | **1 — Local traffic** | 10 Hz | Onboard | Peer intents, block-level exclusion, deadlock breaking, give-way manoeuvres. |
-| **2 — Global route** | 1 Hz | Fleet manager when reachable, P2P when not | Prioritised space-time A*. Optimal when the network is healthy. |
+| **2 — Global route** | 1 Hz | Fleet manager when reachable, P2P when not | Prioritised space-time A* reference; healthy networking does not make this planner generally optimal. |
 
-Under ISO 3691-4 / EN ISO 13849, protective stopping must be local, independent and
-certified — it may not wait on a radio packet. **Messaging buys efficiency; it never
-buys safety.** Layer 0 does not import the protocol module.
+The repository's Layer 0 is a software stop mechanism, not a certified protective
+device and not evidence of ISO 3691-4 or ISO 13849 conformity. Physical deployment
+requires a manufacturer/integrator safety assessment, suitable sensors and an
+independent validated safety chain. Peer messaging supports coordination; a missing
+message must not prevent the local stop path. Layer 0 does not import the protocol
+module. See the [release evidence boundaries](docs/24-BIOS7-RELEASE-CHECKLIST.md).
 
 ---
 

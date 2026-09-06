@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Theoretical Proof: BIOS Algorithm Improvements Over Stop-and-Wait</title>
+    <title>BIOS Engineering Rationale and Evidence Boundaries</title>
     <style>
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
@@ -115,203 +115,49 @@
     </style>
 </head>
 <body>
-    <div class="title">Theoretical Proof</div>
-    <div class="subtitle">BIOS Algorithm Improvements Over Stop-and-Wait</div>
+    <div class="title">BIOS Engineering Rationale and Evidence Boundaries</div>
+    <div class="subtitle">SIH26123 · Conditional design arguments, not a universal correctness proof</div>
 
     <div class="section">
-        <div class="section-title">Introduction</div>
-        <p>The <span class="highlight">stop-and-wait policy</span> represents a baseline approach where each robot follows its shortest path independently until blocked by another robot.</p>
+        <div class="section-title">Scope and current status</div>
+        <p>This document retains its historical filename for existing links. It replaces unsupported mathematical and percentage claims with the implemented mechanisms, their assumptions and reproducible evidence. BIOS 7 is a candidate under verification, not a released default.</p>
+        <p>The frozen <code>5cce5de</code> fixed-floor, 50-AMR, seed-0 test ended at 1,200 simulated seconds with <strong>99/100 tasks</strong> for both current-source BIOS 6 and BIOS 7, and zero observed robot–robot, robot–human and robot–rack contacts. That is a liveness failure, not a release pass. Later cache, charger and idle-tail changes require a fresh passing campaign; no pending result is assumed successful. See the <a href="../artifacts/benchmarks/bios7-release-5cce5de-regression50.json">retained raw regression result</a> and <a href="24-BIOS7-RELEASE-CHECKLIST.md">release checklist</a>.</p>
+    </div>
 
-        <p><strong>Key characteristics of stop-and-wait:</strong></p>
+    <div class="section">
+        <div class="section-title">Separate allocation, traffic and protective stopping</div>
+        <p>Task allocation chooses work; traffic coordination negotiates shared space; local stopping reacts to sensor input. The stop-and-wait reference can use the same task allocator as BIOS, so it must not be described as necessarily lacking communication, energy checks or multiple tasks. It waits when movement is blocked and may resume when space clears. Persistent circular waits are possible; not every stop is permanent.</p>
+        <p>Centralized references are separate comparisons. A failed reference implementation is not evidence that every centralized planner or industrial fleet system is inferior. The repository's known reference limitations are recorded in the <a href="23-BIOS7-EXPERIMENT.md">BIOS 7 experiment notes</a>.</p>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Why the mechanisms may help</div>
         <ul>
-            <li>Each robot acts alone without communication</li>
-            <li>If next cell is occupied, robot stops forever</li>
-            <li>No recovery from blocked states</li>
-            <li>Cannot handle multiple competing tasks</li>
+            <li><strong>Traffic priorities and expiring leases:</strong> deterministic tie-breaking, bounded reservations and local recovery help resolve competing movement requests. Lease expiry removes stale software authority; it does not remove a failed robot's physical body or guarantee an available escape route.</li>
+            <li><strong>Energy-aware allocation:</strong> estimates include approach, cargo-dependent travel and handling, and return to a configured reachable charger. Current battery reserve and hard deadlines are checked against the estimate. This is conditional on the model and inputs, not proof that real battery consumption or completion time cannot exceed the estimate. Legacy maps without docks do not prove return-to-dock feasibility.</li>
+            <li><strong>BIOS 6 and Auction V2:</strong> event-triggered messages, congestion experience and bounded future reservations aim to reduce waiting and redundant communication. A bounded future slot does not bound all candidate-evaluation work: opening an auction can still inspect the available task catalog.</li>
+            <li><strong>BIOS 7 candidate:</strong> observed completion of a loaded corridor passage can release that task's auction-admission pressure. Physical occupancy, movement leases and local stopping remain authoritative. Stale or missing observations retain the conservative behavior.</li>
         </ul>
     </div>
 
     <div class="section">
-        <div class="section-title">Problem: Stop-and-Wait Limitations</div>
-        <p>The fundamental flaws of stop-and-wait have been mathematically proven:</p>
-
-        <div class="improvement">
-            <div class="improvement-title">1. Deadlock Potential</div>
-            <p>Robots can block each other in cycles with <span class="formula">O(n²) complexity</span> for n robots at merge points.</p>
-        </div>
-
-        <div class="improvement">
-            <div class="improvement-title">2. No Information Sharing</div>
-            <p>Each robot operates in isolation without coordination or communication.</p>
-        </div>
-
-        <div class="improvement">
-            <div class="improvement-title">3. No Predictive Capability</div>
-            <p>Cannot anticipate future congestion or proactively reroute.</p>
-        </div>
-
-        <div class="improvement">
-            <div class="improvement-title">4. No Bounded Resource Management</div>
-            <p>Can wait indefinitely without timeout or recovery mechanisms.</p>
-        </div>
+        <div class="section-title">Conditional assumptions, not universal guarantees</div>
+        <p>Useful progress requires a feasible task catalog, reachable destinations, sufficient energy and service capacity, room for safe yielding, sufficiently accurate localization and sensing, functioning command/watchdog paths, and the communication conditions required by the selected protocol. Permanent obstruction, saturation, stale observations or failures can prevent completion. Graph-level reasoning does not by itself establish safety for continuous chassis motion.</p>
+        <p>No proof here establishes deadlock freedom for every BIOS variant, a fixed complexity for time-to-deadlock, logarithmic or linear fleet speedup, or a formula linking prediction accuracy directly to collision probability. More communication can add congestion and computation; prediction can be wrong. These tradeoffs require measurement.</p>
+        <p>The <a href="https://groups.csail.mit.edu/tds/papers/Lynch/jacm85.pdf">Fischer–Lynch–Paterson result</a> concerns the impossibility of guaranteed termination of deterministic consensus in every fully asynchronous execution with a possible crash, even with reliable messages. It does not prohibit agreement in all executions or validate this robot implementation.</p>
     </div>
 
     <div class="section">
-        <div class="section-title">BIOS Evolution: Improvements and Proofs</div>
-
-        <div class="subsection">
-            <div class="subsection-title">1. BIOS_PIBT.2: Traffic Foundation</div>
-            <p><strong>IMPROVEMENT:</strong> Two-phase destination-cell leases + merge priority rules</p>
-
-            <div class="theorem">
-                <strong>PROOF:</strong> The total ordering through priority inheritance eliminates circular wait conditions, preventing deadlocks that occur in stop-and-wait algorithms.
-            </div>
-        </div>
-
-        <div class="subsection">
-            <div class="subsection-title">2. BIOS_PIBT.3: Congestion-Aware Coordination</div>
-            <p><strong>IMPROVEMENT:</strong> Bounded decentralized batch auction + congestion admission control</p>
-
-            <div class="theorem">
-                <strong>PROOF:</strong> Local A* with circulation allows dynamic rerouting. This resolves competing traffic at bottlenecks where stop-and-wait fails, achieving <span class="highlight">30/30 runs</span> vs stop-and-wait's <span class="highlight">0/30</span>.
-            </div>
-        </div>
-
-        <div class="subsection">
-            <div class="subsection-title">3. BIOS_PIBT.5: Energy-Aware Planning</div>
-            <p><strong>IMPROVEMENT:</strong> Battery-aware task evaluation + cargo-aware energy admission</p>
-
-            <div class="proof">
-                <strong>PROOF:</strong> Deterministic energy estimation ensures <span class="formula">energy(R,T) ≥ emergency_reserve</span>. Reduces bids by <span class="highlight">47.20%</span> while maintaining completion (<span class="highlight">7/8 → 8/8</span>).
-            </div>
-        </div>
-
-        <div class="subsection">
-            <div class="subsection-title">4. BIOS_PIBT.6: Predictive Intelligence</div>
-            <p><strong>IMPROVEMENT:</strong> Event-triggered traffic communication + peer congestion experience sharing</p>
-
-            <div class="proof">
-                <strong>PROOF:</strong> Predictive occupancy estimation reduces obstacle encounters by <span class="formula">P_new = P_original × (1 - accuracy)</span>. Achieves <span class="highlight">63.64%</span> minimum improvement across fleet sizes.
-            </div>
-        </div>
-
-        <div class="subsection">
-            <div class="subsection-title">5. BIOS 6 Auction V2: Enhanced Coordination</div>
-            <p><strong>IMPROVEMENT:</strong> Hard feasibility deadlines + version-bound future task reservations</p>
-
-            <div class="proof">
-                <strong>PROOF:</strong> Bounded auction evaluates at most <span class="formula">M future tasks per robot.</span> Achieves <span class="highlight">19.69%</span> fewer messages, <span class="highlight">233%</span> improvement (<span class="highlight">210/210 vs 90/90 runs</span>).
-            </div>
-        </div>
+        <div class="section-title">How evidence must be read</div>
+        <p>The <a href="../artifacts/benchmarks/bios7-fixed-control-final-development.json">historical three-seed, ten-AMR development comparison</a> used candidate snapshot <code>12d1ac2</code> and untouched control <code>8e4ab51</code>. Each BIOS policy completed 90 tasks across three runs with zero observed contacts. These are finite historical observations, not current-release approval or 90 independent runs. Different campaign sizes must not be converted into a success-rate or speedup gain.</p>
+        <p>For two safely completed runs with identical inputs, completion-time reduction is 100 × (1 − candidate time / baseline time). If the baseline reaches a simulation cutoff unfinished, report only a conservative lower bound using its observed window, not an exact completion time. An external worker error or resource timeout provides no performance score. Contact-free prefixes do not establish future safety.</p>
+        <p>Report completion, all contact categories, messages, bytes, compute cost, scenario coverage and determinism separately. Shared-host headless timings are not unloaded live-control measurements or Raspberry Pi measurements. Preserve failed and unrun cases. The <a href="../artifacts/benchmarks/bios7-capacity-screen.json">earlier capacity screen</a> also retained its 50-AMR rack-contact failure rather than advertising a scalability guarantee.</p>
     </div>
 
     <div class="section">
-        <div class="section-title">Formal Theoretical Framework</div>
-
-        <div class="subsection">
-            <div class="subsection-title">LEMMA 1: Deadlock Potential</div>
-            <p><strong>Statement:</strong> S(t) can deadlock in O(n²) time for n robots at merge points.</p>
-            <div class="proof">
-                <strong>PROOF:</strong> Each robot can block the next in a circular dependency. This creates a directed cycle in the wait-for graph, which persists indefinitely in stop-and-wait.
-            </div>
-        </div>
-
-        <div class="subsection">
-            <div class="subsection-title">LEMMA 2: Deadlock Freedom</div>
-            <p><strong>Statement:</strong> All BIOS variants guarantee deadlock freedom.</p>
-            <div class="proof">
-                <strong>PROOF:</strong> BIOS_PIBT.2 introduces total ordering. BIOS_PIBT.3 adds circulation to break cycles. Higher versions inherit these properties.
-            </div>
-        </div>
-
-        <div class="subsection">
-            <div class="subsection-title">THEOREM: Speedup Analysis</div>
-            <p><strong>Statement:</strong> For any fleet size n ≥ 3, BIOS_PIBT.6 achieves Ω(log n) speedup over S(t).</p>
-            <div class="proof">
-                <strong>PROOF:</strong> Predictive coordination reduces blocked time exponentially with n. The speedup grows logarithmically with fleet size.
-            </div>
-        </div>
-    </div>
-
-    <div class="section">
-        <div class="section-title">Performance Comparison</div>
-
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Algorithm</th>
-                    <th>Success Rate</th>
-                    <th>Speedup vs Stop-and-Wait</th>
-                    <th>Message Efficiency</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Stop-and-wait</td>
-                    <td>0/90 (0%)</td>
-                    <td>Baseline</td>
-                    <td>100% baseline</td>
-                </tr>
-                <tr>
-                    <td>BIOS_PIBT.5</td>
-                    <td>90/90 (100%)</td>
-                    <td>100% improvement</td>
-                    <td>75% baseline (-25%)</td>
-                </tr>
-                <tr>
-                    <td>BIOS_PIBT.6</td>
-                    <td>90/90 (100%)</td>
-                    <td>100% improvement</td>
-                    <td>65% baseline (-35%)</td>
-                </tr>
-                <tr>
-                    <td>BIOS 6 Auction V2</td>
-                    <td>210/210 (233%)</td>
-                    <td>233% improvement</td>
-                    <td>80% baseline (-20%)</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div class="section">
-        <div class="section-title">Key Theoretical Improvements</div>
-
-        <div class="improvement">
-            <div class="improvement-title">1. Deadlock Freedom</div>
-            <p>All BIOS versions eliminate stop-and-wait's fundamental deadlock vulnerability through total ordering and circulation mechanisms.</p>
-        </div>
-
-        <div class="improvement">
-            <div class="improvement-title">2. Scalability</div>
-            <p>Higher-order BIOS versions handle fleet growth much better than stop-and-wait, with logarithmic speedup guarantees.</p>
-        </div>
-
-        <div class="improvement">
-            <div class="improvement-title">3. Efficiency</div>
-            <p>Each version reduces wasted computation and communication by 15-50% compared to stop-and-wait through bounded resource management.</p>
-        </div>
-
-        <div class="improvement">
-            <div class="improvement-title">4. Liveness</div>
-            <p>Only BIOS versions provide guaranteed progress under all conditions, unlike stop-and-wait which can deadlock indefinitely.</p>
-        </div>
-    </div>
-
-    <div class="section">
-        <div class="section-title">Conclusion</div>
-        <p>The theoretical progression from stop-and-wait to BIOS 6 Auction V2 demonstrates clear, provable improvements:</p>
-
-        <ul>
-            <li><strong>Deadlock Freedom:</strong> All BIOS versions eliminate stop-and-wait's fundamental deadlock vulnerability</li>
-            <li><strong>Scalability:</strong> Higher-order BIOS versions handle fleet growth much better</li>
-            <li><strong>Efficiency:</strong> Each version reduces wasted computation and communication by 15-50%</li>
-            <li><strong>Liveness:</strong> Only BIOS versions provide guaranteed progress under all conditions</li>
-        </ul>
-
-        <p>The improvements are not incremental but represent fundamental algorithmic breakthroughs in distributed coordination. While stop-and-wait represents the simplest possible approach, BIOS versions implement theoretically sound solutions to the distributed coordination problems that limited the baseline approach.</p>
-
-        <p><em>This analysis is based on deterministic simulation evidence, not mathematical proof of universal correctness, but demonstrates clear superiority in the defined problem space.</em></p>
+        <div class="section-title">What must pass before promotion</div>
+        <p>The <a href="24-BIOS7-RELEASE-CHECKLIST.md">release checklist</a> requires the fixed failed-case retest, broader registered fleets and workloads, SIH overlap comparisons, measured human/fault interactions, strict same-source V6 nonregression, semantic repeats and independent-controller evidence. Previously observed seeds must be identified as retests. Improvements in one metric cannot hide a failed safety or completion gate.</p>
+        <p>BIOS's local stop logic is software, not a certified protective device. A real AMR needs a supported driver, validated sensing/localization and braking behavior, commissioning, and its independent manufacturer/integrator safety chain. No physical safety certification, universal hardware compatibility or universal task-completion claim is made.</p>
     </div>
 </body>
 </html>

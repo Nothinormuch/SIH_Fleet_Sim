@@ -507,7 +507,7 @@ For a real robot to run this code unchanged, its driver must emit one JSON datag
 | `detections` | no (default `[]`) | list, max 1024 objects | Unlabelled obstacles: `x`, `y`, `r`, `range_m`, optional `vx`, `vy` | `:232-246` |
 | `on_dock` | no (default `false`) | strict boolean | Robot is physically on a charging dock | `:247-249` |
 
-The node replies to `--actuator-port` with `{"v":..., "omega":..., "safety_stop":..., "t":...}` (`src/edge_runtime.py:197-203`), where `t` is the node's own monotonic time. `safety_stop` is set by the certified local layer and the driver should treat it as a command to stop, not as advice.
+The node replies to `--actuator-port` with `{"v":..., "omega":..., "safety_stop":..., "t":...}` (`src/edge_runtime.py:197-203`), where `t` is the node's own monotonic time. `safety_stop` is a software stop request from the local controller, not an output from a certified protective device. The driver must honor the stop request and enforce command expiry, while a real AMR retains its independent manufacturer/integrator safety chain. This interface and the simulation tests do not establish physical safety certification; see the [release evidence boundaries](24-BIOS7-RELEASE-CHECKLIST.md).
 
 Five obligations fall on the integrator, and they are where a real deployment would actually cost effort:
 
@@ -544,7 +544,7 @@ Five obligations fall on the integrator, and they are where a real deployment wo
 - [01. Requirements Traceability](01-REQUIREMENTS-TRACEABILITY.md) — the full 20-requirement matrix
 - [02. Architecture](02-ARCHITECTURE.md) — the layered design the runtime instantiates
 - [03. Decentralized Protocol](03-DECENTRALIZED-PROTOCOL.md) — message types, signing, and the dead-zone finding
-- [07. Safety](07-SAFETY.md) — what the certified local layer does inside each tick
+- [07. Safety](07-SAFETY.md) — the modeled local stop layer and its limitations; not a certification
 - [12. Benchmark and Evidence](12-BENCHMARK-AND-EVIDENCE.md) — the batch results this runtime shares code with
 - [13. Testing](13-TESTING.md) — `tests/test_edge_runtime.py` in the context of the whole suite
 - [15. Limitations](15-LIMITATIONS.md) — the honest ledger this document contributes to

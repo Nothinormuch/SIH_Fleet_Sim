@@ -36,10 +36,21 @@ compute timing, matched. These are short cold-start measurements, not a full-run
 speedup or a live-control deadline claim. The shared helper benefits both current
 V6 and V7; it is not credited as a V7-only policy advantage.
 
-The candidate's complete unit/integration suite passes 723 tests. This includes
+The frozen `5cce5de` candidate's complete unit/integration suite passed 723 tests. This includes
 continuous recovery geometry, real sensor-TTL expiry, task-identity revalidation
-and equivalence tests for the original versus pruned eligibility predicate. Test
-counts do not replace the larger-fleet and independent-controller gates below.
+and equivalence tests for the original versus pruned eligibility predicate. Its
+subsequent fixed-floor 50-AMR test nevertheless stopped at 99/100 tasks with zero
+contacts, so that candidate was not released. Later cache and idle-tail fixes
+require their own complete regression and acceptance reruns. Test counts do not
+replace the larger-fleet and independent-controller gates below.
+
+The later bounded-cache change further reduced the same two-second diagnostic
+from 5,650 to 2,690 A* calls, with matching semantic results before the separate
+charger-reachability correction. These are two sequential short diagnostics, not
+evidence of full-run speed or a live timing budget. Configured but unreachable
+chargers are now rejected intentionally; this is a safety correction, not an
+equivalence optimization. Existing no-charger tasks retain their legacy behavior,
+which must not be described as proof of return-to-dock feasibility.
 
 The fixed `--phase release` plan cannot accept easier replacement seeds, smaller
 task catalogs or custom fleet sizes. It declares 78 candidate cases:
@@ -47,7 +58,10 @@ task catalogs or custom fleet sizes. It declares 78 candidate cases:
 1. `regression50`: repeat the exact failed fixed-floor, 50-AMR, seed-0 workload first.
 2. `capacity`: historical smaller fleets, scaled 50 and fixed/scaled 100. Expansion
    requires a passing regression50 report from the same frozen candidate sources.
-3. `holdout`: 30 SIH ten-AMR seeds, 2000 through 2029, not previously tuned seeds.
+3. `holdout`: the registered 30 SIH ten-AMR seeds, 2000 through 2029. Seeds
+   2000–2004 were observed during the stopped `5cce5de` campaign; a later run of
+   those seeds is a retest, not untouched holdout evidence. Keep the full registered
+   range and disclose this distinction rather than replacing observed cases.
 4. `stress`: humans, blocked aisle, controller failure, chokepoint, crossed paths
    and open floor; 3/10 AMRs and three seeds each.
 5. `repeat`: identical input repeated twice, with equal semantic result counters.
