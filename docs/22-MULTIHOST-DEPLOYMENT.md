@@ -28,6 +28,52 @@ Permit the selected bridge TCP port into the Mac and the multicast UDP peer port
 both Ethernet interfaces, scoped to this trusted link. Do not disable the firewall
 globally. Application-only link-local testing does not prove warehouse Wi-Fi coverage.
 
+### Recommended: byte-exact campaign package
+
+After committing the frozen controller source, prepare a private package on the Mac:
+
+```bash
+python tools/package_lan_campaign.py --rounds sensor3,overlap3
+```
+
+Omit `--rounds` for the complete seven-round plan: isolated sensor-loss proof,
+3/10-AMR overlapping paths, and ten-AMR chokepoint, human, blocked-aisle and process
+failure cases. A selected subset is not evidence for the unrun rounds. All packages
+explicitly select the experimental BIOS 7 policy until its release gates pass.
+
+The command prints a new private ZIP path, its SHA256 checksum, Windows extraction
+instructions and the Mac campaign command. The ZIP contains session keys: do not
+commit it, upload it publicly or overwrite an existing Windows candidate folder.
+No dependency outside Python's standard library is needed for the packaged agents.
+The dashboard and referee still run from the complete Mac repository.
+
+For the commissioned direct cable, an optional bounded transfer helper is:
+
+```bash
+python tools/serve_lan_package.py --zip /absolute/path/to/the/new/private-package.zip
+```
+
+It binds only the configured Ethernet address, serves that one file at an opaque
+URL only to the configured Windows IP, limits concurrent requests and request
+lifetimes, and expires automatically. It is **plain HTTP, not encryption**; the
+trusted direct link is an operator prerequisite. Verify the printed SHA256 on
+Windows before extraction. The helper never serves a directory or accepts uploads.
+
+Start the printed Mac campaign command, then the printed Windows `campaign-agent`
+command. The Mac launcher waits for the Windows connection before starting its
+own controllers. Authentication, exact source matching and fresh-sensor readiness
+still follow; observing a TCP connection is not a successful handshake. A campaign
+allows up to 30 minutes for operator readiness, separate from each measured run.
+
+Each round has its own session key and TCP port (29600, 29602, …); peer multicast
+uses UDP 29601 throughout. Windows advances through the declared manifest without
+requiring another pasted command. Failed measurements are retained, never replaced
+by the exit status of a launcher. A host/cleanup failure stops the remaining rounds.
+For live timing measurements, stop unrelated heavy computations and record whether
+the passive dashboard was active. This is measured laptop timing, not hard real time.
+
+### Manual single-session alternative
+
 From the Mac repository with its virtual environment active:
 
 ```bash
