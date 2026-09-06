@@ -65,6 +65,17 @@ run and source fingerprint; old headless artifacts are not relabelled as results
 from a later commit. The LAN package must contain the final candidate entrypoint
 bytes, so earlier prepared packages are withdrawn rather than bypassing checks.
 
+The prepared launch-default commit is `6545a238b63b9a9b11608a01109be708a9af3ce5`.
+Its complete private LAN package has controller fingerprint
+`8578c87abdc2e09189a22c4f576690dbcf007742d3ace36ba4c86bc97cda900a`.
+No session key is part of the repository. The candidate was also rerun on the
+ten-AMR SIH development seed0 with immutable V6, current-source V6 and BIOS7;
+each semantic result matched its corresponding frozen-063d20d result exactly.
+BIOS7 again completed 30/30 in 833.08 seconds versus 968.12 for both V6 controls.
+The default HTTP request, with policy/allocation omitted, selected BIOS7/Auction V2
+and completed the standard Open Floor eight-task profile in 91.32 seconds with
+zero contacts. These are entrypoint/compatibility checks, not extra holdout seeds.
+
 Required before promotion: complete registered 30-seed SIH range, zero candidate
 contacts and full task completion, per-case time/message/byte nonregression against
 current-source V6, the SIH stop-and-wait bound, stress/coverage and repeat gates,
