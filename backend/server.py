@@ -54,6 +54,7 @@ from src.scenarios import SCENARIOS, SHOWCASE_SCENARIOS  # noqa: E402
 from src.environment import DOCK, FREE, RACK, STATION, Warehouse  # noqa: E402
 from src.task_allocation import ALLOCATION_POLICIES  # noqa: E402
 from src.edge_lab import EdgeLab  # noqa: E402
+from backend.multihost_view import read_state as read_multihost_state  # noqa: E402
 
 _EDGE_LAB = EdgeLab()
 
@@ -288,6 +289,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if route == "/api/edge-lab/status":
                 return self._json(200, _EDGE_LAB.status())
+            if route == "/api/multihost/status":
+                return self._json(200, read_multihost_state())
             if route == "/api/scenarios":
                 return self._api_scenarios()
             if route == "/api/train/status":
@@ -430,7 +433,8 @@ class Handler(BaseHTTPRequestHandler):
             if route == "/api/edge-lab/start":
                 return self._json(202, _EDGE_LAB.start(
                     payload.get("mode", "normal"), payload.get("profile", "interfaces"),
-                    payload.get("robots", 3), payload.get("seed", 0)))
+                    payload.get("robots", 3), payload.get("seed", 0),
+                    payload.get("policy", "BIOS_PIBT.6")))
             if route == "/api/edge-lab/cut-sensor":
                 return self._json(200, _EDGE_LAB.cut_sensor(payload.get("robot")))
             if route == "/api/edge-lab/stop":

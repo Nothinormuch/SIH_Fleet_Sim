@@ -1,5 +1,18 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
+const readOnlyMultihost = new URLSearchParams(window.location.search).get('source') === 'multihost';
+const finiteMetric = value => typeof value === 'number' && Number.isFinite(value);
+const metricText = (value, digits=2) => finiteMetric(value) ? value.toFixed(digits) : 'unavailable';
+const sumMetrics = values => values.length && values.every(finiteMetric) ? values.reduce((a,b)=>a+b,0) : null;
+if (readOnlyMultihost) {
+  document.title = 'BIOS · Multi-host observer';
+  $('lab-title').textContent = 'Two hosts. Independent robot brains.';
+  $('lab-description').textContent = 'Read-only view of the terminal-owned network demonstration. Real controller processes exchange peer messages; robot bodies, sensors and warehouse physics are simulated.';
+  $('lab-scope').innerHTML = 'NETWORKED SOFTWARE IN THE LOOP<br><small>Observed hosts · not Raspberry Pi emulation or certification</small>';
+  $('source-note').hidden = false;
+  $('map-empty').textContent = 'Waiting for the multi-host referee to publish live telemetry.';
+  document.querySelector('.floor-note').textContent = 'The terminal-owned referee publishes positions and measured events. This page only observes; it cannot change the workload, choose winners or command robots.';
+}
 const colors = ['#35c6f4', '#46d39a', '#f5b843'];
 let latest = null;
 let busy = false;
@@ -29,6 +42,13 @@ for (let i = 0; i < 10; i++) {
   const motionLine = document.createElement('span'); motionLine.className = 'datum';
   motionLine.innerHTML = 'Actual speed<b data-key="speed">—</b>';
   card.querySelector('.node-data').append(motionLine);
+  if (readOnlyMultihost) {
+    const hostLine = document.createElement('span'); hostLine.className = 'datum';
+    hostLine.innerHTML = 'Controller host / IP<b data-key="host">—</b>';
+    card.querySelector('.node-data').append(hostLine);
+    card.querySelector('.board-label').textContent = 'NETWORKED NODE';
+    card.querySelector('.node-actions button').hidden = true;
+  }
   $('controllers').append(card);
 }
 
@@ -74,7 +94,9 @@ import('./edge-lab-twin.js').then(({LiveEdgeTwin}) => {
 selectRobot(selectedRobot);
 
 async function api(path, payload) {
-  const response = await fetch(`/api/edge-lab/${path}`, payload === undefined ? {cache:'no-store', signal:AbortSignal.timeout(2000)} : {
+  if (readOnlyMultihost && (payload !== undefined || path !== 'status')) throw new Error('Multi-host observer is read-only. Use the commissioned terminals for control.');
+  const endpoint = readOnlyMultihost ? '/api/multihost/status' : `/api/edge-lab/${path}`;
+  const response = await fetch(endpoint, payload === undefined ? {cache:'no-store', signal:AbortSignal.timeout(2000)} : {
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload), signal:AbortSignal.timeout(5000)
   });
   const data = await response.json();
@@ -82,15 +104,18 @@ async function api(path, payload) {
   return data;
 }
 async function action(path, payload={}) {
-  if (busy) return;
+  if (busy || readOnlyMultihost) return;
   busy = true; $('error').hidden = true; render();
   try { latest = await api(path, payload); connected = true; }
   catch (error) { $('error').textContent = error.message; $('error').hidden = false; }
   finally { busy = false; render(); }
 }
 function runOptions(mode) {
-  return {mode, profile:$('profile').value, robots:Number($('robot-count').value), seed:Number($('seed').value)};
+  return {mode, policy:$('policy').value, profile:$('profile').value, robots:Number($('robot-count').value), seed:Number($('seed').value)};
 }
+$('policy').addEventListener('change', () => {
+  $('policy-label').textContent = $('policy').value === 'BIOS_PIBT.7' ? '7.0 · experimental' : '6.0';
+});
 $('start').addEventListener('click', () => action('start', runOptions('normal')));
 $('fault-demo').addEventListener('click', () => action('start', runOptions('sensor_demo')));
 $('stop').addEventListener('click', () => action('stop'));
@@ -98,7 +123,7 @@ $('download').addEventListener('click', () => {
   if (!latest?.result) return;
   const blob = new Blob([JSON.stringify({result:latest.result, manual_sensor_faults:latest.faults}, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob); const a = document.createElement('a');
-  a.href = url; a.download = 'bios-virtual-edge-evidence.json'; a.click();
+  a.href = url; a.download = readOnlyMultihost ? 'bios-multihost-evidence.json' : 'bios-virtual-edge-evidence.json'; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
@@ -106,10 +131,11 @@ function render() {
   const state = latest?.state || 'idle';
   const active = ['starting','running','stopping'].includes(state);
   const live = connected && state === 'running' && latest.snapshot_age_s < 1;
-  $('start').disabled = busy || active; $('fault-demo').disabled = busy || active;
-  $('stop').disabled = busy || !active || state === 'stopping';
+  $('start').disabled = readOnlyMultihost || busy || active; $('fault-demo').disabled = readOnlyMultihost || busy || active;
+  $('stop').disabled = readOnlyMultihost || busy || !active || state === 'stopping';
   $('download').disabled = !latest?.result;
   const names = {idle:'Ready to launch',starting:'Launching independent edge processes…',running:'● Live · real UDP sockets',stopping:'Stopping edge processes…',cancelled:'Run stopped · partial evidence',finished:'Run finished · evidence recorded',failed:'Run failed'};
+  if (readOnlyMultihost) { names.idle='Waiting for terminal-owned multi-host run'; names.starting='Waiting for both host agents and controller readiness…'; names.running='● Live · multi-host observer · read-only'; }
   $('status').textContent = !connected ? 'Disconnected from dashboard server' :
     state === 'running' && !live ? 'Telemetry delayed · last received positions' : names[state];
   if (latest?.error) { $('error').textContent = latest.error; $('error').hidden = false; }
@@ -117,11 +143,16 @@ function render() {
   const result = latest?.result;
   const nodes = snapshot?.nodes || [];
   const count = latest?.robots || 3;
-  for (const id of ['profile','robot-count','seed']) $(id).disabled = active;
-  if(active && latest?.profile) {
+  for (const id of ['profile','robot-count','seed','policy']) $(id).disabled = readOnlyMultihost || active;
+  if((active || readOnlyMultihost) && latest?.profile) {
+    if (readOnlyMultihost && ![...$('profile').options].some(o=>o.value===latest.profile)) $('profile').add(new Option(latest.profile,latest.profile));
+    if (readOnlyMultihost && ![...$('robot-count').options].some(o=>o.value===String(count))) $('robot-count').add(new Option(String(count),String(count)));
     $('profile').value=latest.profile; $('robot-count').value=String(count);
     $('seed').value=String(latest.seed);
+    $('policy').value=latest.policy || 'BIOS_PIBT.6';
   }
+  const shownPolicy = active || result ? latest?.policy : $('policy').value;
+  $('policy-label').textContent = shownPolicy === 'BIOS_PIBT.7' ? '7.0 · experimental' : '6.0';
   if ($('selected-robot').options.length !== count) {
     $('selected-robot').replaceChildren(...Array.from({length:count}, (_,i) => {
       const option=document.createElement('option'); option.textContent=`AMR${String(i+1).padStart(2,'0')}`; return option;
@@ -131,7 +162,7 @@ function render() {
   }
   $('process-count').textContent = snapshot ? `${nodes.filter(n => n.running).length} / ${count}` : '—';
   $('completion').textContent = result ? `${result.tasks_completed} / ${result.tasks_announced}` : snapshot ? `${snapshot.observed_completed.length} / ${snapshot.tasks.length}` : '— / 3';
-  $('completion-note').textContent = result ? 'Confirmed by the final node reports' : 'Live completion announcements · final verification pending';
+  $('completion-note').textContent = result ? readOnlyMultihost ? 'Verified within the declared evidence window' : 'Confirmed by the final node reports' : 'Live completion announcements · final verification pending';
   $('contacts').textContent = snapshot ? Object.values(result?.contacts || snapshot.contacts).reduce((a,b)=>a+b,0) : '—';
   $('packets').textContent = snapshot ? nodes.reduce((a,n)=>a+n.peer_packets_observed,0).toLocaleString() : '—';
   const time = result?.simulation_time_s ?? snapshot?.world.t ?? 0;
@@ -155,6 +186,7 @@ function render() {
     value('pid',node?.pid || '—'); value('battery',body?`${(body.batt*100).toFixed(0)}%`:'—');
     value('sensor',node?.sensor_frames ?? '—'); value('actuator',node?.actuator_frames ?? '—');
     value('peer',node?.peer_packets_observed ?? '—');
+    if (readOnlyMultihost) value('host',node ? `${node.host_hostname || node.host || 'Unknown host'} · ${node.host_ip || 'IP unavailable'}` : '—');
     value('speed', body ? `${Math.abs(body.v).toFixed(2)} m/s` : '—');
     value('task', node?.visual_status?.task || 'None');
     value('cargo', node?.visual_status?.carry ? 'On board' : 'Empty');
@@ -164,7 +196,7 @@ function render() {
     board.classList.toggle('cut',live && !!node?.sensor_cut);
     board.classList.toggle('pulse',live && !!node && node.peer_packets_observed !== packetCounts[rid]);
     packetCounts[rid]=node?.peer_packets_observed;
-    card.querySelector('.node-actions button').disabled=busy || !live || !node?.running || !!node?.sensor_cut;
+    card.querySelector('.node-actions button').disabled=readOnlyMultihost || busy || !live || !node?.running || !!node?.sensor_cut;
     card.querySelector('.command').textContent = node ? !active ? 'Controller exited' : node.command.safety_stop?'STOP · v = 0':`v ${node.command.v.toFixed(2)} m/s · ω ${node.command.omega.toFixed(2)}`:'Waiting for launch';
   }
   const trace=$('trace'); trace.replaceChildren();
@@ -182,18 +214,27 @@ function render() {
   if (result) {
     $('result-title').textContent=result.cancelled?'Run stopped early':result.success?'Deployment run passed':'Run needs investigation';
     const fault=result.sensor_cut_evidence;
-    $('result-detail').textContent = fault ? `AMR01 sensor-loss stop command: ${fault.response_s === null?'not observed':`${(fault.response_s*1000).toFixed(1)} ms`}. Recovery: ${fault.recovered_after_sensor_return?'confirmed':'not observed'}. ${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.control_deadlines_met?'No measured control deadline misses.':'Control deadline misses recorded.'}` : `${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.separate_edge_nodes?`${result.robots} distinct process reports verified.`:'Process verification incomplete.'} ${result.peer_messages_observed?'Peer communication observed at all nodes.':'Peer verification incomplete.'}`;
-    const times=result.nodes.map(n=>`${n.robot_id}: ${n.runtime.loop_p99_ms.toFixed(2)} ms`);
-    $('timing').textContent=`Measured p99 loop time / 20 ms budget: ${times.join(' · ')}`;
-    const misses=result.nodes.reduce((total,n)=>total+n.runtime.deadline_misses,0);
-    const maximum=Math.max(0,...result.nodes.map(n=>n.runtime.loop_max_ms));
-    $('timing').textContent+=` · Maximum ${maximum.toFixed(2)} ms · Deadline misses ${misses}`;
-    const cycles=result.nodes.map(n => `${n.robot_id}: ${(n.full_cycle?.loop_max_ms || 0).toFixed(2)} ms`);
-    $('timing').textContent+=` · Full-cycle maxima: ${cycles.join(' · ')} · Full-cycle overruns ${result.nodes.reduce((n,r)=>n+(r.full_cycle?.deadline_misses || 0),0)} · Late wakeups ${result.nodes.reduce((n,r)=>n+(r.scheduling_late_ticks || 0),0)}`;
+    const cutRobot = fault?.robot || latest?.sensor_cut?.robot || (readOnlyMultihost ? 'Selected AMR' : 'AMR01');
+    $('result-detail').textContent = fault ? `${cutRobot} sensor-loss stop command: ${finiteMetric(fault.response_s)?`${(fault.response_s*1000).toFixed(1)} ms`:'not observed'}. Recovery: ${(fault.recovered_after_sensor_return ?? fault.recovered)?'confirmed':'not observed'}. ${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.control_deadlines_met===true?'No measured control deadline misses.':result.control_deadlines_met===false?'Control timing gate not passed.':'Control timing unavailable.'}` : `${result.tasks_completed}/${result.tasks_announced} tasks completed. ${result.separate_edge_nodes?`${result.robots} distinct process reports verified.`:'Process verification incomplete.'} ${result.peer_messages_observed?'Peer communication observed at all nodes.':'Peer verification incomplete.'}`;
+    if(readOnlyMultihost) $('result-detail').textContent+=` Physical host separation: ${result.real_multihost===true?'observed':result.real_multihost===false?'not established':'unavailable'}. Networked software evidence; no physical AMR or Raspberry Pi performance claim.`;
+    const reports=result.nodes || [];
+    const expectedReports=result.robots || latest?.robots || count;
+    const reportIds=reports.map(n=>n.robot_id);
+    const rosterComplete=reports.length===expectedReports && new Set(reportIds).size===expectedReports && Array.from({length:expectedReports},(_,i)=>`AMR${String(i+1).padStart(2,'0')}`).every(id=>reportIds.includes(id));
+    const times=reports.map(n=>`${n.robot_id}: ${metricText(n.runtime?.loop_p99_ms)} ms`);
+    $('timing').textContent=`${rosterComplete?'':`INCOMPLETE NODE REPORTS (${reports.length}/${expectedReports}); fleet timing unavailable. `}Measured p99 loop time / 20 ms budget: ${times.join(' · ') || 'unavailable'}`;
+    const fleetSum=values=>rosterComplete?sumMetrics(values):null;
+    const misses=fleetSum(reports.map(n=>n.runtime?.deadline_misses));
+    const maxima=reports.map(n=>n.runtime?.loop_max_ms);
+    const maximum=rosterComplete && maxima.length && maxima.every(finiteMetric) ? Math.max(...maxima) : null;
+    $('timing').textContent+=` · Maximum ${metricText(maximum)} ms · Deadline misses ${metricText(misses,0)}`;
+    const cycles=reports.map(n => `${n.robot_id}: ${metricText(n.full_cycle?.loop_max_ms)} ms`);
+    $('timing').textContent+=` · Full-cycle maxima (reported nodes): ${cycles.join(' · ') || 'unavailable'} · Fleet full-cycle overruns ${metricText(fleetSum(reports.map(r=>r.full_cycle?.deadline_misses)),0)} · Fleet late wakeups ${metricText(fleetSum(reports.map(r=>r.scheduling_late_ticks)),0)}`;
     if(misses) $('result-detail').textContent+=` Timing gate failed: ${misses} control loops exceeded the 20 ms budget on this host.`;
   } else {
-    $('result-title').textContent='Disconnect. Stop. Recover.';
-    $('result-detail').textContent=latest?.mode==='sensor_demo'?'Automatic test: AMR01 sensor input is cut at 3 s and restored at 5 s. Watch its status, zero-speed stop, and subsequent recovery.':'Run the sensor-loss demo, or disconnect any sensor manually for 2 seconds. Watch the actual actuator command change while the other controllers keep running.';
+    $('result-title').textContent=readOnlyMultihost?'Observe. Verify. Explain.':'Disconnect. Stop. Recover.';
+    const plannedCut=latest?.sensor_cut;
+    $('result-detail').textContent=readOnlyMultihost ? plannedCut ? `Terminal-owned test: ${plannedCut.robot} sensor input is cut at ${plannedCut.at_s} s for ${plannedCut.duration_s} s. This viewer cannot inject faults or assign tasks.` : 'Waiting for terminal-owned evidence. This viewer cannot start controllers, stop robots or inject faults.' : latest?.mode==='sensor_demo'?'Automatic test: AMR01 sensor input is cut at 3 s and restored at 5 s. Watch its status, zero-speed stop, and subsequent recovery.':'Run the sensor-loss demo, or disconnect any sensor manually for 2 seconds. Watch the actual actuator command change while the other controllers keep running.';
     $('timing').textContent='Loop timing appears after the run finishes.';
   }
   if (viewMode === '2d') drawMap(snapshot);
