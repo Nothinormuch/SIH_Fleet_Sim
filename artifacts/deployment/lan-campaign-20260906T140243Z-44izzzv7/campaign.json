@@ -1,0 +1,30 @@
+{
+  "attempted_sessions": 1,
+  "expected_sessions": 1,
+  "physical_amr_tested": false,
+  "scope": "networked_software_in_the_loop",
+  "sessions": [
+    {
+      "contacts": {
+        "robot-human": 0,
+        "robot-rack": 0,
+        "robot-robot": 0
+      },
+      "control_deadlines_met": false,
+      "failure": null,
+      "index": 1,
+      "launcher_exit": 1,
+      "real_multihost": true,
+      "report": "/Users/sakshamkatiyar/Desktop/SIH_Fleet_Priority/artifacts/deployment/lan-campaign-20260906T140243Z-44izzzv7/01-edge_chokepoint-10/referee.json",
+      "robots": 10,
+      "scenario": "edge_chokepoint",
+      "session": "2fdcda97046bc82ad4756c17725c22a0",
+      "software_boundary_pass": false,
+      "success": false,
+      "tasks_announced": 10,
+      "tasks_completed": 10
+    }
+  ],
+  "success": false,
+  "unrun_sessions": 0
+}
