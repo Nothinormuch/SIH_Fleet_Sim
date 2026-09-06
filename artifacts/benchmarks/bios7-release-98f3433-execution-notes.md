@@ -36,6 +36,15 @@ been pushed or merged by this step.
 
 ## Completed checks
 
+The post-freeze full suite passed 976 tests in 205.64 host seconds, including
+additional left/right exit-junction clearance and measurement-label contracts.
+These tests did not alter the frozen controller. The 50-AMR regression completed
+100/100 tasks in 379.24 simulated seconds with zero contacts. Current-source V6
+matched its completion time, 197,646 messages and 37,079,309 serialized bytes:
+this is shared reliability evidence, not a V7-only speed advantage. The immutable
+original V6 run had 19 rack-contact events and is excluded from valid performance
+claims. This candidate's passing regression report unlocked its capacity stage.
+
 The stress stage passed all 108 workers: BIOS 7 completed 36/36 cases and 318/318
 tasks with zero contacts and all strict current-V6 time/message/byte checks passing.
 The repeat stage passed all eight workers, including identical semantic outputs
