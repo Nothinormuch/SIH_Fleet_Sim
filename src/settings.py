@@ -3,9 +3,9 @@
 Everything physical is SI. One grid cell is CELL_M metres square; the planner works
 in cells, the world works in metres, and this file is the only place the two meet.
 
-Numbers here are not invented: they are the operating envelope of commercial warehouse
-AMRs (Locus Origin, 6 River Chuck, Geek+ P-series) so that the latency and throughput
-arguments in the report survive arithmetic.
+These values define the declared simulation operating envelope. They are not a
+validated specification for a particular manufacturer's chassis. A hardware adapter
+must use measured, vendor-approved dimensions, speed and braking characteristics.
 """
 
 from dataclasses import dataclass, field, asdict
@@ -21,7 +21,7 @@ class RobotSpec:
     omega_max: float = 1.6          # rad/s  (~92 deg/s turn-in-place)
     alpha_max: float = 3.2          # rad/s^2
 
-    # --- Layer 0: protective stop. Certified, local, never network-dependent. ---
+    # --- Layer 0: simulated local protective stop; not safety-certified. ---
     # The protective field is SPEED-DEPENDENT, which is how real AMR safety scanners
     # work (ISO 3691-4 / EN ISO 13849 field switching) and not an optimisation. A fixed
     # field is wrong in both directions: too small at speed to stop in time, and so

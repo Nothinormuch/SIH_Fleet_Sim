@@ -1,23 +1,13 @@
-"""Turning a run into numbers a sceptical judge can attack.
+"""Measured completion, contacts, communication and uncertainty for finite runs.
 
-The success criterion in the problem statement is "zero inter-robot collisions". That
-sentence cannot be satisfied, because it is not a testable claim:
+Zero observed inter-robot contacts is a testable acceptance criterion for a declared
+campaign; it is not proof that contact is impossible in every environment. Reports
+retain exposure, contact kinds and separation distributions alongside completion.
+Rate intervals use a statistical model and do not certify physical safety.
 
-* **Absence over finitely many trials is not evidence of impossibility.** Observing no
-  collision in a 20-minute demo bounds the collision *rate*; it does not establish zero.
-  The correct statement is "0 contacts in N robot-hours, one-sided 95% upper bound
-  X per 1000 robot-hours", which is what `safety_report` produces.
-* **In an asynchronous system with message loss and crashes, agreement is impossible**
-  (Fischer-Lynch-Paterson). No protocol built on lossy Wi-Fi can *guarantee* the fleet
-  agrees on who yields. The only guarantee available is the local one: an onboard
-  certified stop that needs no agreement at all - and its fallback behaviour is
-  stop-and-wait, the very baseline the statement disparages.
-* **The criterion counts only robot-robot contacts.** Humans, forklifts, pallets and
-  racks are excluded, and those are what actually get hit. We report contacts by kind,
-  and the human count is the one we would look at first.
-
-So this module reports rates with intervals, separations as a distribution, and every
-policy against the same fixed scenario. Where a number is weak, it says so.
+Communication and sensor faults require explicit recovery/stop evidence. Neither
+peer consensus nor the simulated local protective layer is hardware certification.
+Every comparison must keep its workload and operating envelope identifiable.
 """
 
 from __future__ import annotations
@@ -127,6 +117,9 @@ class PolicyResult:
     dynamic_obstacles_detected: int = 0
     dynamic_reroutes: int = 0
     task_reassignments: int = 0
+    recovery_paths_rejected: int = 0
+    recovery_staged_paths: int = 0
+    recovery_braking_stops: int = 0
     auction_bids_sent: int = 0
     energy_bids_suppressed: int = 0
     energy_no_eligible_rounds: int = 0

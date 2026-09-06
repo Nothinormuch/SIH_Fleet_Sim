@@ -27,6 +27,20 @@ evidence must state its layouts, robot counts, task catalogs, seeds and cutoffs.
 
 ## Mandatory headless stages
 
+The September 6 reliability candidate adds recovery regression tests and exact
+top-k auction eligibility pruning. In a development diagnostic covering only the
+first two simulated seconds of the fixed-floor ten-AMR, seed-0 workload, pruning
+reduced A* calls from 16,210 to 5,650. Separate unprofiled subprocess measurements
+were 0.55961 and 0.23199 host seconds. Semantic results, excluding measured host
+compute timing, matched. These are short cold-start measurements, not a full-run
+speedup or a live-control deadline claim. The shared helper benefits both current
+V6 and V7; it is not credited as a V7-only policy advantage.
+
+The candidate's complete unit/integration suite passes 723 tests. This includes
+continuous recovery geometry, real sensor-TTL expiry, task-identity revalidation
+and equivalence tests for the original versus pruned eligibility predicate. Test
+counts do not replace the larger-fleet and independent-controller gates below.
+
 The fixed `--phase release` plan cannot accept easier replacement seeds, smaller
 task catalogs or custom fleet sizes. It declares 78 candidate cases:
 

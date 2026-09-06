@@ -6,7 +6,7 @@ The problem statement asks for a fully decentralised fleet and treats centralisa
 the flaw. That framing does not survive contact with how AMR fleets are actually built,
 so this agent implements something different and says why:
 
-    Layer 0  SAFETY          50 Hz   onboard, certified, NEVER network-dependent
+    Layer 0  SAFETY          50 Hz   simulated protective stop, not certified
     Layer 1  LOCAL TRAFFIC   10 Hz   onboard, peer intents, degrades gracefully
     Layer 2  GLOBAL ROUTE     1 Hz   central optimiser when reachable, P2P when not
 
@@ -41,14 +41,16 @@ from __future__ import annotations
 
 import math
 import time
+from collections import deque
 from dataclasses import dataclass, field
 
 from . import messages as msg
 from .bios4 import (ACT_CLAIM, ACT_HOLD, ACT_PROCEED, ACT_REROUTE, ACT_YIELD,
                     legal_actions, observe)
-from .environment import Warehouse, corridors
+from .environment import RACK, Warehouse, corridors
 from .geometry import (Cell, angle_diff, bearing, cell_center, clamp, dist,
-                       manhattan, segment_point_distance, to_cell)
+                       manhattan, segment_point_distance, segment_rectangle_distance,
+                       to_cell)
 from .planner import astar
 from .priority import PriorityKey, pibt_step
 from .settings import Config
@@ -99,6 +101,13 @@ ST_BLOCKED = "blocked"
 ST_RETREAT = "retreat"
 
 CELL_ZONE_BASE = 1_000_000
+
+# Local navigation uncertainty/tracking allowance, not a smaller physical body or
+# a safety certification. The acceptance worlds use 0.02 m localization noise;
+# Gaussian noise has no finite absolute bound, so the finite campaign remains the
+# claim. Map geometry, actuator limits and measured contact definitions are unchanged.
+RECOVERY_MAP_MARGIN_M = 0.10
+RECOVERY_SPEED_MPS = 0.20
 
 
 @dataclass
@@ -322,6 +331,12 @@ class AMRBrain:
         # the physical blocked-aisle response. cell -> receiver-local expiry.
         self._dynamic_blocked_until: dict[Cell, float] = {}
         self._dynamic_candidates: dict[Cell, tuple[float, float, int]] = {}
+        self._last_dynamic_cut_search = -1e9
+        self._dynamic_cut_path: list[Cell] = []
+        self._dynamic_cut_witness: set[Cell] = set()
+        self._dynamic_cut_until = -1e9
+        self._dynamic_cut_task: tuple[tuple[str, int, str], int, Cell] | None = None
+        self._last_idle_clearance_plan = -1e9
         # V6 short-horizon forecasts: cell -> (cost, receiver-local expiry, source).
         # These are soft route hints only.  A prediction may be wrong, so it must not
         # enter the hard blocked-cell set used for stationary objects.
@@ -341,6 +356,9 @@ class AMRBrain:
         # round, then every contender compares the same frozen total-order key.
         self._cell_gate_since: dict[Cell, float] = {}
         self._cell_repair_target: Cell | None = None
+        self._recovery_waypoints: list[tuple[float, float]] = []
+        self._recovery_waypoint_cell: Cell | None = None
+        self._recovery_plan_t = -1e9
         # The priority we last BROADCAST. Arbitration must use this, never the live
         # value - see _arbitration_key.
         self._pub_priority = 0.0
@@ -402,6 +420,8 @@ class AMRBrain:
             "priority_decisions": 0, "priority_inheritances": 0,
             "priority_backtracks": 0, "priority_forced_moves": 0,
             "priority_waits": 0,
+            "recovery_paths_rejected": 0, "recovery_staged_paths": 0,
+            "recovery_braking_stops": 0,
             # Which verb BIOS_4 chose, per tick. Kept because "it completed 7 tasks" is
             # not a description of a policy - the mix of verbs is, and it is the only
             # way to tell a trained network apart from one that learned to always hold.
@@ -579,7 +599,8 @@ class AMRBrain:
             if self.policy in V6_PLUS_POLICIES:
                 self._v6_finish_wait_episode(t)
             self._cell_gate_since.pop(cell, None)
-            if self._cell_repair_target == cell:
+            if (self._cell_repair_target == cell
+                    and self.policy not in V6_PLUS_POLICIES):
                 self._cell_repair_target = None
             self._last_cell = cell
             self._last_progress_t = t
@@ -885,6 +906,20 @@ class AMRBrain:
     # ================================================================== Layer 0
 
     def _safety(self, sensors: Sensors, act: Actuation) -> Actuation:
+        """The shared protective layer, plus a bounded mapped recovery backstop."""
+        result = self._safety_base(sensors, act)
+        if (self.policy in V6_PLUS_POLICIES
+                and self._cell_repair_target is not None):
+            # Recovery remains bounded after the neighbouring body leaves the omni
+            # field. An unresolved off-centre segment is not normal aisle travel.
+            result = Actuation(min(result.v, RECOVERY_SPEED_MPS), result.omega,
+                               result.safety_stop)
+            if not self._recovery_motion_clear(sensors, result):
+                self.stats["recovery_braking_stops"] += 1
+                return Actuation(0.0, 0.0, safety_stop=True)
+        return result
+
+    def _safety_base(self, sensors: Sensors, act: Actuation) -> Actuation:
         """Protective stop. Local, unconditional, and deliberately ignorant.
 
         It reads one number - the distance to the nearest thing in the forward cone -
@@ -894,9 +929,10 @@ class AMRBrain:
         which is the entire category the problem statement's shared-intent protocol is
         structurally blind to.
 
-        On real hardware this is a certified PLd/SIL2 safety scanner wired to the motor
-        contactors, not Python. Modelling it in software is a simulation convenience;
-        placing it below the network in the architecture is the actual engineering claim.
+        Real deployment requires an appropriate vendor-certified scanner and safety
+        chain, independently integrated and validated for that vehicle. This Python
+        simulation is not PLd/SIL2 certified; placing its protective stop below the
+        network is an architectural model, not a physical safety approval.
         """
         spec = self.cfg.robot
 
@@ -1000,6 +1036,213 @@ class AMRBrain:
                 improves = True
         return checked and improves
 
+    def _recovery_static_segment_clear(self, start, end,
+                                       margin=RECOVERY_MAP_MARGIN_M) -> bool:
+        """Exact swept-disc/map check; no world pose or referee collision oracle.
+
+        The bounded uncertainty allowance is additional to the unchanged chassis
+        radius. Each segment is checked continuously against nearby rack rectangles,
+        not at sampled points. Map borders are physical walls too.
+        """
+        body_radius = self.cfg.robot.radius_m
+        radius = body_radius + margin
+        cm = self.cfg.cell_m
+        # A stopped chassis can already occupy the uncertainty band. Permit only
+        # motion out of that band, never additional erosion of its physical gap.
+        # Wall normals are fixed, so inward motion monotonically increases clearance
+        # for every position error, not just for the nominal pose.
+        for axis, extent in ((0, self.env.width * cm), (1, self.env.height * cm)):
+            for a, b in ((start[axis], end[axis]),
+                         (extent - start[axis], extent - end[axis])):
+                if a < body_radius or b < body_radius:
+                    return False
+                if min(a, b) < radius and b < a - 1e-9:
+                    return False
+        x0 = max(0, math.floor((min(start[0], end[0]) - radius) / cm))
+        x1 = min(self.env.width - 1,
+                 math.floor((max(start[0], end[0]) + radius) / cm))
+        y0 = max(0, math.floor((min(start[1], end[1]) - radius) / cm))
+        y1 = min(self.env.height - 1,
+                 math.floor((max(start[1], end[1]) + radius) / cm))
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
+                if self.env.grid[y][x] != RACK:
+                    continue
+                rect = (x * cm, y * cm, (x + 1) * cm, (y + 1) * cm)
+                nearest = segment_rectangle_distance(start, end, rect)
+                if nearest >= radius - 1e-9:
+                    continue
+                initial = segment_rectangle_distance(start, start, rect)
+                delta = (end[0] - start[0], end[1] - start[1])
+                normal = (start[0] - clamp(start[0], rect[0], rect[2]),
+                          start[1] - clamp(start[1], rect[1], rect[3]))
+                # Projection onto a convex rectangle is non-expansive. Requiring
+                # this dot-product surplus makes distance nondecreasing even when
+                # the local pose is perturbed by the full uncertainty allowance.
+                robust_departure = (normal[0] * delta[0] + normal[1] * delta[1]
+                                    >= margin * math.hypot(*delta) - 1e-9)
+                if (initial < body_radius or nearest < initial - 1e-9
+                        or not robust_departure):
+                    return False
+        return True
+
+    def _recovery_route_clear(self, sensors: Sensors, points,
+                              margin=RECOVERY_MAP_MARGIN_M) -> bool:
+        """Validate geometry and static snapshots of *all* nearby body footprints.
+
+        Close-body recovery must never first approach a neighbour before departing.
+        Moving detections still pass through the ordinary per-tick dynamic safety
+        layer; a valid route is not permission to ignore new people or peer motion.
+        """
+        start = sensors.pose[:2]
+        radius = self.cfg.robot.radius_m
+        for end in points:
+            if not self._recovery_static_segment_clear(start, end, margin):
+                return False
+            for det in sensors.detections:
+                current = dist(start, (det.x, det.y))
+                clearance = current - radius - det.r
+                required = (current if clearance <= self.cfg.robot.omni_stop_m + 0.05
+                            else radius + det.r + self.cfg.robot.omni_stop_m)
+                if segment_point_distance(start, end, (det.x, det.y)) < required - 1e-6:
+                    return False
+            start = end
+        return True
+
+    def _recovery_route(self, sensors: Sensors, target: Cell):
+        """At most one staged metric waypoint within the current free cell.
+
+        The 49-point search is local and deterministic. It supplies a safe alternative
+        to both corner-cutting and blindly recentering into the body we must yield to.
+        It never changes the admitted destination cell or task ownership.
+        """
+        end = cell_center(target, self.cfg.cell_m)
+        # Plan with extra tracking headroom, then revalidate execution against the
+        # uncertainty band. Otherwise 2 cm observation jitter repeatedly alternates
+        # between two equally marginal staged paths and can prevent any progress.
+        plan_margin = max(RECOVERY_MAP_MARGIN_M + 0.05, self.cfg.robot.safety_margin_m)
+        if self._recovery_route_clear(sensors, (end,), plan_margin):
+            return [end]
+        centre = cell_center(sensors.cell, self.cfg.cell_m)
+        start = sensors.pose[:2]
+        routes = []
+        for dx in (-0.3, -0.2, -0.15, 0.0, 0.15, 0.2, 0.3):
+            for dy in (-0.3, -0.2, -0.15, 0.0, 0.15, 0.2, 0.3):
+                point = (centre[0] + dx * self.cfg.cell_m,
+                         centre[1] + dy * self.cfg.cell_m)
+                if (dist(start, point) < 0.12 or dist(point, end) < 0.12
+                        or not self._recovery_route_clear(sensors, (point, end), plan_margin)):
+                    continue
+                routes.append((dist(start, point) + dist(point, end), point))
+        if not routes:
+            return None
+        return [min(routes)[1], end]
+
+    def _install_recovery_route(self, t: float, sensors: Sensors,
+                                target: Cell, route) -> None:
+        # Duplicate-cell repair may be revisited at 10 Hz. Preserve a still-valid
+        # intermediate waypoint instead of steering toward a freshly chosen one.
+        if (self._recovery_waypoint_cell != target
+                or not self._recovery_waypoints
+                or not self._recovery_route_clear(sensors, self._recovery_waypoints)):
+            self._recovery_waypoints = list(route)
+            if len(route) > 1:
+                self.stats["recovery_staged_paths"] += 1
+        self._recovery_waypoint_cell = target
+        self._recovery_plan_t = t
+        self._cell_repair_target = target
+
+    def _clear_recovery_route(self) -> None:
+        self._cell_repair_target = None
+        self._recovery_waypoint_cell = None
+        self._recovery_waypoints = []
+
+    def _recovery_motion_clear(self, sensors: Sensors, act: Actuation) -> bool:
+        """Swept next-command + emergency-braking envelope at the physics rate.
+
+        Hold the proposed command for the existing reaction allowance, then brake
+        with the existing acceleration limits. Every integrated segment gets an
+        exact inflated-footprint check. At current parameters this is bounded by
+        81 short segments even if a recovery starts at maximum chassis speed.
+        """
+        spec = self.cfg.robot
+        dt = 1.0 / self.cfg.rates.world_hz
+        command_steps = max(1, math.ceil(spec.reaction_s / dt))
+        steps = command_steps + math.ceil(spec.v_max / spec.a_max / dt) + 1
+        x, y, theta = sensors.pose
+        v, omega = sensors.v, sensors.omega
+        for index in range(steps):
+            target_v = act.v if index < command_steps else 0.0
+            target_w = act.omega if index < command_steps else 0.0
+            v = clamp(v + clamp(target_v - v, -spec.a_max * dt, spec.a_max * dt),
+                      -0.35 * spec.v_max, spec.v_max)
+            omega = clamp(omega + clamp(target_w - omega,
+                                       -spec.alpha_max * dt, spec.alpha_max * dt),
+                          -spec.omega_max, spec.omega_max)
+            next_pos = (x + v * math.cos(theta) * dt,
+                        y + v * math.sin(theta) * dt)
+            if not self._recovery_static_segment_clear((x, y), next_pos):
+                return False
+            x, y = next_pos
+            theta += omega * dt
+            if index >= command_steps and abs(v) < 1e-9:
+                return True
+        return abs(v) < 1e-9
+
+    def _follow_recovery(self, t: float, sensors: Sensors) -> Actuation | None:
+        """Follow only validated recovery waypoints until centre acquisition."""
+        if self._retreat_for == "dynamic-cut" and not self._cut_episode_valid(t):
+            # Identity/expiry is checked at the control rate too, not only after
+            # the current cell finishes or the slower route planner wakes up.
+            return Actuation(0.0, 0.0)
+        target = self._cell_repair_target
+        if (target is None or not self.path or self.pidx >= len(self.path)
+                or self.path[self.pidx] != target):
+            self._clear_recovery_route()
+            return None
+        if self._hold:
+            # A traffic hold forbids translation, not safe in-place steering. The
+            # legacy follower uses this to face away from a blocking person/peer;
+            # suppressing it here latches the same protective field indefinitely.
+            if abs(sensors.v) > 0.04:
+                return Actuation(0.0, 0.0)
+            waypoint = (self._recovery_waypoints[0] if self._recovery_waypoints
+                        else cell_center(target, self.cfg.cell_m))
+            error = angle_diff(bearing(sensors.pose[:2], waypoint), sensors.pose[2])
+            return Actuation(0.0, clamp(2.2 * error, -self.cfg.robot.omega_max,
+                                       self.cfg.robot.omega_max))
+        pos = sensors.pose[:2]
+        if (dist(pos, cell_center(target, self.cfg.cell_m)) < 0.08
+                and abs(sensors.v) < 0.12):
+            self._clear_recovery_route()
+            return None
+        while (len(self._recovery_waypoints) > 1
+               and dist(pos, self._recovery_waypoints[0]) < 0.06
+               and self._recovery_route_clear(sensors, self._recovery_waypoints[1:])):
+            self._recovery_waypoints.pop(0)
+        if (self._recovery_waypoint_cell != target or not self._recovery_waypoints
+                or not self._recovery_route_clear(sensors, self._recovery_waypoints)):
+            if t - self._recovery_plan_t >= 1.0 / self.cfg.rates.reactive_hz - 1e-9:
+                route = self._recovery_route(sensors, target)
+                self._recovery_plan_t = t
+                if route:
+                    self._install_recovery_route(t, sensors, target, route)
+                else:
+                    self._recovery_waypoints = []
+                    self.stats["recovery_paths_rejected"] += 1
+            if (not self._recovery_waypoints
+                    or not self._recovery_route_clear(sensors, self._recovery_waypoints)):
+                return Actuation(0.0, 0.0, safety_stop=True)
+        waypoint = self._recovery_waypoints[0]
+        error = angle_diff(bearing(pos, waypoint), sensors.pose[2])
+        spec = self.cfg.robot
+        if abs(error) > 0.12:
+            return (Actuation(0.0, 0.0) if abs(sensors.v) > 0.04 else
+                    Actuation(0.0, clamp(2.2 * error, -spec.omega_max, spec.omega_max)))
+        speed = min(RECOVERY_SPEED_MPS,
+                    math.sqrt(2 * spec.a_max * max(0.0, dist(pos, waypoint) - 0.025)))
+        return Actuation(speed, clamp(1.8 * error, -spec.omega_max, spec.omega_max))
+
     def _v6_clearance_unstick(self, t: float, sensors: Sensors) -> bool:
         """Take one bounded, lidar-verified clearance step out of a dense cluster.
 
@@ -1038,13 +1281,12 @@ class AMRBrain:
         for peer in fresh_peers:
             for cell in peer.intent[:2]:
                 intended_by.setdefault(cell, []).append(peer)
-        dependent_followers = sum(
-            peer.blocked_on == self.rid for peer in fresh_peers
-        )
+        dependent_ids = {peer.rid for peer in self._clearance_dependents(t)}
 
         requested = self._next_cell()
 
         candidates: list[tuple[int, float, int, Cell]] = []
+        recovery_routes = {}
         for target in self.env.neighbors(here):
             if target in occupied:
                 continue
@@ -1058,11 +1300,11 @@ class AMRBrain:
             contenders = [
                 peer for peer in intended_by.get(target, [])
                 if not (
-                    peer.blocked_on == self.rid
-                    and dependent_followers >= 2
-                    and len(peer.intent) >= 2
-                    and peer.intent[0] == here
-                    and peer.intent[1] == target
+                    peer.rid in dependent_ids
+                    and len(dependent_ids) >= 2
+                    and here in peer.intent
+                    and target in peer.intent
+                    and peer.intent.index(here) < peer.intent.index(target)
                 )
             ]
             if contenders and not (
@@ -1082,13 +1324,10 @@ class AMRBrain:
             # only segments whose closest point to every nearby body is the current
             # pose (within numerical tolerance), matching the continuous safety
             # predicate that will execute the step.
-            if any(
-                segment_point_distance(
-                    (px, py), (tx, ty), (det.x, det.y)
-                ) < current_distance - 1e-6
-                for det, current_distance in close
-            ):
+            route = self._recovery_route(sensors, target)
+            if route is None:
                 continue
+            recovery_routes[target] = route
             gains = [
                 math.hypot(det.x - tx, det.y - ty) - current_distance
                 for det, current_distance in close
@@ -1101,6 +1340,9 @@ class AMRBrain:
                 self.circulation.enabled
                 and not self.circulation.allows(self.env, here, target)
             )
+            # Prefer an already safe direct departure to adding a staged turn just
+            # to retain a circulation preference during exceptional clearance.
+            circulation_penalty += 2 * (len(route) - 1)
             goal_distance = (manhattan(target, self.goal)
                              if self.goal is not None else 0)
             candidates.append((circulation_penalty, -min(gains), goal_distance,
@@ -1129,7 +1371,7 @@ class AMRBrain:
         # would reproduce the very motion Layer 0 has been refusing in this cluster.
         # The selected target is an open neighbour and safety still validates the
         # direct segment continuously, so bypass only that one centring waypoint.
-        self._cell_repair_target = target
+        self._install_recovery_route(t, sensors, target, recovery_routes[target])
         self.stats["retreats"] += 1
         self._creep_until = t + 6.0
         self._record_decision(
@@ -1156,6 +1398,16 @@ class AMRBrain:
             return
 
         if self.state == ST_RETREAT:
+            if self._retreat_for in ("dynamic-cut", "idle-clearance"):
+                # A route-cut escape is not giving way to a named blocker. Keep
+                # the normal two-phase destination lease even for its exceptional
+                # reverse edge; local perception remains authoritative under loss.
+                nxt = self._next_cell()
+                loser = (self._cell_lease_conflict(t, sensors.cell, nxt)
+                         if nxt is not None else None)
+                self._hold = loser is not None
+                self._track_block(t, self._hold, loser)
+                return
             # A give-way manoeuvre must never be blocked by the robot it is giving way
             # to. That is a deadlock dressed as politeness: we back off *because* of
             # them, so waiting for them to clear first can never terminate. Layer 0
@@ -2107,6 +2359,13 @@ class AMRBrain:
             options = [
                 cell for cell in options if self._controlled_block(cell) is None
             ]
+        recovery_routes = {}
+        if self.policy in V6_PLUS_POLICIES:
+            for cell in options:
+                route = self._recovery_route(sensors, cell)
+                if route is not None:
+                    recovery_routes[cell] = route
+            options = [cell for cell in options if cell in recovery_routes]
         if not options:
             self._hold = True
             self._track_block(t, True, owner)
@@ -2132,7 +2391,10 @@ class AMRBrain:
         self.blocked_on = None
         self.state = self._state_for_task()
         self._creep_until = max(self._creep_until, t + 6.0)
-        self._cell_repair_target = target
+        if self.policy in V6_PLUS_POLICIES:
+            self._install_recovery_route(t, sensors, target, recovery_routes[target])
+        else:
+            self._cell_repair_target = target
         self.stats["priority_forced_moves"] += 1
         return True
 
@@ -2619,6 +2881,19 @@ class AMRBrain:
             # robot sits in a manoeuvre state forever while the fleet routes around it.
             done = self.retreat_target is None or sensors.cell == self.retreat_target
             retreat_age = t - self._retreat_since
+            validated_recovery = (self.policy in V6_PLUS_POLICIES
+                                  and self._cell_repair_target is not None)
+            if validated_recovery:
+                # Every validated recovery, not only a route-cut escape, is capped
+                # at 0.20 m/s: a complete cell takes seven seconds before turning.
+                # The old six-second timeout repeatedly replanned back toward the
+                # same human before a clearance could actually finish. Keep a
+                # bounded two-cell travel allowance plus the existing turn/wait
+                # allowance; quantisation-boundary entry is still not completion.
+                done = (self.retreat_target is None
+                        or self._cell_repair_target is None)
+            retreat_budget = (6.0 + 2 * self.cfg.cell_m / RECOVERY_SPEED_MPS
+                              if validated_recovery else 6.0)
             safe_bay = self._is_safe_retreat_bay(self.retreat_target)
             lane_occupied = (self._retreat_block_cid is not None and any(
                 self.blocks.id_of(p.cell) == self._retreat_block_cid
@@ -2647,7 +2922,7 @@ class AMRBrain:
                     self._retreat_since = t
                     self._creep_until = t + 6.0
                     return
-            if done or retreat_age > 6.0:
+            if done or retreat_age > retreat_budget:
                 self.retreat_target = None
                 self._retreat_for = None
                 self._retreat_block_cid = None
@@ -2698,7 +2973,12 @@ class AMRBrain:
                                        no_schedule=not self.path_times))
 
         stuck = t - self._last_progress_t
+        if self._dynamic_cut_path and self._cut_episode_valid(t):
+            if self._v6_dynamic_cut_escape(t, sensors) or self._dynamic_cut_path:
+                return  # A still-blocked local step waits only within its deadline.
         if not self.path and self._v6_dynamic_clearance(t, sensors):
+            return
+        if not self.path and self._v6_dynamic_cut_escape(t, sensors):
             return
         if not self.path or self.pidx >= len(self.path):
             self._replan(t, sensors.cell)
@@ -2713,11 +2993,24 @@ class AMRBrain:
                 reuse_identical: bool = False) -> None:
         if self.goal is None:
             return
+        staging_witness: set[Cell] = set()
+        if self._dynamic_cut_path and self._cut_episode_valid(t):
+            if start == self._dynamic_cut_path[-1] and self._cell_repair_target is None:
+                # Leaving sensor range is not evidence that the observed cut has
+                # disappeared. Use its witness for the first legal detour from the
+                # reached staging cell, then discard the bounded episode entirely.
+                staging_witness = set(self._dynamic_cut_witness)
+                self._clear_cut_motion()
+            else:
+                # Do not replace partial staging progress with a task route back
+                # into the same cut merely because its ordinary lidar TTL expired.
+                self.path, self.path_times, self.pidx = [], [], 0
+                return
         t0 = time.perf_counter()
         blocked = {
             cell for cell, until in self._dynamic_blocked_until.items()
             if until > t and cell != start and cell != self.goal
-        }
+        } | staging_witness
         edge_cost = self._v6_edge_costs(t)
         route_cost = dict(self.penalty)
         predictive_cost = self._v6_prediction_costs(t, start)
@@ -3043,6 +3336,11 @@ class AMRBrain:
                         self._future_needs_reconcile = False
 
         if self.task is None:
+            if (self.policy in V6_PLUS_POLICIES and self.state == ST_RETREAT
+                    and self._cell_repair_target is not None):
+                # An installed single-cell idle clearance must finish (or expire
+                # in the route loop) before optional parking is selected again.
+                return
             if self._needs_duplicate_vacate:
                 if self.goal is None:
                     self._force_duplicate_vacate(t, sensors.cell)
@@ -3076,7 +3374,11 @@ class AMRBrain:
             if (task_clearance_request is not None
                     and self.goal is not None
                     and (not remaining_parking_route
-                         or len(remaining_parking_route) > 1)):
+                         or len(remaining_parking_route) > 1
+                         or (self.goal == sensors.cell
+                             and len(self.path) == 1
+                             and self._cell_repair_target is None
+                             and not self._arrived(sensors, self.goal)))):
                 # Parking is optional; a loaded peer's progress is not. An idle AMR
                 # following a long dock route can become one side of an idle-idle
                 # wait cycle while the task owner queues behind it. Cancel only the
@@ -3270,6 +3572,29 @@ class AMRBrain:
         return dist((sensors.pose[0], sensors.pose[1]),
                     cell_center(target, self.cfg.cell_m)) < 0.16
 
+    def _clearance_dependents(self, t: float) -> list[Peer]:
+        """Fresh, cycle-safe wait-for chains that terminate at this chassis.
+
+        A follower blocked behind the requesting AMR cannot independently consume
+        the clearance cell either. Its future route must not veto the front idle
+        robot's departure. This changes intent arbitration only: actual occupied
+        cells, task goals, leases and the physical protective layer still apply.
+        """
+        fresh = {peer.rid: peer for peer in self.peers.values()
+                 if t - peer.last_seen <= self._peer_stale_after_s()}
+        result = []
+        for rid, peer in sorted(fresh.items()):
+            seen = {rid}
+            blocker = peer.blocked_on
+            while blocker is not None and blocker not in seen:
+                if blocker == self.rid:
+                    result.append(peer)
+                    break
+                seen.add(blocker)
+                next_peer = fresh.get(blocker)
+                blocker = next_peer.blocked_on if next_peer is not None else None
+        return result
+
     def _vacate_if_in_the_way(self, t: float, sensors: Sensors) -> None:
         """Parked on somebody's destination? Move.
 
@@ -3286,13 +3611,8 @@ class AMRBrain:
         ]
         if not blockers_requesting_clearance:
             return
-        explicit_blockers = (
-            [
-                peer for peer in blockers_requesting_clearance
-                if peer.blocked_on == self.rid
-            ]
-            if self.policy in V6_PLUS_POLICIES else []
-        )
+        explicit_blockers = (self._clearance_dependents(t)
+                             if self.policy in V6_PLUS_POLICIES else [])
         # Physical occupancy and somebody else's destination are hard exclusions.
         # The requesting robot's own future intent is different: the idle chassis is
         # already sitting in that corridor and may need to move one cell *forward*
@@ -3322,12 +3642,45 @@ class AMRBrain:
                 -manhattan(cell, self.home),
                 tuple(-coordinate for coordinate in cell),
             ))
+            if (self.circulation.enabled
+                    and not self.circulation.allows(self.env, here, local_target)):
+                # An adjacent physical bay need not be an outgoing circulation
+                # edge. A* can turn this alleged one-cell vacate into a full-map
+                # loop, which optional-parking cancellation then resets each tick.
+                # Use only this observed local step, with the same mapped swept
+                # footprint guard and two-phase destination lease as cut recovery.
+                # Task goals and occupied cells remain excluded by `taken` above.
+                if t - self._last_idle_clearance_plan < 1.0 / self.cfg.rates.reactive_hz:
+                    return
+                self._last_idle_clearance_plan = t
+                recovery = self._recovery_route(sensors, local_target)
+                if recovery is None:
+                    return
+                self.goal = local_target
+                self.retreat_target = local_target
+                self._retreat_for = "idle-clearance"
+                self._retreat_block_cid = None
+                self._retreat_origin = here
+                self._retreat_contested = here
+                self._retreat_since = t
+                self.state = ST_RETREAT
+                self.path, self.path_times, self.pidx = [here, local_target], [], 1
+                self._install_recovery_route(t, sensors, local_target, recovery)
+                self._hold = True
+                self._track_block(t, True, "gate")
+                self.stats["retreats"] += 1
+                self._record_decision(
+                    t, "IDLE_CLEARANCE", "One validated leased step into a local bay",
+                    from_cell=list(here), to_cell=list(local_target),
+                    requesting_robots=sorted(p.rid for p in explicit_blockers))
+                return
             self.goal = local_target
             self._record_decision(
                 t, "IDLE_VACATE", "Clearing one cell for an active peer",
                 from_cell=list(here), to_cell=list(local_target),
                 requesting_robots=sorted(p.rid for p in explicit_blockers))
             self._replan(t, here)
+
             if self.path:
                 return
             self.goal = None
@@ -3440,6 +3793,12 @@ class AMRBrain:
             and min(manhattan(cell, blocked) for blocked in nearby)
             > current_clearance
         ]
+        recovery_routes = {}
+        for cell in candidates:
+            route = self._recovery_route(sensors, cell)
+            if route is not None:
+                recovery_routes[cell] = route
+        candidates = [cell for cell in candidates if cell in recovery_routes]
         if not candidates:
             return False
 
@@ -3462,7 +3821,7 @@ class AMRBrain:
         self.path = [here, target]
         self.path_times = []
         self.pidx = 1
-        self._cell_repair_target = target
+        self._install_recovery_route(t, sensors, target, recovery_routes[target])
         self._creep_until = max(self._creep_until, t + 6.0)
         self.stats["retreats"] += 1
         self._record_decision(
@@ -3471,6 +3830,177 @@ class AMRBrain:
             from_cell=list(here), to_cell=list(target),
             observed_cells=[list(cell) for cell in sorted(nearby)])
         return True
+
+    def _v6_dynamic_cut_escape(self, t: float, sensors: Sensors) -> bool:
+        """Recover an actual directed cut without declaring its obstacles free.
+
+        A radio-blind stationary chassis can erase all directed paths while being
+        too far away to trigger adjacent-object clearance. Search at most three
+        local grid steps for a staging cell that restores a normal directed route.
+        Execute only its first perception-validated, leased step, then reconsider
+        from the new observation. The exceptional route never enters the follower
+        wholesale. This is a bounded local escape, not an undirected task planner.
+        """
+        if self._dynamic_cut_path and self._cut_episode_valid(t):
+            here = sensors.cell
+            if here == self._dynamic_cut_path[-1] and self._cell_repair_target is None:
+                self._replan(t, here)
+                return bool(self.path)
+            if here not in self._dynamic_cut_path:
+                self._clear_cut_motion()
+                return False
+            remaining = self._dynamic_cut_path[self._dynamic_cut_path.index(here):]
+            if len(remaining) < 2:
+                return False
+            target = remaining[1]
+            fresh = [p for p in self.peers.values()
+                     if t - p.last_seen <= self._peer_stale_after_s()]
+            unavailable = {p.cell for p in fresh} | {
+                c for p in fresh for c in p.intent[:2]} | {
+                cell for cell, expiry in self._dynamic_blocked_until.items()
+                if expiry > t}
+            if target in unavailable:
+                return False
+            route = self._recovery_route(sensors, target)
+            if route is None:
+                return False
+            self._install_cut_step(t, sensors, target, route)
+            return True
+        if (self.policy not in V6_PLUS_POLICIES or not self.circulation.enabled
+                or self.task is None or self.goal is None or self.path
+                or t - self._last_dynamic_cut_search < 1.0
+                or t - self._last_progress_t < self.cfg.traffic.livelock_progress_s
+                or any(t - p.last_seen <= self._peer_stale_after_s()
+                       for p in self.peers.values())):
+            return False
+        blocked = {cell for cell, expiry in self._dynamic_blocked_until.items()
+                   if expiry > t and cell != sensors.cell and cell != self.goal}
+        if not blocked:
+            return False
+        self._last_dynamic_cut_search = t
+        started = time.perf_counter()
+        try:
+            return self._find_dynamic_cut_escape(t, sensors, blocked)
+        finally:
+            elapsed = time.perf_counter() - started
+            self.stats["plan_cpu_s"] += elapsed
+            self.stats["plan_calls"] += 1
+            self.stats["plan_cpu_max_s"] = max(self.stats["plan_cpu_max_s"], elapsed)
+
+    def _find_dynamic_cut_escape(self, t: float, sensors: Sensors,
+                                 blocked: set[Cell]) -> bool:
+        # One reverse graph traversal identifies every cell with an executable
+        # route to the unchanged goal. It runs only on an empty-route event, at
+        # most once/second, never in the 50 Hz protective-stop loop.
+        reachable = {self.goal}
+        frontier = deque([self.goal])
+        while frontier:
+            cell = frontier.popleft()
+            for predecessor in self.env.neighbors(cell):
+                if (predecessor not in blocked and predecessor not in reachable
+                        and self.circulation.allows(self.env, predecessor, cell)):
+                    reachable.add(predecessor)
+                    frontier.append(predecessor)
+        here = sensors.cell
+        if here in reachable:
+            return False  # A normal route exists: no exceptional reverse movement.
+        fresh = [p for p in self.peers.values()
+                 if t - p.last_seen <= self._peer_stale_after_s()]
+        occupied = {p.cell for p in fresh} | {c for p in fresh for c in p.intent[:2]}
+        routes = {}
+        for cell in self.env.neighbors(here):
+            if cell in blocked or cell in occupied:
+                continue
+            route = self._recovery_route(sensors, cell)
+            if route is not None:
+                routes[cell] = route
+        if not routes:
+            return False
+        initial_gap = min(manhattan(here, cell) for cell in blocked)
+        frontier = deque([(here,)])
+        visited = {here}
+        selected = None
+        while frontier:
+            path = frontier.popleft()
+            tail = path[-1]
+            if tail in reachable:
+                selected = path
+                break
+            if len(path) > 3:
+                continue
+            gap = min(manhattan(tail, cell) for cell in blocked)
+            for cell in sorted(self.env.neighbors(tail)):
+                if cell in visited or cell in blocked or cell in occupied:
+                    continue
+                next_gap = min(manhattan(cell, b) for b in blocked)
+                if next_gap < gap or (len(path) == 1 and (
+                        cell not in routes or next_gap <= initial_gap)):
+                    continue
+                visited.add(cell)
+                frontier.append((*path, cell))
+        if selected is None:
+            return False
+        target = selected[1]
+        self._dynamic_cut_path = list(selected)
+        self._dynamic_cut_witness = set(blocked)
+        self._ensure_task_identity(self.task)
+        self._dynamic_cut_task = (
+            self._task_identity(self.task), self.task.auction_epoch, self.goal)
+        self._dynamic_cut_until = t + (len(selected) - 1) * (
+            6.0 + 2 * self.cfg.cell_m / RECOVERY_SPEED_MPS
+            + 1.0 / self.cfg.rates.route_hz)
+        self._install_cut_step(t, sensors, target, routes[target])
+        self._record_decision(
+            t, "DYNAMIC_CUT_ESCAPE", "One leased step toward a reachable staging cell",
+            from_cell=list(here), to_cell=list(target),
+            staging_cell=list(selected[-1]), staging_steps=len(selected) - 1,
+            observed_cells=[list(cell) for cell in sorted(blocked)])
+        return True
+
+    def _clear_cut_episode(self) -> None:
+        self._dynamic_cut_path = []
+        self._dynamic_cut_witness = set()
+        self._dynamic_cut_task = None
+        self._dynamic_cut_until = -1e9
+
+    def _cut_episode_valid(self, t: float) -> bool:
+        if (self.task is None or (self._task_identity(self.task),
+                                 self.task.auction_epoch, self.goal) != self._dynamic_cut_task
+                or t >= self._dynamic_cut_until):
+            self._clear_cut_motion()
+            return False
+        return bool(self._dynamic_cut_path)
+
+    def _clear_cut_motion(self) -> None:
+        self._clear_cut_episode()
+        if self._retreat_for == "dynamic-cut":
+            self.retreat_target = None
+            self._retreat_for = None
+            self._retreat_block_cid = None
+            self._retreat_origin = None
+            self._retreat_contested = None
+            self.state = self._state_for_task()
+            self.path, self.path_times, self.pidx = [], [], 0
+            self._clear_recovery_route()
+            self._hold = True
+
+    def _install_cut_step(self, t: float, sensors: Sensors, target: Cell, route) -> None:
+        here = sensors.cell
+        self.retreat_target = target
+        self._retreat_for = "dynamic-cut"
+        self._retreat_block_cid = None
+        self._retreat_origin = here
+        self._retreat_contested = min(self._dynamic_cut_witness)
+        self._retreat_since = t
+        self.state = ST_RETREAT
+        self.path = [here, target]
+        self.path_times = []
+        self.pidx = 1
+        self._install_recovery_route(t, sensors, target, route)
+        self._hold = True
+        self._track_block(t, True, "gate")
+        self._creep_until = max(self._creep_until, t + 12.0)
+        self.stats["retreats"] += 1
 
     def _route_crosses_radio_dead_zone(self, route: list[Cell]) -> bool:
         """Whether any route cell centre lies inside a configured radio hole."""
@@ -4526,12 +5056,25 @@ class AMRBrain:
         This is a traffic optimization, not a safety rule. Missing/stale peers are
         omitted, which widens participation during loss instead of suppressing work.
         """
-        candidates = [(manhattan(sensors.cell, task.pick), self.rid)]
+        own_rank = (manhattan(sensors.cell, task.pick), self.rid)
+        predecessors = []
         for peer in self.peers.values():
             if (t - peer.last_seen > self._peer_stale_after_s()
                     or peer.state != ST_IDLE or peer.goal is not None
                     or peer.battery_frac < self.cfg.traffic.energy_charge_trigger_frac):
                 continue
+            rank = (manhattan(peer.cell, task.pick), peer.rid)
+            if rank < own_rank:
+                predecessors.append((rank, peer))
+        # Only feasible peers strictly ahead of self can remove self from top-k.
+        # Farther peers never affect this answer. Evaluate predecessors in the same
+        # total order used by the old full sort, stopping once k are feasible. This
+        # avoids an all-task/all-peer cold A* matrix without caching live eligibility
+        # or changing candidate count, task urgency, bid windows or winner ordering.
+        predecessors.sort(key=lambda item: item[0])
+        count = max(1, self.cfg.traffic.energy_candidate_bids)
+        feasible_predecessors = 0
+        for _rank, peer in predecessors:
             required = self._energy_required(task, peer.cell)
             if (required is None
                     or peer.battery_frac - required
@@ -4542,13 +5085,13 @@ class AMRBrain:
                     or (task.deadline is not None
                         and t + estimate[1] > task.deadline)):
                 continue
-            candidates.append((manhattan(peer.cell, task.pick), peer.rid))
-        candidates.sort()
+            feasible_predecessors += 1
+            if feasible_predecessors >= count:
+                return False
         # Busy, charging, failed and stale peers naturally leave this live set, so the
         # next feasible robot enters top-k without turning an old task into an open
         # auction that every robot fights over forever.
-        count = max(1, self.cfg.traffic.energy_candidate_bids)
-        return self.rid in {rid for _distance, rid in candidates[:count]}
+        return True
 
     def _v7_passage_key(self, task: Task, claim: tuple, cid: int) -> tuple:
         return (*self._task_identity(task), claim[0], claim[2], cid)
@@ -4992,6 +5535,11 @@ class AMRBrain:
 
     def _follow(self, t: float, sensors: Sensors) -> Actuation:
         """Pure-pursuit-ish waypoint follower. Shared by every policy, on purpose."""
+        if (self.policy in V6_PLUS_POLICIES
+                and self._cell_repair_target is not None):
+            recovery = self._follow_recovery(t, sensors)
+            if recovery is not None:
+                return recovery
         spec = self.cfg.robot
         if self._hold:
             # PIBT's discrete "wait" is executed at the current cell centre. Braking

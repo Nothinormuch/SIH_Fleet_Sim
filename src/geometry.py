@@ -65,6 +65,44 @@ def segment_point_distance(a: Vec, b: Vec, p: Vec) -> float:
     return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
 
+def segment_rectangle_distance(a: Vec, b: Vec,
+                               rect: tuple[float, float, float, float]) -> float:
+    """Exact distance from a closed segment to a closed axis-aligned rectangle.
+
+    A swept disc is clear iff this distance exceeds its inflated radius. Unlike
+    point sampling, clipping plus edge/corner distances cannot skip a rack corner.
+    ``rect`` is (left, bottom, right, top), in the same metric frame as the segment.
+    """
+    left, bottom, right, top = rect
+    if left > right or bottom > top:
+        raise ValueError("invalid rectangle bounds")
+    enter, leave = 0.0, 1.0
+    intersects = True
+    for start, delta, low, high in (
+            (a[0], b[0] - a[0], left, right),
+            (a[1], b[1] - a[1], bottom, top)):
+        if abs(delta) <= 1e-15:
+            if start < low or start > high:
+                intersects = False
+                break
+        else:
+            t0, t1 = (low - start) / delta, (high - start) / delta
+            enter, leave = max(enter, min(t0, t1)), min(leave, max(t0, t1))
+            if enter > leave:
+                intersects = False
+                break
+    if intersects:
+        return 0.0
+
+    def point_distance(point: Vec) -> float:
+        return math.hypot(point[0] - clamp(point[0], left, right),
+                          point[1] - clamp(point[1], bottom, top))
+
+    return min(point_distance(a), point_distance(b),
+               *(segment_point_distance(a, b, corner) for corner in (
+                   (left, bottom), (left, top), (right, bottom), (right, top))))
+
+
 def segments_min_distance(a0: Vec, a1: Vec, b0: Vec, b1: Vec) -> float:
     """Minimum distance between two moving points over one tick.
 
