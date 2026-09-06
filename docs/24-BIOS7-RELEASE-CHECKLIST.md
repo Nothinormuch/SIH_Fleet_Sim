@@ -73,6 +73,15 @@ raw report is retained. Consequently 2000–2012 are now observed cases; only
 requires a new complete fixed-range campaign, not relabeling the failed campaign
 or its completed-pairs-only statistics as a release pass.
 
+Candidate `98f3433` subsequently completed seeds 2000–2015 before an independent
+review found a different, shared V6/V7 idle-clearance defect on bidirectional maps.
+Its remaining holdout and capacity workers were intentionally interrupted; seed
+2016's V6 controls had also run. Those partial reports are retained, not promoted.
+The approved repair is frozen at `063d20d` with 1,006 passing tests. It preserves
+validated escape waypoints while retaining normal bidirectional traffic admission.
+Its new source-pinned release campaign must stand on its own; the prior completed
+stages are not substituted as new-source results.
+
 Every candidate case must complete all declared tasks and report zero contacts.
 Human/fault cases must actually exercise the named behavior. Missing evidence is
 not a pass. Each SIH case must show at least the specified 20% time reduction
