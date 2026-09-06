@@ -1,4 +1,10 @@
-# Exit-junction candidate: release verification in progress
+# Exit-junction candidate: release blocked by independent review
+
+An independently reproduced idle-clearance defect blocks promotion. See
+`bios7-release-98f3433-review-interruption.md` for the reproduction and preserved
+partial-campaign scope. The remaining holdout/capacity jobs were intentionally
+interrupted; they are not completed acceptance evidence. No fix for that review
+finding has been applied, no default changed, and no remote pushed or merged.
 
 Frozen commit: `98f34333e44f5e14ad6828402c8fa5da920c1096`.
 Worktree: `/private/tmp/bios7-release-apron.oVtcvl`.
