@@ -57,8 +57,34 @@ instantaneous packet rate or bytes per second always decreases.
   that unsafe result is retained and excluded from valid speedup claims.
 
 Capacity expansion was started only after that new-source prerequisite passed.
-Holdout and capacity results remain pending; no complete-campaign claim follows
-from the finished subset above.
+
+## Holdout release failure
+
+The registered holdout stopped after the seed 2012 pair: 52/120 worker results are
+retained and 68 remain unrun. Source/run integrity passed and there were no worker
+errors. BIOS 7 completed 12 of 13 observed runs, totaling 376/390 tasks, with zero
+contacts. This is a failed campaign, not a 100% completion result.
+
+On seed 2012, BIOS 7 completed only 16/30 tasks at the 1,200-second cutoff. Both
+original and current-source V6 completed 30/30 in 871.14 seconds with zero contacts.
+BIOS 7 sent 152,877 messages / 29,247,657 protocol bytes versus 101,686 / 19,191,300
+for both controls. Completion, time and communication release requirements were
+not met. A median computed from the other completed pairs cannot hide this failure.
+
+The passive diagnosis reproduced every non-timing result field. A taskless robot
+inside the controlled corridor remained the explicit blocker of loaded peers, but
+fell outside their six-cell advertised intent horizon. The early geometric-request
+return prevented the existing vacate/drain path from checking those fresh explicit
+wait-for dependencies. No actual owner-route re-entry was seen among the 142
+observed release events; weakening execution-identity checks is not justified.
+
+The already-started fixed-floor 100-AMR group may supply separately scoped finite
+evidence; it cannot override the failed holdout gate. No further capacity expansion
+is approved for this rejected candidate. Preserve any intentional interruption
+record separately from algorithmic failures.
+
+Seeds 2000–2012 have now been observed. A later fixed-range retest must disclose
+that only 2013–2029 remain unobserved, not replace failed seeds with easier ones.
 
 The dashboard backend was restarted on port 8001 with this candidate. Its existing
 recording still identifies the historical tested source rather than implying the

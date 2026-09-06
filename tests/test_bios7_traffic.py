@@ -70,6 +70,33 @@ def test_retreating_to_entry_side_does_not_release_loaded_passage():
     assert brain.stats["v7_passage_releases"] == 0
 
 
+@pytest.mark.parametrize("cell,offset", (((19, 4), (0.0, 0.0)),
+                                        ((19, 3), (0.0, 0.3))))
+def test_shared_exit_junction_must_clear_the_whole_body(cell, offset):
+    brain, task, sensors = _observer()
+    _position(brain, (12, 4), 0.0)
+    brain._v7_observe_passages(0.0, sensors)
+    brain._claims[0] = ("B", 20.0, 1.0, 2, None)
+    _position(brain, cell, 1.0)
+    x, y, theta = brain.peers["B"].pose
+    brain.peers["B"].pose = (x + offset[0], y + offset[1], theta)
+    brain._v7_observe_passages(1.0, sensors)
+    assert brain._v7_pending_corridors(task, 1.0) == {0: (6, 4)}
+    assert brain._bios_lock(0, 1.0) == ("B", 20.0)
+
+
+def test_exit_junction_reentry_revokes_at_use_time_before_next_sample():
+    brain, task, sensors = _observer()
+    _position(brain, (12, 4), 0.0)
+    brain._v7_observe_passages(0.0, sensors)
+    _position(brain, (21, 4), 1.0)
+    brain._v7_observe_passages(1.0, sensors)
+    assert brain._v7_pending_corridors(task, 1.0) == {}
+    _position(brain, (19, 4), 1.02)
+    assert brain._v7_pending_corridors(task, 1.02) == {0: (6, 4)}
+    assert brain._v7_passage_observed_at == 1.0
+
+
 def test_stale_pose_epoch_change_and_expiry_never_establish_release():
     brain, task, sensors = _observer()
     _position(brain, (12, 4), 0.0)
@@ -397,9 +424,11 @@ def test_use_time_full_body_reentry_revokes_between_observation_samples(owner):
     if owner == "A":
         brain.task, brain.goal = task, task.drop
         brain._task_claims[task.tid] = (3, 2.0, "A", 100.0)
+    boundary = (20 * DEFAULT.cell_m + DEFAULT.robot.radius_m
+                + DEFAULT.traffic.v7_passage_clearance_m)
     for seq, t, cell, x in ((10, 0.0, (12, 4), 17.5),
-                            (11, 1.0, (19, 4), 27.051),
-                            (12, 1.09, (19, 4), 26.949)):
+                            (11, 1.0, (20, 4), boundary + 0.001),
+                            (12, 1.09, (20, 4), boundary - 0.001)):
         if owner == "B":
             packet = _execution_heartbeat(task, cell, t, seq)
             packet = replace(packet, body={**packet.body, "p": [x, 6.3, 0.0]})

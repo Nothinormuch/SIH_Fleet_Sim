@@ -313,6 +313,7 @@ class AMRBrain:
         self._v7_passages_cleared: set[tuple] = set()
         self._v7_passage_observed_at = -1e9
         self._v7_drop_side_cache: dict[tuple[int, Cell, Cell], bool] = {}
+        self._v7_exit_footprints: dict[int, tuple[Cell, ...]] = {}
         self._v7_execution_declaration: tuple[tuple, int, float] | None = None
         self._v7_passage_sessions: dict[str, PassageSession] = {}
         self._v7_self_position: tuple[float, float] | None = None
@@ -3717,6 +3718,20 @@ class AMRBrain:
                 or t - p.last_seen <= self._peer_stale_after_s())
             and (p.goal == here or here in p.intent)
         ]
+        if (not blockers_requesting_clearance
+                and self.policy in V6_PLUS_POLICIES
+                and self.task is None and self.state != ST_CHARGING
+                and self._controlled_block(here) is not None):
+            # An idle clearance can enter a long block and then outrun the
+            # requester's finite intent horizon. Stopping there still owns the
+            # physical block token, so the requester cannot move closer and renew
+            # the geometric request. A fresh explicit wait-for chain must retain
+            # the clearance obligation while this chassis is already inside.
+            # This requests only the usual one-step vacate below: current body,
+            # destination, route and lease checks remain unchanged. Stale/cyclic
+            # chains grant nothing, and this does not inject idle traffic from
+            # outside a block or turn missing telemetry into motion authority.
+            blockers_requesting_clearance = self._clearance_dependents(t)
         if not blockers_requesting_clearance:
             return
         explicit_blockers, options, taken = self._idle_clearance_options(t, here)
@@ -5384,13 +5399,22 @@ class AMRBrain:
         return self._v7_drop_side_cache[key]
 
     def _v7_position_clears(self, cid: int, cell: Cell, position, drop: Cell) -> bool:
+        # The first junction outside a single-file run is shared by exiting and
+        # entering traffic. Clearing only the run can admit an opposing wave while
+        # the loaded owner is still turning in that junction. Extend the admission
+        # footprint by exactly its traversable neighboring cells, derived from map
+        # topology, not a fleet/seed-specific distance. This is not a spatial lease.
+        if cid not in self._v7_exit_footprints:
+            members = self.blocks.members[cid]
+            self._v7_exit_footprints[cid] = tuple(sorted(
+                set(members) | {n for c in members for n in self.env.neighbors(c)}))
         margin = self.cfg.robot.radius_m + self.cfg.traffic.v7_passage_clearance_m
         size = self.cfg.cell_m
         return (not self._zone_contains(cid, cell)
                 and not any(math.hypot(
                     max(bx * size - position[0], 0.0, position[0] - (bx + 1) * size),
                     max(by * size - position[1], 0.0, position[1] - (by + 1) * size)) <= margin
-                    for bx, by in self.blocks.members[cid])
+                    for bx, by in self._v7_exit_footprints[cid])
                 and self._v7_drop_route_clears(cid, cell, drop))
 
     def _v7_pending_corridors(self, task: Task, t: float) -> dict[int, Cell]:

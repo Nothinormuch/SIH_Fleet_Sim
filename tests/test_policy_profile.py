@@ -42,7 +42,7 @@ const context = vm.createContext({
 const source = fs.readFileSync('./frontend/js/main.js', 'utf8')
   .replace(/^import .*;$/gm, '').replace(/\nboot\(\);\s*$/, '');
 vm.runInContext(source, context);
-const api = vm.runInContext('({App, updatePolicyProfile, selectScenarioProfile, syncSeed99Mode, run})', context);
+const api = vm.runInContext('({App, updatePolicyProfile, selectScenarioProfile, syncSeed99Mode, run, renderSummary})', context);
 const loaded = (policy, scenario='showcase_chokepoint', extra={}) => ({
   meta: {policy, scenario, allocation_policy: 'auction_bundle', seed: 0,
     robots: 3, humans: 0, cell_m: 1.4, ...extra},
@@ -200,4 +200,23 @@ api.updatePolicyProfile();
 api.selectScenarioProfile('showcase_chokepoint');
 assert.equal(node('activeScenarioTitle').textContent, 'Seed 99 · Launch Gridlock');
 assert.equal(node('deployTitle').textContent, 'Chokepoint');
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="Node is required for summary label contracts")
+def test_filtered_candidate_checks_are_not_labeled_as_battery_failures():
+    run_main_contract("""
+api.renderSummary({
+  tasks_completed: 12, tasks_announced: 20, completed_all: false,
+  sim_seconds: 320, makespan_s: 320, min_separation_m: 1,
+  contacts_robot_robot: 0, contacts_robot_human: 0, contacts_robot_rack: 0,
+  energy_bids_suppressed: 29320,
+}, {tasks: 20});
+const html = node('summary').innerHTML;
+assert.ok(html.includes('Candidate checks filtered'));
+assert.ok(html.includes('not unique bids or battery failures.'));
+assert.ok(html.includes('<dd>29320</dd>'), 'retain the real aggregate count neutrally');
+assert.ok(!html.includes('Energy-risk bids blocked'));
+assert.ok(html.includes('8 tasks remained active when the 320.0 s evidence window ended.'));
+assert.ok(!html.includes('Workload completed'), 'a changed label must not hide incomplete work');
 """)

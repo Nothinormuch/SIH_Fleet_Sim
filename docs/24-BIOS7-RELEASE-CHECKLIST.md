@@ -66,6 +66,13 @@ task catalogs or custom fleet sizes. It declares 78 candidate cases:
    and open floor; 3/10 AMRs and three seeds each.
 5. `repeat`: identical input repeated twice, with equal semantic result counters.
 
+Subsequent frozen candidate `83e22ca` failed the registered holdout on seed 2012:
+BIOS 7 completed 16/30 tasks while both V6 controls completed 30/30. Its source-pinned
+raw report is retained. Consequently 2000–2012 are now observed cases; only
+2013–2029 remain unobserved. Fixing the verified idle-corridor continuation defect
+requires a new complete fixed-range campaign, not relabeling the failed campaign
+or its completed-pairs-only statistics as a release pass.
+
 Every candidate case must complete all declared tasks and report zero contacts.
 Human/fault cases must actually exercise the named behavior. Missing evidence is
 not a pass. Each SIH case must show at least the specified 20% time reduction

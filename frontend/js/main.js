@@ -1465,8 +1465,8 @@ function renderSummary(s, meta, demoEvidence = null) {
       <dd>${s.min_separation_m.toFixed(2)} m</dd>
       <dt>Safety-stop control ticks</dt>
       <dd>${Number(s.safety_stop_ticks || 0)}</dd>
-      <dt>Energy-risk bids blocked</dt>
-      <dd class="good">${Number(s.energy_bids_suppressed || 0)}</dd>
+      <dt title="Repeated candidate checks rejected by feasibility or ranked-candidate filtering; not unique bids or battery failures.">Candidate checks filtered</dt>
+      <dd>${Number(s.energy_bids_suppressed || 0)}</dd>
     </dl>
     <details class="run-diagnostics">
       <summary>Coordination diagnostics <i>⌄</i></summary>
