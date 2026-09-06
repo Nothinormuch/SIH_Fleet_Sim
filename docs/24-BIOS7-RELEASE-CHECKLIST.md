@@ -4,6 +4,16 @@ Status: candidate verification in progress. This checklist does not approve a
 release or change the default policy. Personal `main` and collaborator `main` are
 not modified by running tests.
 
+Scope update, September 6 at approximately 10:51 UTC: the user requested that
+100-AMR tests be deferred for the imminent demonstration. The active capacity
+queue was stopped before reaching any 100-AMR worker; its original raw plan and
+partial results are preserved with a separate scope-change audit. The former
+78-case full-capacity release must not be called passed. A smaller-fleet demo
+release still requires the complete registered ten-AMR SIH campaign, stress,
+repeatability, causal and latest-source two-host timing gates below. Existing
+fixed-floor 50-AMR evidence is additional finite evidence, not proof of 100+
+scalability. No default has changed merely because this scope was reduced.
+
 ## What is being released
 
 BIOS 7 retains decentralized task bidding and peer traffic coordination. Its new

@@ -57,11 +57,18 @@ runs had zero contacts and passed all three current-source V6 nonregression gate
 
 The complete registered holdout is running from this frozen source. Old-source
 completed stages do not count as a passing prerequisite for the new source.
-Capacity and latest-source live LAN timing must still finish and
+The complete registered SIH campaign and latest-source live LAN timing must finish and
 be recorded under their own correct scope before release approval.
 Workers use the same deterministic tasks, seeds, physical settings and strict
 V6 completion-time/message/byte comparison. The already observed seed range is
 not replaced by easier seeds or called untouched holdout evidence.
+
+The user subsequently deferred 100-AMR testing for the demonstration. The capacity
+queue was intentionally interrupted before its first 100-AMR worker, and the raw
+partial evidence and exact interruption accounting were preserved separately in
+`bios7-release-063d20d-capacity-scope-change.md`. That capacity stage did not pass;
+100+ scalability is not a release claim. The passed fixed-floor 50-AMR regression
+remains valid and is distinct from the interrupted expansion queue.
 
 The frozen-source causal checks finished all twelve workers. In the development
 SIH ten-AMR seed-0 case, V7 completed 30/30 tasks in 833.08 seconds versus 968.12
