@@ -4,6 +4,37 @@ const readOnlyMultihost = new URLSearchParams(window.location.search).get('sourc
 const finiteMetric = value => typeof value === 'number' && Number.isFinite(value);
 const metricText = (value, digits=2) => finiteMetric(value) ? value.toFixed(digits) : 'unavailable';
 const sumMetrics = values => values.length && values.every(finiteMetric) ? values.reduce((a,b)=>a+b,0) : null;
+
+function sourceIdentity(state) {
+  const result = state?.result;
+  // A finished result owns its identity. Never fill a missing historical pin
+  // from a newer session configuration, the selected policy, or current HEAD.
+  const source = result ? result.config?.source_sha256 ?? result.source_sha256
+    : state?.config?.source_sha256;
+  const label = result ? 'Recorded run' : 'Session configuration';
+  const validHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
+  if (validHash(source)) {
+    const changed = result?.source_unchanged_at_end === false;
+    return {
+      text: `${label} · ${changed ? 'STARTUP ' : ''}source SHA-256 ${source.slice(0, 16)}… · ${changed ? 'source changed during run' : 'current checkout not compared'}`,
+      title: `Source SHA-256: ${source}. This fingerprint belongs to the displayed ${result ? 'evidence' : 'session'}, not a check of the current checkout.`,
+    };
+  }
+  // Local HIL reports carry per-file hashes, not the multi-host aggregate pin.
+  // Keep that distinction visible instead of inventing an equivalent digest.
+  if (source && typeof source === 'object' && !Array.isArray(source)) {
+    const hashes = Object.values(source);
+    if (hashes.length && hashes.every(validHash)) {
+      return {
+        text: `${label} · ${hashes.length} per-file SHA-256 hashes recorded · aggregate source fingerprint unavailable`,
+        title: 'Download the evidence to inspect its recorded per-file hashes. The current checkout is not compared.',
+      };
+    }
+  }
+  return {text: `${label} · source SHA-256 unavailable · no valid recorded fingerprint provided`,
+    title: 'Source identity cannot be established from the displayed telemetry or report.'};
+}
+
 if (readOnlyMultihost) {
   document.title = 'BIOS · Multi-host observer';
   $('lab-title').textContent = 'Two hosts. Independent robot brains.';
@@ -114,9 +145,7 @@ async function action(path, payload={}) {
 function runOptions(mode) {
   return {mode, policy:$('policy').value, profile:$('profile').value, robots:Number($('robot-count').value), seed:Number($('seed').value)};
 }
-$('policy').addEventListener('change', () => {
-  $('policy-label').textContent = $('policy').value === 'BIOS_PIBT.7' ? '7.0 · experimental' : '6.0';
-});
+$('policy').addEventListener('change', render);
 $('start').addEventListener('click', () => action('start', runOptions('normal')));
 $('fault-demo').addEventListener('click', () => action('start', runOptions('sensor_demo')));
 $('stop').addEventListener('click', () => action('stop'));
@@ -130,6 +159,9 @@ $('download').addEventListener('click', () => {
 
 function render() {
   const state = latest?.state || 'idle';
+  const source = sourceIdentity(latest);
+  $('evidence-source').textContent = source.text;
+  $('evidence-source').title = source.title;
   const active = ['starting','running','stopping'].includes(state);
   const live = connected && state === 'running' && latest.snapshot_age_s < 1;
   $('start').disabled = readOnlyMultihost || busy || active; $('fault-demo').disabled = readOnlyMultihost || busy || active;
