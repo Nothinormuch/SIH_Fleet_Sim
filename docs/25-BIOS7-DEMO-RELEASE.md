@@ -1,7 +1,14 @@
 # BIOS7 smaller-fleet demo release candidate
 
-Status: **software-prototype release pending latest-source headless gates;
-personal main has not been promoted. Live timing qualification remains failed**.
+Status: **not promoted: latest-source seed 2017 failed completion, and the
+subsequent demo-only comparison regressed Grand Challenge by 13.75% versus V6**.
+
+The user stopped the broad campaign and conditionally requested a demo release
+if V7 performs better. All five unchanged demo presets completed without contacts
+for both V6 and V7. V7 improved Chokepoint by 8.50%, tied three presets and was
+slower on Grand Challenge, so no demo-wide upgrade was established. See the
+[latest comparison](../artifacts/benchmarks/bios7-demo-be01a30-REVIEW.md).
+Personal main remains unchanged; live timing qualification also remains failed.
 
 The user approved software-prototype publication after the latest-source SIH
 gates pass, with failed live-timing results retained. This supersedes the earlier
