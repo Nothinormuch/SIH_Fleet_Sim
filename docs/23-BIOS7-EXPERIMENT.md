@@ -12,7 +12,9 @@ admission capacity after the loaded robot has already passed through that corrid
 BIOS 7 separates that task-admission pressure from the physical corridor token.
 
 Each robot independently observes the task owner inside the corridor, then fully
-outside it. The observation must refer to the same task generation, descriptor,
+outside it and its shared exit junction. That junction is derived from the
+traversable cells bordering the corridor; a robot still turning in the doorway
+has not cleared the admission footprint. The observation must refer to the same task generation, descriptor,
 auction epoch and owner. A fresh pose, delivery goal and exit-to-drop route that
 does not re-enter the corridor are required. Only then can that observer stop
 counting the completed passage against future task admission. Every actual move
@@ -79,8 +81,10 @@ worker, and prior outputs are not overwritten. A timed-out baseline gives a
 completion-time **lower bound**, not an exact measured speedup. Seed 99 is excluded
 because it is a hand-built demonstration, not an acceptance sample.
 
-Use `--phase holdout --cases sih,humans,open --robots 3,10` for unseen seeds beginning
-at 1000. Capacity studies use `--phase scaling`, which explicitly distinguishes a
+For the fixed release range use `--phase release --release-stage holdout`; it
+retains seeds 2000–2029. Seeds 2000–2012 were already observed during development,
+as were the earlier 1000–1002 sample, and must not be called untouched holdouts.
+Capacity studies use `--phase scaling`, which explicitly distinguishes a
 fixed floor from scaled floor/service capacity and records free-cell density. A
 100-robot headless result is not evidence of 100 physical robots or live Pi timing.
 
@@ -143,6 +147,14 @@ attribute their effect solely to the V7 passage-release algorithm.
 The [release checklist](24-BIOS7-RELEASE-CHECKLIST.md) defines the new frozen-source
 campaign and hardware boundaries. Until it passes, these repairs remain under
 verification, BIOS 6 remains the default, and earlier failures stay visible.
+
+The subsequent idle-corridor drain repair and topology-derived exit-junction
+clearance are documented in the [seed-2012 development evidence](../artifacts/benchmarks/bios7-exit-apron-development-notes.md).
+The previously failing 16/30 workload now completes 30/30 without contacts in
+820.94 s versus current-source V6's 871.14 s, with fewer cumulative messages and
+protocol bytes. Its no-release ablation returns to 871.14 s. The 973-test suite
+passes, but a complete registered acceptance rerun and latest-source multi-host
+timing proof are still required; this single known-case repair is not a release.
 
 ### Important centralized-reference limitation
 
