@@ -1117,7 +1117,7 @@ class AMRBrain:
     def _recovery_route(self, sensors: Sensors, target: Cell):
         """At most one staged metric waypoint within the current free cell.
 
-        The 49-point search is local and deterministic. It supplies a safe alternative
+        The at-most-81-point search is local and deterministic. It supplies a safe alternative
         to both corner-cutting and blindly recentering into the body we must yield to.
         It never changes the admitted destination cell or task ownership.
         """
@@ -1131,8 +1131,18 @@ class AMRBrain:
         centre = cell_center(sensors.cell, self.cfg.cell_m)
         start = sensors.pose[:2]
         routes = []
-        for dx in (-0.3, -0.2, -0.15, 0.0, 0.15, 0.2, 0.3):
-            for dy in (-0.3, -0.2, -0.15, 0.0, 0.15, 0.2, 0.3):
+        # The coarse offsets alone can straddle the only safe staging strip:
+        # e.g. +/-0.15 cells lies just beyond an inflated rack boundary while the
+        # centre would approach a neighbouring body. Add the two interior offsets
+        # implied by the existing body radius and planning margin. Every candidate
+        # still passes exactly the same swept-footprint predicate; no margin shrinks.
+        interior_offset = max(0.0, min(0.3, (
+            self.cfg.cell_m * 0.5 - self.cfg.robot.radius_m - plan_margin - 1e-6
+        ) / self.cfg.cell_m))
+        offsets = sorted({-0.3, -0.2, -0.15, -interior_offset, 0.0,
+                          interior_offset, 0.15, 0.2, 0.3})
+        for dx in offsets:
+            for dy in offsets:
                 point = (centre[0] + dx * self.cfg.cell_m,
                          centre[1] + dy * self.cfg.cell_m)
                 if (dist(start, point) < 0.12 or dist(point, end) < 0.12
@@ -1248,7 +1258,8 @@ class AMRBrain:
                     math.sqrt(2 * spec.a_max * max(0.0, dist(pos, waypoint) - 0.025)))
         return Actuation(speed, clamp(1.8 * error, -spec.omega_max, spec.omega_max))
 
-    def _v6_clearance_unstick(self, t: float, sensors: Sensors) -> bool:
+    def _v6_clearance_unstick(self, t: float, sensors: Sensors, *,
+                              idle_clearance: bool = False) -> bool:
         """Take one bounded, lidar-verified clearance step out of a dense cluster.
 
         Directed circulation prevents head-on aisle traffic, but it cannot create
@@ -1262,6 +1273,8 @@ class AMRBrain:
         anonymous obstacle.
         """
         if self.policy not in V6_PLUS_POLICIES:
+            return False
+        if idle_clearance and self.task is not None:
             return False
 
         px, py, _ = sensors.pose
@@ -1282,6 +1295,10 @@ class AMRBrain:
             if sensors.t - peer.last_seen <= self._peer_stale_after_s()
         ]
         occupied = {peer.cell for peer in fresh_peers}
+        if idle_clearance:
+            occupied.update(peer.goal for peer in fresh_peers
+                            if peer.goal is not None
+                            and (peer.task_id is not None or peer.state == ST_CHARGING))
         intended_by: dict[Cell, list[Peer]] = {}
         for peer in fresh_peers:
             for cell in peer.intent[:2]:
@@ -1294,6 +1311,12 @@ class AMRBrain:
         recovery_routes = {}
         for target in self.env.neighbors(here):
             if target in occupied:
+                continue
+            if (idle_clearance and self._controlled_block(here) is None
+                    and self._controlled_block(target) is not None):
+                # Idle parking never acquires a task-only corridor from outside.
+                # Its destination-cell lease is not a substitute for whole-block
+                # admission when circulation is disabled.
                 continue
             # In a fan-in queue, a follower that explicitly reports waiting on us
             # cannot claim the clearance cell beyond our chassis. Treating its
@@ -1362,7 +1385,7 @@ class AMRBrain:
         self.blocked_on = None
         self._stall_since = None
         self.retreat_target = target
-        self._retreat_for = None
+        self._retreat_for = "idle-clearance" if idle_clearance else None
         self._retreat_block_cid = None
         self._retreat_origin = here
         self._retreat_contested = self._next_cell()
@@ -1377,10 +1400,17 @@ class AMRBrain:
         # The selected target is an open neighbour and safety still validates the
         # direct segment continuously, so bypass only that one centring waypoint.
         self._install_recovery_route(t, sensors, target, recovery_routes[target])
+        if idle_clearance:
+            # Optional centering may be blocked by a taskless member of a loaded
+            # queue. This is still only one physically validated clearance cell;
+            # it must acquire the normal destination lease before translating.
+            self.goal = target
+            self._hold = True
+            self._track_block(t, True, "gate")
         self.stats["retreats"] += 1
         self._creep_until = t + 6.0
         self._record_decision(
-            t, "CLEARANCE_UNSTICK",
+            t, "IDLE_CENTER_CLEARANCE" if idle_clearance else "CLEARANCE_UNSTICK",
             "Selected a free cell that increases clearance from every close object",
             from_cell=list(here), target_cell=list(target),
             minimum_clearance_gain_m=round(-min(candidates)[1], 3),
@@ -3364,6 +3394,25 @@ class AMRBrain:
                 ), None)
                 if self.policy in V6_PLUS_POLICIES else None
             )
+            if (self.policy in V6_PLUS_POLICIES
+                    and self.goal == sensors.cell and len(self.path) == 1
+                    and self._cell_repair_target is None
+                    and not self._arrived(sensors, self.goal)
+                    and self._stall_since is not None
+                    and t - self._stall_since >= self.cfg.traffic.deadlock_wait_s
+                    and any(peer.blocked_on == self.rid
+                            and t - peer.last_seen <= self._peer_stale_after_s()
+                            for peer in self.peers.values())
+                    and t - self._last_idle_clearance_plan
+                    >= 1.0 / self.cfg.rates.reactive_hz):
+                # An optional singleton parking goal has no next cell, so the
+                # normal traffic loop cannot recover its protective-stop latch.
+                # The immediate requester can itself be taskless in a queue; its
+                # fresh explicit wait is enough to request a safe separating step,
+                # not enough to waive occupancy, task goals or destination leases.
+                self._last_idle_clearance_plan = t
+                if self._v6_clearance_unstick(t, sensors, idle_clearance=True):
+                    return
             parking_cancelled_for_clearance = False
             if self.goal is not None and not self.path:
                 # Parking and one-cell clearance goals are optional. A stopped human or
@@ -3379,7 +3428,8 @@ class AMRBrain:
             if (task_clearance_request is not None
                     and self.goal is not None
                     and (not remaining_parking_route
-                         or len(remaining_parking_route) > 1
+                         or (len(remaining_parking_route) > 1
+                             and self._can_clear_idle_locally(t, sensors))
                          or (self.goal == sensors.cell
                              and len(self.path) == 1
                              and self._cell_repair_target is None
@@ -3387,7 +3437,12 @@ class AMRBrain:
                 # Parking is optional; a loaded peer's progress is not. An idle AMR
                 # following a long dock route can become one side of an idle-idle
                 # wait cycle while the task owner queues behind it. Cancel only the
-                # long parking trip. An empty route is also cancelled: it means a
+                # long parking trip when a legal adjacent alternative exists. If
+                # the only forward neighbor is an active task's destination, it
+                # cannot be a parking endpoint; retain the normally leased route
+                # through it until a real bay is available. Cancelling that route
+                # every tick prevents admission and erases the actual wait chain.
+                # An empty route is also cancelled: it means a
                 # temporary human/obstacle observation made the optional parking goal
                 # unreachable, while an active task owner is physically waiting behind
                 # this chassis. A one-cell clearance move already in progress is allowed
@@ -3600,6 +3655,31 @@ class AMRBrain:
                 blocker = next_peer.blocked_on if next_peer is not None else None
         return result
 
+    def _idle_clearance_options(self, t: float, here: Cell):
+        """Local parking endpoints, not permission to enter any intermediate cell."""
+        fresh = [peer for peer in self.peers.values()
+                 if self.policy not in V6_PLUS_POLICIES
+                 or t - peer.last_seen <= self._peer_stale_after_s()]
+        explicit = (self._clearance_dependents(t)
+                    if self.policy in V6_PLUS_POLICIES else [])
+        taken = {peer.cell for peer in fresh} | {
+            peer.goal for peer in fresh if peer.goal is not None
+            and (peer.task_id is not None or peer.state == ST_CHARGING)} | {
+            cell for peer in fresh if peer not in explicit for cell in peer.intent}
+        return explicit, [cell for cell in self.env.neighbors(here) if cell not in taken], taken
+
+    def _can_clear_idle_locally(self, t: float, sensors: Sensors) -> bool:
+        """Cancel an admitted parking route only for a physically usable local bay."""
+        options = self._idle_clearance_options(t, sensors.cell)[1]
+        if (not options or t - self._last_idle_clearance_plan
+                < 1.0 / self.cfg.rates.reactive_hz):
+            return False
+        # At most four local candidates at the existing reactive rate, not a new
+        # whole-map scan in the 50 Hz control loop. An anonymous crossing or an
+        # off-centre chassis can invalidate a nominally unoccupied grid endpoint.
+        self._last_idle_clearance_plan = t
+        return any(self._recovery_route(sensors, target) is not None for target in options)
+
     def _vacate_if_in_the_way(self, t: float, sensors: Sensors) -> None:
         """Parked on somebody's destination? Move.
 
@@ -3612,12 +3692,13 @@ class AMRBrain:
         here = sensors.cell
         blockers_requesting_clearance = [
             p for p in self.peers.values()
-            if p.goal == here or here in p.intent
+            if (self.policy not in V6_PLUS_POLICIES
+                or t - p.last_seen <= self._peer_stale_after_s())
+            and (p.goal == here or here in p.intent)
         ]
         if not blockers_requesting_clearance:
             return
-        explicit_blockers = (self._clearance_dependents(t)
-                             if self.policy in V6_PLUS_POLICIES else [])
+        explicit_blockers, options, taken = self._idle_clearance_options(t, here)
         # Physical occupancy and somebody else's destination are hard exclusions.
         # The requesting robot's own future intent is different: the idle chassis is
         # already sitting in that corridor and may need to move one cell *forward*
@@ -3625,15 +3706,21 @@ class AMRBrain:
         # route as forbidden leaves it with no legal vacate move and permanently parks
         # it in front of the task owner. The requester continues to hold behind us;
         # every translated step is still revalidated by Layer 0.
-        taken = {p.cell for p in self.peers.values()} | {
-            p.goal for p in self.peers.values()
-            if p.goal and (p.task_id is not None or p.state == ST_CHARGING)} | {
-            cell
-            for p in self.peers.values()
-            if p not in explicit_blockers
-            for cell in p.intent
-        }
-        options = [n for n in self.env.neighbors(here) if n not in taken]
+        recovery_routes = {}
+        if explicit_blockers and options:
+            if t - self._last_idle_clearance_plan < 1.0 / self.cfg.rates.reactive_hz:
+                return
+            self._last_idle_clearance_plan = t
+            for target in options:
+                route = self._recovery_route(sensors, target)
+                if route is not None:
+                    recovery_routes[target] = route
+            # Cancellation tested for a safe alternative, not necessarily the
+            # first-ranked grid cell. Rank the physically valid candidates here as
+            # well, using fresh sensing after the cancellation and rate-limited to
+            # the same four-neighbor local search. Never select a blocked bay merely
+            # because another bay made the previous predicate true.
+            options = list(recovery_routes)
         if explicit_blockers and options:
             # A one-cell clearance is faster and less disruptive than sending an idle
             # AMR across the warehouse to another dock. Idle parking goals are soft:
@@ -3647,20 +3734,18 @@ class AMRBrain:
                 -manhattan(cell, self.home),
                 tuple(-coordinate for coordinate in cell),
             ))
-            if (self.circulation.enabled
-                    and not self.circulation.allows(self.env, here, local_target)):
+            recovery = recovery_routes[local_target]
+            if (self.circulation.enabled and (
+                    not self.circulation.allows(self.env, here, local_target)
+                    or len(recovery) > 1
+                    or not self._recovery_route_clear(sensors, (
+                        cell_center(here, self.cfg.cell_m), recovery[-1])))):
                 # An adjacent physical bay need not be an outgoing circulation
                 # edge. A* can turn this alleged one-cell vacate into a full-map
                 # loop, which optional-parking cancellation then resets each tick.
                 # Use only this observed local step, with the same mapped swept
                 # footprint guard and two-phase destination lease as cut recovery.
                 # Task goals and occupied cells remain excluded by `taken` above.
-                if t - self._last_idle_clearance_plan < 1.0 / self.cfg.rates.reactive_hz:
-                    return
-                self._last_idle_clearance_plan = t
-                recovery = self._recovery_route(sensors, local_target)
-                if recovery is None:
-                    return
                 self.goal = local_target
                 self.retreat_target = local_target
                 self._retreat_for = "idle-clearance"
