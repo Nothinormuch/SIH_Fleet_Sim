@@ -55,5 +55,31 @@ The reported minimum separation is centre-to-centre, not surface gap or physical
 braking margin. Older notes calling nonzero counts "ticks" should be read with
 this correction. The zero-contact gate and all raw metrics are unchanged.
 The HTML explanations/HUD label were corrected and eight policy-profile tests
-passed. This HTML-only presentation update does not alter controller source or
-the frozen executable-source manifest; final browser reload verification follows.
+passed. Browser reload confirmed the new text, centre-to-centre label and readable
+layout. This HTML-only presentation update does not alter controller source or
+the frozen executable-source manifest.
+
+## Additional causal and compute diagnostics
+
+The original ten-AMR SIH seed-0 four-way ablation completed 30/30 tasks without
+contacts in every configuration. BIOS 7 took 833.08 s versus 968.12 s for both
+V6 controls and the no-release V7 ablation. Messages were 99,296 versus 112,641;
+bytes were 18,922,397 versus current V6's 21,323,922 and the no-release ablation's
+21,457,748. These are known development inputs, not new holdout cases.
+
+A separately scoped cProfile diagnostic ran only the first two simulated seconds
+of the fixed-floor 100-AMR scenario (seed 0), not its acceptance workload/window.
+The frozen AMR source remained unchanged. The profiled run took 37.89 host seconds;
+26.59 cumulative seconds were under the auction call, 23.48 under A*, and 15.07
+under static nearest-dock estimation (nested times must not be added). Profiling
+overhead makes these unsuitable for live deadline claims or unprofiled throughput.
+The report is `bios7-98f3433-profile100-cold-start.json`; the external observer is
+`/private/tmp/bios7-compute-profile.5NEhJm/profile_candidate.py`.
+
+The complete unprofiled 50-AMR run also reported allocation bursts above 20 ms
+(59.53 ms observed maximum in the retained allocation samples on this shared
+host). This is not evidence that 50 independent edge controllers meet their full
+cycle deadline. Large-fleet headless completion and ten-controller LAN timing
+remain separate gates. Static distance-field reuse and incremental allocation
+are potential further compute work, not implemented performance gains in this
+frozen candidate. No deadline or acceptance threshold was relaxed.
