@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .amr import AMRBrain, Task
+from .control_schedule import ControlThreadQoS
 from .release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY
 from .scenarios import SCENARIOS
 from .settings import DEFAULT, Config
@@ -139,6 +140,15 @@ class EdgeRuntime:
         self.stale_command_stops = 0
         self.late_command_stops = 0
         self.peer_backlog_stops = 0
+        self.max_scheduling_lateness_s = 0.0
+        self.timing_events: list[dict] = []
+
+    def record_timing_event(self, kind: str, elapsed_s: float, delay_s: float) -> None:
+        # Keep the first sixteen witnesses, not an unbounded real-time log. These
+        # local elapsed times must not be compared as cross-host wall clocks.
+        if len(self.timing_events) < 16:
+            self.timing_events.append({"kind": kind, "elapsed_s": elapsed_s,
+                                       "delay_ms": delay_s * 1000.0})
 
     def tick(self, local_t: float, sensors: Sensors) -> Actuation:
         started = time.perf_counter()
@@ -189,6 +199,8 @@ class EdgeRuntime:
             "stale_command_stops": self.stale_command_stops,
             "late_command_stops": self.late_command_stops,
             "peer_backlog_stops": self.peer_backlog_stops,
+            "max_scheduling_lateness_ms": self.max_scheduling_lateness_s * 1000.0,
+            "timing_events": [dict(event) for event in self.timing_events],
             "transport": dict(self.transport.stats),
             "peer_sources": sorted(getattr(self.transport, "accepted_by_source", {})),
             "peer_sources_authenticated": bool(getattr(self.transport, "require_auth", False)),
@@ -454,7 +466,21 @@ def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareI
                   clock_offset_s: float = 0.0,
                   terminal_journal: TerminalJournal | None = None,
                   notifier: SystemdNotifier | None = None) -> dict:
-    """Run the real-time 50 Hz loop until interrupted or ``duration_s`` elapses."""
+    """Run one controller with a scoped, reported best-effort scheduling hint."""
+    with ControlThreadQoS() as hint:
+        report = _run_edge_node_loop(
+            brain, transport, hardware, cfg, duration_s, sensor_timeout_s,
+            startup_sensor_wait_s, clock_offset_s, terminal_journal, notifier)
+    report["scheduling_hint"] = hint.report()
+    return report
+
+
+def _run_edge_node_loop(brain: AMRBrain, transport: PeerTransport, hardware: HardwareIO,
+                       cfg: Config, duration_s: float | None,
+                       sensor_timeout_s: float, startup_sensor_wait_s: float,
+                       clock_offset_s: float, terminal_journal: TerminalJournal | None,
+                       notifier: SystemdNotifier | None) -> dict:
+    """Target 50 Hz on a best-effort OS; measure every missed control budget."""
     if not math.isfinite(sensor_timeout_s) or sensor_timeout_s <= 0.0:
         raise ValueError("sensor_timeout_s must be positive and finite")
     if not math.isfinite(startup_sensor_wait_s) or startup_sensor_wait_s < 0.0:
@@ -505,15 +531,22 @@ def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareI
         while not stop_requested:
             now = time.monotonic()
             cycle_started = time.perf_counter()
-            if now - next_tick > period:
+            lateness = max(0.0, now - next_tick)
+            runtime.max_scheduling_lateness_s = max(runtime.max_scheduling_lateness_s, lateness)
+            if lateness > period:
                 runtime.scheduling_late_ticks += 1
+                runtime.record_timing_event("wake_late", now - started, lateness)
             if now >= next_watchdog:
                 notifier.notify("WATCHDOG=1\nSTATUS=BIOS control loop healthy")
                 next_watchdog = now + 1.0
             elapsed = now - started
             if duration_s is not None and elapsed >= duration_s:
                 break
+            read_started = time.perf_counter()
             sensors, received_at = hardware.read_sensors()
+            read_duration = time.perf_counter() - read_started
+            runtime.phase_max_ms["sensor_read"] = max(
+                runtime.phase_max_ms.get("sensor_read", 0.0), read_duration * 1000.0)
             local_t = clock_offset_s + elapsed
             sensed_at = time.monotonic()
             if (sensors is None or received_at is None
@@ -533,12 +566,28 @@ def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareI
             if time.perf_counter() - cycle_started > period:
                 runtime.late_command_stops += 1
                 actuation = Actuation(v=0.0, omega=0.0, safety_stop=True)
+            write_started = time.perf_counter()
             hardware.write_actuation(actuation, local_t)
+            write_duration = time.perf_counter() - write_started
+            runtime.phase_max_ms["actuator_write"] = max(
+                runtime.phase_max_ms.get("actuator_write", 0.0), write_duration * 1000.0)
             # Atomic disk persistence is deliberately after the actuation write: a
             # slow filesystem may delay the next coordination tick, but never the
             # protective command already selected for this sensor frame.
+            journal_started = time.perf_counter()
             runtime.flush_terminal_records()
-            runtime.cycle_metrics.record_loop(time.perf_counter() - cycle_started, period)
+            journal_duration = time.perf_counter() - journal_started
+            runtime.phase_max_ms["journal_flush"] = max(
+                runtime.phase_max_ms.get("journal_flush", 0.0), journal_duration * 1000.0)
+            cycle_duration = time.perf_counter() - cycle_started
+            runtime.cycle_metrics.record_loop(cycle_duration, period)
+            if cycle_duration > period:
+                runtime.record_timing_event("cycle_overrun", elapsed, cycle_duration)
+                for name, duration in (("sensor_read", read_duration),
+                                       ("actuator_write", write_duration),
+                                       ("journal_flush", journal_duration)):
+                    if duration > period:
+                        runtime.record_timing_event(name, elapsed, duration)
             next_tick += period
             # Do not burst stale catch-up control cycles after an OS/disk stall.
             # Record missed slots explicitly; keep the 20 ms acceptance budget intact.

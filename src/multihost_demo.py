@@ -31,6 +31,7 @@ import time
 from .release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY
 from . import messages as msg
 from .edge_runtime import actuation_from_dict, sensors_to_dict
+from .control_schedule import ControlThreadQoS
 from .hil_demo import _announce_tasks, _raspberry_pi_model
 from .scenarios import SCENARIOS, workload_fingerprint
 from .settings import DEFAULT, NetSpec
@@ -470,6 +471,14 @@ def _reserve_sensor(config: dict, index: int) -> socket.socket:
 
 
 def run_agent(config: dict, host: str, key: bytes, *, connect_wait_s: float = 0) -> dict:
+    """Run the local driver bridge with a scoped, best-effort scheduling hint."""
+    with ControlThreadQoS() as hint:
+        report = _run_agent_loop(config, host, key, connect_wait_s=connect_wait_s)
+    report["scheduling_hint"] = hint.report()
+    return report
+
+
+def _run_agent_loop(config: dict, host: str, key: bytes, *, connect_wait_s: float = 0) -> dict:
     validate_config(config)
     channel = _connect_when_ready(config, host, key, connect_wait_s)
     nodes: dict[str, dict] = {}
@@ -618,6 +627,15 @@ def run_agent(config: dict, host: str, key: bytes, *, connect_wait_s: float = 0)
 
 def run_referee(config: dict, key: bytes, ready_timeout_s: float = 120,
                 on_snapshot=None) -> dict:
+    """Apply the same scoped hint to the sensor/physics service, not a planner."""
+    with ControlThreadQoS() as hint:
+        report = _run_referee_loop(config, key, ready_timeout_s, on_snapshot)
+    report["scheduling_hint"] = hint.report()
+    return report
+
+
+def _run_referee_loop(config: dict, key: bytes, ready_timeout_s: float = 120,
+                      on_snapshot=None) -> dict:
     validate_config(config)
     if (not math.isfinite(ready_timeout_s)
             or not 0 < ready_timeout_s <= _readiness_budget(config)):
