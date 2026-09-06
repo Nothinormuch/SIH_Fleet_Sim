@@ -320,3 +320,88 @@ def test_capacity_expansion_requires_prior_safe_fixed50_gate(monkeypatch, tmp_pa
         main(["--execute", "--phase", "release", "--release-stage", "capacity",
               "--control-root", str(control), "--output", str(tmp_path / "capacity.json")])
     assert calls == []
+
+
+@pytest.mark.parametrize("manifest", ["candidate_manifest", "control_manifest"])
+def test_capacity_rejects_prerequisite_from_different_source_hash(monkeypatch, tmp_path, capsys, manifest):
+    control, calls = mock_campaign(monkeypatch, tmp_path)
+    prerequisite = tmp_path / "regression50.json"
+    assert main(["--execute", "--phase", "release", "--release-stage", "regression50",
+                 "--control-root", str(control), "--output", str(prerequisite)]) == 0
+    document = json.loads(prerequisite.read_text())
+    assert summarize(document)["declared_headless_stage_pass"] is True
+    document[manifest]["source_manifest_sha256"] = "different-frozen-source"
+    prerequisite.write_text(json.dumps(document))
+    with pytest.raises(SystemExit) as stopped:
+        main(["--execute", "--phase", "release", "--release-stage", "capacity",
+              "--control-root", str(control), "--prerequisite", str(prerequisite),
+              "--output", str(tmp_path / "capacity.json")])
+    assert stopped.value.code == 2
+    assert "prerequisite must pass regression50 against this exact frozen source" in capsys.readouterr().err
+    assert len(calls) == 3  # No capacity worker was allowed to start.
+    assert not (tmp_path / "capacity.json").exists()
+
+
+@pytest.mark.parametrize("metric", ["makespan_s", "msgs_sent", "bytes_sent"])
+def test_all_stage_strict_nonregression_failure_stops_before_capacity(monkeypatch, tmp_path, metric):
+    import bios7_acceptance
+
+    control, calls = mock_campaign(monkeypatch, tmp_path)
+    original_worker = bios7_acceptance.subprocess.run
+
+    def regressed_worker(command, **options):
+        reply = original_worker(command, **options)
+        output = json.loads(reply.stdout)
+        if output["result"]["policy"] == "BIOS_PIBT.7":
+            output["result"][metric] += 1
+            output["result"]["sim_seconds"] = max(
+                output["result"]["sim_seconds"], output["result"]["makespan_s"])
+        reply.stdout = json.dumps(output)
+        return reply
+
+    monkeypatch.setattr(bios7_acceptance.subprocess, "run", regressed_worker)
+    target = tmp_path / "all-stage.json"
+    assert main(["--execute", "--phase", "release", "--release-stage", "all",
+                 "--control-root", str(control), "--output", str(target)]) == 2
+    document = json.loads(target.read_text())
+    assert len(calls) == len(document["runs"]) == 3
+    assert all(row["stage"] == "regression50" for row in document["runs"])
+    assert all(not row.get("error") and row["output"]["result"]["completed_all"]
+               for row in document["runs"])
+    assert document["runs"][0]["output"]["result"]["contacts_robot_rack"] == 19
+    gate = document["stage_gates"]["regression50"]
+    assert gate["candidate_runs_completed"] == 1
+    assert gate["candidate_contact_free"] is True
+    assert gate["strict_safety_fixed_v6_nonregression"][metric] is False
+    assert gate["declared_headless_stage_pass"] is False
+    assert "capacity expansion stopped" in document["stop_reason"]
+    assert document["unrun_count"] == document["plan"]["expected_runs"] - 3
+    assert document["finished"] is False
+    assert document["summary"]["declared_headless_stage_pass"] is False
+
+
+def test_all_stage_passed_first_gate_is_retained_when_later_worker_fails(monkeypatch, tmp_path):
+    import bios7_acceptance
+
+    control, calls = mock_campaign(monkeypatch, tmp_path)
+    original_worker = bios7_acceptance.subprocess.run
+
+    def stop_at_capacity(command, **options):
+        reply = original_worker(command, **options)
+        if json.loads(options["input"])["scenario"]["name"] == "capacity_scaled":
+            raise OSError("synthetic capacity worker failure; no simulation")
+        return reply
+
+    monkeypatch.setattr(bios7_acceptance.subprocess, "run", stop_at_capacity)
+    target = tmp_path / "passed-prefix.json"
+    assert main(["--execute", "--phase", "release", "--release-stage", "all",
+                 "--control-root", str(control), "--output", str(target)]) == 2
+    document = json.loads(target.read_text())
+    assert document["stage_gates"]["regression50"]["declared_headless_stage_pass"] is True
+    first = document["runs"][:3]
+    assert all(row["stage"] == "regression50" and not row.get("error") for row in first)
+    assert first[0]["output"]["result"]["contacts_robot_rack"] == 19
+    assert len(calls) == len(document["runs"]) == 6
+    assert all(row["stage"] == "capacity" and row.get("error") for row in document["runs"][3:])
+    assert document["unrun_count"] == document["plan"]["expected_runs"] - 6
+    assert document["summary"]["declared_headless_stage_pass"] is False

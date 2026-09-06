@@ -122,7 +122,13 @@ def delivery_identity_body(message: Message) -> dict[str, Any]:
     encoded datagram, byte count, authentication tag, and MTU check remain unchanged.
     """
     body = dict(message.body)
-    if message.type == TASK_NEW:
+    if message.type == HEARTBEAT:
+        # Execution identity strengthens passage evidence, not the sampled radio
+        # channel. Preserve paired loss/latency draws for the same legacy telemetry;
+        # encoded byte counts, authentication and MTU validation still include it.
+        for key in ("tg", "tdh", "te", "tr"):
+            body.pop(key, None)
+    elif message.type == TASK_NEW:
         for key in ("g", "dh", "dd"):
             body.pop(key, None)
     elif message.type in (BID, AWARD):
@@ -290,6 +296,19 @@ def _validate_dict(d: dict) -> str | None:
                 or not _identifier(body.get("bo"), optional=True)
                 or (body.get("g") is not None and not _cell(body.get("g")))):
             return "invalid_heartbeat"
+        execution_fields = ("tg", "tdh", "te")
+        if any(key in body for key in execution_fields):
+            if (not all(key in body for key in execution_fields)
+                    or "tr" in body
+                    or body.get("task") is None
+                    or not _integer(body.get("tg"), 0, MAX_AUCTION_EPOCH)
+                    or not valid_sha256(body.get("tdh"))
+                    or not _integer(body.get("te"), 0, MAX_AUCTION_EPOCH)):
+                return "invalid_heartbeat_task_identity"
+        if "tr" in body and (body.get("task") is None
+                             or not _integer(body["tr"])
+                             or body["tr"] >= d["seq"]):
+            return "invalid_heartbeat_task_reference"
         pk = body.get("pk")
         if pk is not None and (not isinstance(pk, list) or len(pk) > 8
                                or any(not isinstance(v, (int, str)) for v in pk)):
@@ -449,7 +468,11 @@ def heartbeat(src: str, seq: int, t: float, pose: tuple[float, float, float],
               cell: Cell, battery: float, mode: str, state: str,
               task_id: str | None, priority: float = 0.0,
               blocked_on: str | None = None, goal: Cell | None = None,
-              priority_key: list[int | str] | None = None) -> Message:
+              priority_key: list[int | str] | None = None, *,
+              task_generation: int | None = None,
+              task_descriptor_hash: str | None = None,
+              task_auction_epoch: int | None = None,
+              task_reference: int | None = None) -> Message:
     """`blocked_on` is what makes distributed deadlock detection possible at all.
 
     Cycle detection in a wait-for graph needs the graph, and the graph only exists if
@@ -470,6 +493,12 @@ def heartbeat(src: str, seq: int, t: float, pose: tuple[float, float, float],
     }
     if priority_key is not None:
         body["pk"] = priority_key
+    if any(value is not None for value in (
+            task_generation, task_descriptor_hash, task_auction_epoch)):
+        body.update({"tg": task_generation, "tdh": task_descriptor_hash,
+                     "te": task_auction_epoch})
+    if task_reference is not None:
+        body["tr"] = task_reference
     return Message(HEARTBEAT, src, seq, t, body)
 
 

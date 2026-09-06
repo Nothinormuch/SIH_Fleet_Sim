@@ -108,6 +108,9 @@ CELL_ZONE_BASE = 1_000_000
 # claim. Map geometry, actuator limits and measured contact definitions are unchanged.
 RECOVERY_MAP_MARGIN_M = 0.10
 RECOVERY_SPEED_MPS = 0.20
+PASSAGE_EXECUTION_REFRESH_S = 2.0
+MAX_PASSAGE_SESSION_PEERS = 1024
+MAX_RETIRED_PASSAGE_SESSIONS = 8
 
 
 @dataclass
@@ -156,6 +159,20 @@ class Peer:
     pose_seen_t: float = -1e9
     pose_seq: int = -1
     pose_session: str = ""
+    task_generation: int | None = None
+    task_descriptor_hash: str | None = None
+    task_auction_epoch: int | None = None
+    execution_context: tuple[int, tuple] | None = None
+
+
+@dataclass
+class PassageSession:
+    """Bounded anti-reversion memory; independent of expiring peer telemetry."""
+
+    active: str
+    retired: set[str] = field(default_factory=set)
+    disabled: bool = False
+    pose_sequence: int = -1
 
 
 class AMRBrain:
@@ -296,6 +313,10 @@ class AMRBrain:
         self._v7_passages_cleared: set[tuple] = set()
         self._v7_passage_observed_at = -1e9
         self._v7_drop_side_cache: dict[tuple[int, Cell, Cell], bool] = {}
+        self._v7_execution_declaration: tuple[tuple, int, float] | None = None
+        self._v7_passage_sessions: dict[str, PassageSession] = {}
+        self._v7_self_position: tuple[float, float] | None = None
+        self._v7_self_cell: Cell | None = None
         self._last_catalog_broadcast = -1e9
         self._catalog_cursor = 0
         self._task_network_healthy_since: float | None = None
@@ -5216,6 +5237,58 @@ class AMRBrain:
     def _v7_passage_key(self, task: Task, claim: tuple, cid: int) -> tuple:
         return (*self._task_identity(task), claim[0], claim[2], cid)
 
+    def _v7_accept_pose_session(self, owner: str, session: str,
+                               sequence: int | None = None) -> bool:
+        """Never revive a retired session; saturation loses optimization, not memory.
+
+        An opaque session ID cannot prove incarnation order: a previously unseen
+        old session can arrive after a restart. Any observed session transition
+        therefore disables this owner's optional passage optimization until this
+        observer restarts. Ordinary conservative admission and advisory telemetry
+        remain available. Missing roster slots also fail closed. Retired sessions
+        are never evicted when the associated Peer expires.
+        """
+        entry = self._v7_passage_sessions.get(owner)
+        if entry is None:
+            if len(self._v7_passage_sessions) < MAX_PASSAGE_SESSION_PEERS:
+                self._v7_passage_sessions[owner] = PassageSession(
+                    session, pose_sequence=-1 if sequence is None else sequence)
+            return True
+        if session in entry.retired:
+            return False
+        if session != entry.active:
+            entry.disabled = True
+            if len(entry.retired) < MAX_RETIRED_PASSAGE_SESSIONS:
+                entry.retired.add(entry.active)
+            entry.active = session
+            entry.pose_sequence = -1
+        if sequence is not None:
+            if sequence <= entry.pose_sequence:
+                return False
+            entry.pose_sequence = sequence
+        return True
+
+    def _v7_owner_execution_matches(self, task: Task, claim: tuple) -> bool:
+        """Bind a pose to the owner's actual execution, not just a reused job ID.
+
+        A legacy heartbeat remains valid telemetry but cannot establish passage
+        evidence. Task/lease authority is unchanged; a mismatch only loses this
+        optional admission optimization.
+        """
+        if claim[0] != task.auction_epoch:
+            return False
+        if claim[2] == self.rid:
+            return (self.task is not None
+                    and self._task_identity(self.task) == self._task_identity(task)
+                    and self.task.auction_epoch == claim[0])
+        peer = self.peers.get(claim[2])
+        session = self._v7_passage_sessions.get(claim[2])
+        return (peer is not None and session is not None and not session.disabled
+                and session.active == peer.pose_session
+                and (peer.task_id, peer.task_generation, peer.task_descriptor_hash)
+                == self._task_identity(task)
+                and peer.task_auction_epoch == claim[0])
+
     def _v7_observe_passages(self, t: float, sensors: Sensors) -> None:
         """Observe physical loaded passages, never infer exit from lease expiry.
 
@@ -5225,6 +5298,7 @@ class AMRBrain:
         loses an optimization, not a safety interlock. Existing token/PIBT/sensor
         arbitration still controls every movement and task authority is untouched.
         """
+        self._v7_self_cell, self._v7_self_position = sensors.cell, sensors.pose[:2]
         if (not self.cfg.traffic.v7_passage_release or self.circulation.enabled
                 or t - self._v7_passage_observed_at
                 < self.cfg.traffic.v7_passage_observe_s):
@@ -5233,7 +5307,8 @@ class AMRBrain:
         live_keys = set()
         for tid, claim in self._task_claims.items():
             task = self.open_tasks.get(tid)
-            if task is None or claim[3] <= t:
+            if (task is None or claim[3] <= t
+                    or not self._v7_owner_execution_matches(task, claim)):
                 continue
             directions = self._task_corridor_directions(task)
             if not directions:
@@ -5264,20 +5339,9 @@ class AMRBrain:
                     continue
                 # Require the complete circular body, not just its rounded cell,
                 # to clear all block squares and a small additional exit margin.
-                margin = (self.cfg.robot.radius_m
-                          + self.cfg.traffic.v7_passage_clearance_m)
-                size = self.cfg.cell_m
-                if any(math.hypot(
-                        max(bx * size - position[0], 0.0,
-                            position[0] - (bx + 1) * size),
-                        max(by * size - position[1], 0.0,
-                            position[1] - (by + 1) * size)) <= margin
-                       for bx, by in self.blocks.members[cid]):
-                    self._v7_passages_cleared.discard(key)
-                    continue
                 # A robot may reappear on the entry side after a radio blackout;
                 # the old exit witness must not survive that new observation.
-                if not self._v7_drop_route_clears(cid, cell, task.drop):
+                if not self._v7_position_clears(cid, cell, position, task.drop):
                     self._v7_passages_cleared.discard(key)
                     continue
                 if key in self._v7_passages_cleared:
@@ -5288,12 +5352,15 @@ class AMRBrain:
                     t, "passage_clear", "Loaded owner cleared corridor; task continues",
                     owner=owner, task=tid, corridor=cid)
         # Keep observations across a temporary state/goal change, but never across
-        # terminal jobs, ownership changes or auction generations. Expired owners
-        # do not establish an empty-block fact.
+        # terminal jobs, ownership changes or auction generations. Missing or
+        # mismatched execution identity also invalidates prior witnesses; a later
+        # matching outside-only heartbeat must not restore them. Expired owners do
+        # not establish an empty-block fact.
         valid_keys = {
             self._v7_passage_key(task, claim, cid)
             for tid, claim in self._task_claims.items()
             if claim[3] > t and (task := self.open_tasks.get(tid)) is not None
+            and self._v7_owner_execution_matches(task, claim)
             for cid in self._task_corridor_directions(task)
         }
         self._v7_passages_entered.intersection_update(valid_keys)
@@ -5316,6 +5383,16 @@ class AMRBrain:
             self._v7_drop_side_cache[key] = clear
         return self._v7_drop_side_cache[key]
 
+    def _v7_position_clears(self, cid: int, cell: Cell, position, drop: Cell) -> bool:
+        margin = self.cfg.robot.radius_m + self.cfg.traffic.v7_passage_clearance_m
+        size = self.cfg.cell_m
+        return (not self._zone_contains(cid, cell)
+                and not any(math.hypot(
+                    max(bx * size - position[0], 0.0, position[0] - (bx + 1) * size),
+                    max(by * size - position[1], 0.0, position[1] - (by + 1) * size)) <= margin
+                    for bx, by in self.blocks.members[cid])
+                and self._v7_drop_route_clears(cid, cell, drop))
+
     def _v7_pending_corridors(self, task: Task, t: float) -> dict[int, Cell]:
         """Corridor task-admission pressure after witnessed, fresh loaded passage."""
         directions = self._task_corridor_directions(task)
@@ -5323,7 +5400,8 @@ class AMRBrain:
                 or not self.cfg.traffic.v7_passage_release):
             return directions
         claim = self._task_claims.get(task.tid)
-        if claim is None or claim[3] <= t:
+        if (claim is None or claim[3] <= t
+                or not self._v7_owner_execution_matches(task, claim)):
             return directions
         if claim[2] != self.rid:
             peer = self.peers.get(claim[2])
@@ -5334,6 +5412,20 @@ class AMRBrain:
         elif (self.task is None or self.task.tid != task.tid
               or self.goal != task.drop):
             return directions
+        # A fresh heartbeat can re-enter between 100 ms observation samples. This
+        # check can only revoke a prior release, never create one. Self pose is
+        # supplied by the current step before task allocation runs.
+        if claim[2] == self.rid:
+            cell, position = self._v7_self_cell, self._v7_self_position
+        else:
+            peer = self.peers[claim[2]]
+            cell, position = peer.cell, peer.pose[:2]
+        for cid in directions:
+            key = self._v7_passage_key(task, claim, cid)
+            if (key in self._v7_passages_cleared
+                    and (cell is None or position is None
+                         or not self._v7_position_clears(cid, cell, position, task.drop))):
+                self._v7_passages_cleared.discard(key)
         pending = {
             cid: entry for cid, entry in directions.items()
             if self._v7_passage_key(task, claim, cid)
@@ -5859,6 +5951,18 @@ class AMRBrain:
 
     def _broadcast(self, t: float, sensors: Sensors,
                    outbox: list[msg.Message]) -> None:
+        execution = {}
+        if (self.policy == POLICY_BIOS_PIBT_V7 and self.task is not None
+                and self._task_corridor_directions(self.task)):
+            # Only passage-capable execution consumes this metadata. Do not add
+            # evidence overhead to the V6 control or directed/open-floor cases.
+            # The no-release ablation uses the same wire metadata as active V7.
+            self._ensure_task_identity(self.task)
+            execution = {
+                "task_generation": self.task.generation,
+                "task_descriptor_hash": self.task.descriptor_hash,
+                "task_auction_epoch": self.task.auction_epoch,
+            }
         if self.policy in (*STOP_WAIT_POLICIES, *CENTRAL_POLICIES):
             # Heartbeats only. The dashboard has to work for every baseline or the
             # comparison quietly becomes "with telemetry vs without", and the manager
@@ -5867,7 +5971,7 @@ class AMRBrain:
             outbox.append(msg.heartbeat(
                 self.rid, self._next_seq(), t, sensors.pose, sensors.cell,
                 sensors.battery_frac, self.mode, self.state,
-                self.task.tid if self.task else None))
+                self.task.tid if self.task else None, **execution))
             self._broadcast_auction_lease(t, outbox)
             self._broadcast_future_lease(t, outbox)
             self._broadcast_task_catalog(t, outbox)
@@ -5884,20 +5988,33 @@ class AMRBrain:
             sensors.cell, self.state, self.task.tid if self.task else None,
             self.goal, self.blocked_on if self.blocked_on != "gate" else None,
             int(sensors.battery_frac * 20.0), tuple(wire_key or ()),
+            tuple(execution.values()),
         )
         heartbeat_due = (
             self.policy not in V6_PLUS_POLICIES
             or self._v6_heartbeat_due(t, sensors, heartbeat_signature)
         )
         if heartbeat_due:
+            heartbeat_seq = self._next_seq()
+            wire_execution = execution
+            if execution:
+                identity = (self.task.tid, *execution.values())
+                declaration = self._v7_execution_declaration
+                if (declaration is not None and declaration[0] == identity
+                        and t - declaration[2] < PASSAGE_EXECUTION_REFRESH_S):
+                    wire_execution = {"task_reference": declaration[1]}
+                else:
+                    self._v7_execution_declaration = (identity, heartbeat_seq, t)
+            else:
+                self._v7_execution_declaration = None
             outbox.append(msg.heartbeat(
-                self.rid, self._next_seq(), t, sensors.pose, sensors.cell,
+                self.rid, heartbeat_seq, t, sensors.pose, sensors.cell,
                 sensors.battery_frac, self.mode, self.state,
                 self.task.tid if self.task else None,
                 priority=self._pub_priority,
                 blocked_on=self.blocked_on if self.blocked_on != "gate" else None,
                 goal=self.goal,
-                priority_key=wire_key))
+                priority_key=wire_key, **wire_execution))
             self._last_heartbeat_broadcast = t
             self._last_heartbeat_signature = heartbeat_signature
         else:
@@ -6110,10 +6227,37 @@ class AMRBrain:
             b = m.body
 
             if m.type == msg.HEARTBEAT:
+                if (self.policy == POLICY_BIOS_PIBT_V7
+                        and not self._v7_accept_pose_session(m.src, m.sid or "", m.seq)):
+                    continue
                 p = self.peers.setdefault(m.src, Peer(m.src))
                 if (self.policy == POLICY_BIOS_PIBT_V7
                         and (m.sid or "") == p.pose_session and m.seq <= p.pose_seq):
                     continue
+                if (m.sid or "") != p.pose_session:
+                    p.execution_context = None
+                if all(key in b for key in ("tg", "tdh", "te")):
+                    execution = (b.get("task"), b["tg"], b["tdh"], b["te"])
+                    p.execution_context = (m.seq, execution)
+                elif "tr" in b:
+                    context = p.execution_context
+                    execution = (context[1] if context is not None
+                                 and context[0] == b["tr"] and context[1][0] == b.get("task")
+                                 else (b.get("task"), None, None, None))
+                else:
+                    execution = (b.get("task"), None, None, None)
+                    p.execution_context = None
+                if (self.policy == POLICY_BIOS_PIBT_V7
+                        and ((p.task_id, p.task_generation, p.task_descriptor_hash,
+                              p.task_auction_epoch, p.pose_session)
+                             != (*execution, m.sid or ""))):
+                    # Invalidate at ingestion, not at the rate-limited observer:
+                    # two execution changes inside one 100 ms observation interval
+                    # must not resurrect a prior inside/exit witness.
+                    self._v7_passages_entered = {
+                        key for key in self._v7_passages_entered if key[-2] != m.src}
+                    self._v7_passages_cleared = {
+                        key for key in self._v7_passages_cleared if key[-2] != m.src}
                 p.pose_seen_t = t
                 p.pose_seq = m.seq
                 p.pose_session = m.sid or ""
@@ -6127,6 +6271,9 @@ class AMRBrain:
                 p.priority_key = PriorityKey.from_wire(b.get("pk"), m.src)
                 p.battery_frac = float(b.get("b", p.battery_frac))
                 p.task_id = b.get("task")
+                # Replace on every accepted heartbeat, including legacy packets:
+                # absent metadata must not retain an older matching execution.
+                p.task_generation, p.task_descriptor_hash, p.task_auction_epoch = execution[1:]
                 p.last_seen = t
                 # INTENT is sent only while a route has cells to advertise.  An idle
                 # peer therefore sends no empty INTENT packet to overwrite its last

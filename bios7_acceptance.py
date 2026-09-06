@@ -269,6 +269,17 @@ def _save(report: dict, target: Path):
     temporary.replace(target)
 
 
+def _completed_stage_summary(report: dict, stage: str) -> dict:
+    """Apply the same release gates to a stage prefix without altering raw rows."""
+    inputs = [item for item in report["plan"]["inputs"] if item["stage"] == stage]
+    rows = [row for row in report["runs"] if row["stage"] == stage]
+    expected = sum(len(item["configurations"]) for item in inputs)
+    return summarize({**report,
+        "plan": {**report["plan"], "inputs": inputs,
+                 "release_stage": stage, "expected_runs": expected},
+        "runs": rows, "finished": expected > 0 and len(rows) == expected})
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
@@ -453,6 +464,16 @@ def main(argv=None):
             if row.get("error") or (configuration == "bios7" and
                 (not raw.get("completed_all") or any(raw.get(field, 0) for field in CONTACT_FIELDS))):
                 stop_after_pair = True
+        if (args.phase == "release" and args.release_stage == "all"
+                and item["stage"] == "regression50"):
+            # The combined command must not bypass the separate capacity command's
+            # strict prerequisite by accepting only completion/contact-free status.
+            # Preserve the exact prefix and expose its gate before any larger case.
+            gate = _completed_stage_summary(report, "regression50")
+            report.setdefault("stage_gates", {})["regression50"] = gate
+            if gate["declared_headless_stage_pass"] is not True:
+                stop_reason = stop_reason or (
+                    "regression50 strict release gate did not pass; capacity expansion stopped")
         if stop_reason or stop_after_pair:
             stop_reason = stop_reason or "candidate unsafe/incomplete or worker failed; progression stopped"
             break

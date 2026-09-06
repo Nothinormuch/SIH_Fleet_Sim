@@ -22,6 +22,25 @@ Missing or stale observations retain the conservative admission behavior. New
 ownership, re-entry or a return to the entry side invalidates the optimization.
 Static exit-route caching is bounded; live ownership/occupancy is revalidated.
 
+Passage-capable owners declare the actual executing task's generation, complete
+descriptor SHA-256 and auction epoch in a heartbeat. Following heartbeats may
+reference that declaration's sequence within the same sender session. The full
+identity refreshes on the next normal heartbeat after two seconds; unknown or
+missing references retain conservative admission. These fields remain inside the
+authenticated envelope and actual byte accounting. They are not sent by the V6
+control or on directed/non-passage workloads, and are identical in V7's no-release
+ablation. No identity hash is truncated to improve communication results.
+
+After any observed peer session change, this observer conservatively disables that
+peer's early passage release until the observer restarts: opaque session IDs do
+not prove incarnation order. Known retired sessions and sequence high-watermarks
+are retained within fixed memory bounds, independently of expiring peer telemetry.
+Saturation loses the optimization instead of evicting history and reviving stale
+evidence. Task ownership and the ordinary admission/safety path remain available.
+Fresh partial-body re-entry also revokes clearance when admission uses it, even
+between the 100 ms observation samples; use-time checks can revoke, not create,
+an early release.
+
 An ablation, `bios7_no_release`, runs BIOS 7 with passage release disabled. This
 helps distinguish the algorithm's effect from measurement and supporting changes.
 
