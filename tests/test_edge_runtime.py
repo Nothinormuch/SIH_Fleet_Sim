@@ -66,7 +66,11 @@ def test_optional_visual_status_preserves_udp_actuator_contract():
                 if provider is None:
                     assert set(frame) == {"v", "omega", "safety_stop", "t"}
                 else:
-                    assert frame["visual_status"] == status
+                    # Initial metadata is unknown; its provider runs only after
+                    # the first actuator command has been transmitted.
+                    assert frame["visual_status"] == {}
+                    hardware.write_actuation(Actuation(safety_stop=True), 3.02)
+                    assert json.loads(receiver.recvfrom(4096)[0])["visual_status"] == status
             finally:
                 hardware.close()
 

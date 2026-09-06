@@ -12,6 +12,7 @@ import threading
 import time
 
 from .hil_demo import run_hil_demo
+from .amr import POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7
 
 
 PROFILES = {
@@ -62,7 +63,10 @@ class EdgeLab:
         return result
 
     def start(self, mode: str = "normal", profile: str = "interfaces",
-              robots: int = 3, seed: int = 0) -> dict:
+              robots: int = 3, seed: int = 0,
+              policy: str = POLICY_BIOS_PIBT_V6) -> dict:
+        if policy not in (POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7):
+            raise ValueError("Lab policy must be BIOS_PIBT.6 or BIOS_PIBT.7")
         if mode not in ("normal", "sensor_demo"):
             raise ValueError("mode must be normal or sensor_demo")
         if profile not in PROFILES:
@@ -80,8 +84,10 @@ class EdgeLab:
                            "result": None, "error": None, "faults": [],
                            "run_id": secrets.token_hex(8), "profile": profile,
                            "robots": robots, "seed": seed,
+                           "policy": policy,
                            "duration_s": PROFILES[profile][1]}
-            self._thread = threading.Thread(target=self._run, args=(mode, profile, robots, seed),
+            self._thread = threading.Thread(target=self._run,
+                                            args=(mode, profile, robots, seed, policy),
                                             name="bios-edge-lab", daemon=True)
             self._thread.start()
         return self.status()
@@ -123,7 +129,7 @@ class EdgeLab:
             if not self._stop.is_set():
                 self._state["state"] = "running"
 
-    def _run(self, mode: str, profile: str, robots: int, seed: int):
+    def _run(self, mode: str, profile: str, robots: int, seed: int, policy: str):
         try:
             base = _available_ports(robots)
             kwargs = {}
@@ -132,6 +138,7 @@ class EdgeLab:
                           "sensor_cut_duration_s": 2.0}
             result = run_hil_demo(
                 scenario_name=PROFILES[profile][0], robots=robots, seed=seed,
+                policy=policy,
                 duration_s=PROFILES[profile][1], require_task_completion=True,
                 peer_port=base, sensor_base_port=base + 1,
                 actuator_base_port=base + 1 + robots, shared_key=secrets.token_hex(24),

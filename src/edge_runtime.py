@@ -68,16 +68,18 @@ class SystemdNotifier:
         address = self.address
         if address.startswith("@"):
             address = "\0" + address[1:]
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        sock = None
         try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
             sock.sendto(state.encode("utf-8"), address)
             self.sent += 1
             return True
-        except OSError:
+        except (AttributeError, OSError):
             self.failed += 1
             return False
         finally:
-            sock.close()
+            if sock is not None:
+                sock.close()
 
 
 @dataclass
@@ -133,6 +135,9 @@ class EdgeRuntime:
         self.phase_max_ms: dict[str, float] = {}
         self.scheduling_late_ticks = 0
         self.skipped_schedule_slots = 0
+        self.stale_command_stops = 0
+        self.late_command_stops = 0
+        self.peer_backlog_stops = 0
 
     def tick(self, local_t: float, sensors: Sensors) -> Actuation:
         started = time.perf_counter()
@@ -141,6 +146,9 @@ class EdgeRuntime:
         inbox = self.transport.poll()
         polled = time.perf_counter()
         actuation, outbox = self.brain.step(local_t, local_sensors, inbox)
+        if getattr(self.transport, "receive_degraded", False):
+            self.peer_backlog_stops += 1
+            actuation = Actuation(v=0.0, omega=0.0, safety_stop=True)
         planned = time.perf_counter()
         for message in outbox:
             self.transport.send(message)
@@ -177,7 +185,12 @@ class EdgeRuntime:
             "phase_max_ms": dict(self.phase_max_ms),
             "scheduling_late_ticks": self.scheduling_late_ticks,
             "skipped_schedule_slots": self.skipped_schedule_slots,
+            "stale_command_stops": self.stale_command_stops,
+            "late_command_stops": self.late_command_stops,
+            "peer_backlog_stops": self.peer_backlog_stops,
             "transport": dict(self.transport.stats),
+            "peer_sources": sorted(getattr(self.transport, "accepted_by_source", {})),
+            "peer_sources_authenticated": bool(getattr(self.transport, "require_auth", False)),
             "brain": dict(self.brain.stats),
             "state": self.brain.state,
             "task": self.brain.task.tid if self.brain.task else None,
@@ -206,8 +219,15 @@ class UdpJsonHardwareIO:
     def __init__(self, sensor_host: str, sensor_port: int,
                  actuator_host: str, actuator_port: int,
                  max_packet_bytes: int = 65_535,
-                 visual_status: Callable[[], dict] | None = None) -> None:
+                 visual_status: Callable[[], dict] | None = None,
+                 max_sensor_frames: int = 64,
+                 sensor_poll_budget_s: float = 0.002) -> None:
+        if (max_sensor_frames < 1 or not math.isfinite(sensor_poll_budget_s)
+                or sensor_poll_budget_s <= 0):
+            raise ValueError("sensor receive budgets must be positive and finite")
         self.max_packet_bytes = max_packet_bytes
+        self.max_sensor_frames = max_sensor_frames
+        self.sensor_poll_budget_s = sensor_poll_budget_s
         self.sensor = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sensor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sensor.bind((sensor_host, sensor_port))
@@ -215,33 +235,53 @@ class UdpJsonHardwareIO:
         self.actuator = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.actuator_target = (actuator_host, actuator_port)
         self.stats = {"sensor_frames": 0, "invalid_sensor_frames": 0,
-                      "actuator_frames": 0, "actuator_send_failed": 0}
+                      "actuator_frames": 0, "actuator_send_failed": 0,
+                      "sensor_receive_budget_exhausted": 0}
         self._latest: Sensors | None = None
         self._received_at: float | None = None
         self.visual_status = visual_status
         self._visual_at = float("-inf")
         self._visual_cache: dict = {}
+        self._bridge_sample_id: int | None = None
 
     def read_sensors(self) -> tuple[Sensors | None, float | None]:
-        while True:
+        deadline = time.perf_counter() + self.sensor_poll_budget_s
+        exhausted = True
+        for _ in range(self.max_sensor_frames):
+            if time.perf_counter() >= deadline:
+                break
             try:
                 raw, _source = self.sensor.recvfrom(self.max_packet_bytes + 1)
             except BlockingIOError:
+                exhausted = False
                 break
             except OSError:
+                exhausted = False
                 break
             if len(raw) > self.max_packet_bytes:
                 self.stats["invalid_sensor_frames"] += 1
                 continue
             try:
-                candidate = sensors_from_dict(json.loads(raw.decode("utf-8")))
+                frame = json.loads(raw.decode("utf-8"))
+                candidate = sensors_from_dict(frame)
+                sample_id = frame.get("bridge_sample_id")
+                if (sample_id is not None
+                        and (type(sample_id) is not int or not 0 <= sample_id <= 2**53 - 1)):
+                    raise ValueError("bridge_sample_id must be a bounded nonnegative integer")
             except (TypeError, ValueError, KeyError, UnicodeDecodeError,
                     json.JSONDecodeError):
                 self.stats["invalid_sensor_frames"] += 1
                 continue
             self._latest = candidate
             self._received_at = time.monotonic()
+            self._bridge_sample_id = sample_id
             self.stats["sensor_frames"] += 1
+        if exhausted:
+            # We did not observe an empty queue. Its tail may contain newer frames;
+            # do not describe an arbitrary backlog prefix as a fresh latest sample.
+            # Fail closed until a subsequent bounded poll catches up.
+            self.stats["sensor_receive_budget_exhausted"] += 1
+            self._received_at = None
         return self._latest, self._received_at
 
     def write_actuation(self, actuation: Actuation, t: float) -> None:
@@ -251,13 +291,14 @@ class UdpJsonHardwareIO:
             "safety_stop": actuation.safety_stop,
             "t": t,
         }
+        if self._bridge_sample_id is not None:
+            # A transport correlation token, never an input to the robot brain.
+            # The referee can measure round-trip sensor-to-command age without
+            # comparing unsynchronized clocks on separate physical hosts.
+            frame["bridge_sample_id"] = self._bridge_sample_id
         if self.visual_status is not None:
-            # UI consumes 10 Hz snapshots; computing its path/cargo metadata at
-            # 50 Hz adds work to the control budget without improving the display.
-            now = time.monotonic()
-            if now - self._visual_at >= 0.1:
-                self._visual_cache = self.visual_status()
-                self._visual_at = now
+            # Send the last bounded telemetry sample; do not run a UI callback
+            # between freshness validation and the actual protective command.
             frame["visual_status"] = self._visual_cache
         payload = json.dumps(frame, separators=(",", ":"), allow_nan=False).encode("utf-8")
         try:
@@ -265,6 +306,11 @@ class UdpJsonHardwareIO:
             self.stats["actuator_frames"] += 1
         except OSError:
             self.stats["actuator_send_failed"] += 1
+        if self.visual_status is not None:
+            now = time.monotonic()
+            if now - self._visual_at >= 0.1:
+                self._visual_cache = self.visual_status()
+                self._visual_at = now
 
     def close(self) -> None:
         self.sensor.close()
@@ -408,6 +454,9 @@ def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareI
 
     old_int = signal.signal(signal.SIGINT, request_stop)
     old_term = signal.signal(signal.SIGTERM, request_stop)
+    break_signal = getattr(signal, "SIGBREAK", None)
+    old_break = (signal.signal(break_signal, request_stop)
+                 if break_signal is not None else None)
     period = 1.0 / cfg.rates.safety_hz
     notifier = notifier or SystemdNotifier()
     waiting_started = time.monotonic()
@@ -452,12 +501,24 @@ def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareI
                 break
             sensors, received_at = hardware.read_sensors()
             local_t = clock_offset_s + elapsed
+            sensed_at = time.monotonic()
             if (sensors is None or received_at is None
-                    or now - received_at > sensor_timeout_s):
+                    or not 0 <= sensed_at - received_at <= sensor_timeout_s):
                 runtime.metrics.sensor_timeouts += 1
                 actuation = Actuation(v=0.0, omega=0.0, safety_stop=True)
             else:
                 actuation = runtime.tick(local_t, sensors)
+            # Coordination/authentication can take longer than expected. Recheck
+            # freshness AFTER it, and never transmit a newly selected motion
+            # command whose computation has already consumed the control period.
+            # This rejects stale output; it does not certify scheduler timing or
+            # replace the downstream actuator watchdog / physical safety chain.
+            if received_at is not None and time.monotonic() - received_at > sensor_timeout_s:
+                runtime.stale_command_stops += 1
+                actuation = Actuation(v=0.0, omega=0.0, safety_stop=True)
+            if time.perf_counter() - cycle_started > period:
+                runtime.late_command_stops += 1
+                actuation = Actuation(v=0.0, omega=0.0, safety_stop=True)
             hardware.write_actuation(actuation, local_t)
             # Atomic disk persistence is deliberately after the actuation write: a
             # slow filesystem may delay the next coordination tick, but never the
@@ -487,6 +548,8 @@ def run_edge_node(brain: AMRBrain, transport: PeerTransport, hardware: HardwareI
                 hardware.close()
                 signal.signal(signal.SIGINT, old_int)
                 signal.signal(signal.SIGTERM, old_term)
+                if break_signal is not None:
+                    signal.signal(break_signal, old_break)
     report = runtime.report()
     report["hardware"] = dict(getattr(hardware, "stats", {}))
     report["service_notify"] = {

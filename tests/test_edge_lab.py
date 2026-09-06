@@ -56,6 +56,8 @@ def test_lab_rejects_invalid_controls():
     lab = EdgeLab()
     with pytest.raises(ValueError):
         lab.start("unknown")
+    with pytest.raises(ValueError, match="policy"):
+        lab.start(policy="arbitrary-policy")
     with pytest.raises(ValueError):
         lab.cut_sensor("AMR99")
     with pytest.raises(RuntimeError):

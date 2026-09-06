@@ -157,6 +157,10 @@ class PolicyResult:
     predictive_hazards_seen: int = 0
     predictive_reroutes: int = 0
     charger_contentions_avoided: int = 0
+    v7_passages_observed: int = 0
+    v7_passage_releases: int = 0
+    v7_empty_reserved_block_ticks: int = 0
+    v7_passage_release_uses: int = 0
 
     future_candidates_evaluated: int = 0
     future_bids_sent: int = 0

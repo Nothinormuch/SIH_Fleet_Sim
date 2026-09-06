@@ -224,9 +224,14 @@ class UdpMulticastTransport:
         self._replay_seen: dict[tuple[str, str], float] = {}
         self._replay_max_sessions = 1024
         self._replay_session_ttl_s = 3600.0
+        self.accepted_by_source: dict[str, int] = {}
+        self._quarantine_receive = False
+        self.receive_degraded = False
         self.stats = {"sent": 0, "recv": 0, "bytes_sent": 0, "bytes_recv": 0,
                       "malformed": 0, "send_failed": 0, "replayed": 0,
-                      "auth_failed": 0, "oversized": 0}
+                      "auth_failed": 0, "oversized": 0,
+                      "receive_budget_exhausted": 0, "source_roster_overflow": 0,
+                      "receive_quarantine_polls": 0, "backlog_discarded": 0}
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -260,15 +265,43 @@ class UdpMulticastTransport:
             # to tolerate loss, so the correct response is to carry on.
             self.stats["send_failed"] += 1
 
-    def poll(self, max_msgs: int = 256) -> list[msg.Message]:
+    def poll(self, max_msgs: int = 256, *,
+             max_time_s: float = 0.002) -> list[msg.Message]:
+        """Bound intake by both packets and elapsed processing time.
+
+        The bound is checked between datagrams, not a hard-real-time preemption
+        guarantee. In particular, one authentication/decoding call can overrun it;
+        the execution runtime separately rejects an overdue motion command.
+        After exhaustion, discard until the socket is observed empty. Arrival-age
+        cannot be reconstructed from independent sender clocks, so a stale socket
+        backlog must not keep old positions/leases fresh at the brain boundary.
+        """
+        if max_msgs < 1 or not math.isfinite(max_time_s) or max_time_s <= 0:
+            raise ValueError("receive budgets must be positive and finite")
+        deadline = time.perf_counter() + max_time_s
+        quarantined = getattr(self, "_quarantine_receive", False)
+        self.receive_degraded = quarantined
+        if quarantined:
+            self.stats["receive_quarantine_polls"] += 1
         out: list[msg.Message] = []
+        exhausted = True
         for _ in range(max_msgs):
+            if time.perf_counter() >= deadline:
+                break
             try:
                 raw, _addr = self.sock.recvfrom(msg.MAX_DATAGRAM_BYTES + 1)
-            except (BlockingIOError, OSError):
+            except BlockingIOError:
+                exhausted = False
+                self._quarantine_receive = False
+                break
+            except OSError:
+                # A failed socket does not establish that queued traffic is fresh.
                 break
             self.stats["recv"] += 1
             self.stats["bytes_recv"] += len(raw)
+            if quarantined:
+                self.stats["backlog_discarded"] += 1
+                continue
             m, reason = msg.decode_packet(
                 raw, secret=self.shared_key, require_auth=self.require_auth)
             if m is None:
@@ -284,7 +317,17 @@ class UdpMulticastTransport:
             if not window.accept(m.seq):
                 self.stats["replayed"] += 1
                 continue
+            if m.src in self.accepted_by_source or len(self.accepted_by_source) < 1024:
+                self.accepted_by_source[m.src] = self.accepted_by_source.get(m.src, 0) + 1
+            else:
+                self.stats["source_roster_overflow"] += 1
             out.append(m)
+        if exhausted:
+            self.stats["receive_budget_exhausted"] += 1
+            self.stats["backlog_discarded"] = self.stats.get("backlog_discarded", 0) + len(out)
+            self._quarantine_receive = True
+            self.receive_degraded = True
+            return []
         return out
 
     def _replay_window(self, replay_key: tuple[str, str], now: float) -> ReplayWindow:

@@ -167,6 +167,34 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
     return hashlib.sha256(encoded).hexdigest()
 
 
+def scenario_catalog_payload(sc: Scenario) -> dict:
+    """All exogenous experiment inputs, independent of task allocator choice.
+
+    Unlike a hand-maintained list this includes every Scenario/Task dataclass field,
+    including pedestrian behavior, obstacle schedules and announcement timestamps.
+    Static ownership queues and allocator selection are intentionally excluded: an
+    architecture comparison gives each allocator the same external task catalog.
+    """
+    payload = asdict(sc)
+    queues = payload.pop("assignments")
+    unassigned = payload.pop("unassigned")
+    payload.pop("use_auction")
+    catalog = {}
+    for task in [task for queue in queues for task in queue] + unassigned:
+        previous = catalog.get(task["tid"])
+        if previous is not None and previous != task:
+            raise ValueError(f"conflicting task descriptors for {task['tid']}")
+        catalog[task["tid"]] = task
+    payload["task_catalog"] = [catalog[tid] for tid in sorted(catalog)]
+    return {"schema": 1, "exogenous_world": payload}
+
+
+def scenario_catalog_fingerprint(sc: Scenario) -> str:
+    encoded = json.dumps(scenario_catalog_payload(sc), sort_keys=True,
+                         separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 # ---------------------------------------------------------------- helpers
 
 
@@ -539,14 +567,20 @@ def deployment_socket_acceptance(n_robots: int = 3, tasks_per_robot: int = 1,
 
 def edge_overlap(n_robots: int = 3, tasks_per_robot: int = 1,
                  seed: int = 0) -> Scenario:
-    """Compact opposing work across shared space; one job per robot by default."""
+    """Crossed endpoints force shared paths instead of merely opposite headings.
+
+    The older fixture kept every pickup/drop in a different row, which was an
+    isolated-lane control despite its name. Mirroring destination rows creates
+    shared intersection/vertical-path cells without changing bodies or speeds.
+    """
     height = max(10, n_robots + 5)
     env = open_floor(12, height, name="edge_overlap")
     starts, assignments = [], []
     for i in range(n_robots):
         y = 2 + i
         left, right = (2, y), (9, y)
-        pick, drop = (left, right) if i % 2 == 0 else (right, left)
+        pick = left if i % 2 == 0 else right
+        drop = (9 if i % 2 == 0 else 2, 2 + n_robots - 1 - i)
         starts.append(pick)
         assignments.append([Task(f"EDGE-{i:02d}-{j}", pick, drop, 0.0)
                             for j in range(tasks_per_robot)])

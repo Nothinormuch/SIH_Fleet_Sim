@@ -3,6 +3,9 @@ venv/
 env/
 .venv/
 .env
+# Private, short-lived network demo credentials and live display cache
+*.key
+artifacts/deployment/multihost-live.json
 
 # Python cache
 __pycache__/

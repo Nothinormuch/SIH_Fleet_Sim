@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import platform
+import signal
 import socket
 import subprocess
 import sys
@@ -147,12 +148,26 @@ def _wait_for_hardware_ready(nodes: list[_NodeProcess], world: World,
     raise TimeoutError(f"no actuator handshake from {', '.join(missing)}")
 
 
+def _request_node_stop(process: subprocess.Popen) -> None:
+    """Stop the controller gracefully on both platforms, without blocking physics."""
+    try:
+        if os.name == "nt":
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            process.terminate()
+    except OSError:
+        process.terminate()
+
+
 def _stop_nodes(nodes: list[_NodeProcess]) -> tuple[list[dict], list[dict]]:
     reports: list[dict] = []
     failures: list[dict] = []
     for node in nodes:
         if node.process.poll() is None:
-            node.process.terminate()
+            # Windows terminate() bypasses Python's cleanup/report handlers.
+            # The process is launched in its own console group so CTRL_BREAK is
+            # a scoped graceful stop, with the existing kill timeout as fallback.
+            _request_node_stop(node.process)
     for node in nodes:
         try:
             returncode = node.process.wait(timeout=8.0)
@@ -304,6 +319,8 @@ def run_hil_demo(
             process = subprocess.Popen(
                 command, cwd=repo_root, env=child_env,
                 stdout=log_stream, stderr=subprocess.STDOUT,
+                creationflags=(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                               if os.name == "nt" else 0),
             )
             nodes.append(_NodeProcess(
                 rid=rid,
@@ -352,7 +369,7 @@ def run_hil_demo(
                     if node.process.poll() is not None:
                         raise RuntimeError(f"{node.rid} exited before scheduled failure")
                     expected_stops.add(node.rid)
-                    node.process.terminate()
+                    _request_node_stop(node.process)
                     events.append({"type": "controller_process_stop", "robot": node.rid,
                                    "t": world.t, "task": node.visual_status.get("task")})
             for event in scenario.obstacles:

@@ -34,7 +34,7 @@ from .amr import (AMRBrain, CENTRAL_POLICIES, POLICIES, POLICY_HIERARCHICAL,
                   POLICY_CENTRAL, POLICY_PRIORITIZED_SPACE_TIME,
                   POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS_PIBT,
                   POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V5,
-                  POLICY_BIOS_PIBT_V6,
+                  POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7,
                   POLICY_DECENTRALIZED, POLICY_BIOS4,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
@@ -430,6 +430,10 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         dynamic_obstacles_detected=int(agg("dynamic_obstacles_detected")),
         dynamic_reroutes=int(agg("dynamic_reroutes")),
         task_reassignments=int(agg("task_reassignments")),
+        v7_passages_observed=int(agg("v7_passages_observed")),
+        v7_passage_releases=int(agg("v7_passage_releases")),
+        v7_empty_reserved_block_ticks=int(agg("v7_empty_reserved_block_ticks")),
+        v7_passage_release_uses=int(agg("v7_passage_release_uses")),
         auction_bids_sent=int(agg("auction_bids_sent")),
         energy_bids_suppressed=int(agg("energy_bids_suppressed")),
         energy_no_eligible_rounds=int(agg("energy_no_eligible_rounds")),
@@ -801,7 +805,8 @@ def main(argv: list[str] | None = None) -> int:
                      POLICY_PRIORITIZED_SPACE_TIME,
                      POLICY_DECENTRALIZED, POLICY_BIOS_PIBT,
                      POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
-                     POLICY_BIOS_PIBT_V5, POLICY_BIOS_PIBT_V6, POLICY_BIOS4):
+                     POLICY_BIOS_PIBT_V5, POLICY_BIOS_PIBT_V6,
+                     POLICY_BIOS_PIBT_V7, POLICY_BIOS4):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")

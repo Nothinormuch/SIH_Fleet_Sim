@@ -105,7 +105,7 @@ class Rates:
     """
 
     world_hz: float = 50.0          # ground-truth integration
-    safety_hz: float = 50.0         # Layer 0 - onboard, certified, no network
+    safety_hz: float = 50.0         # simulated protective stop; not certified
     reactive_hz: float = 10.0       # Layer 1 - local avoidance / yielding
     route_hz: float = 1.0           # Layer 2 - global route; central when reachable
     heartbeat_hz: float = 5.0       # pose/intent broadcast
@@ -194,6 +194,11 @@ class TrafficSpec:
     # bidirectional single-file block.  The phase flips only after those jobs finish,
     # which avoids injecting two opposing queues into a corridor that cannot pass.
     auction_corridor_capacity: int = 2
+    # BIOS 7 releases task-admission pressure only after observing its owner cross
+    # and fully leave the loaded corridor. Physical tokens and Layer 0 are unchanged.
+    v7_passage_release: bool = True
+    v7_passage_observe_s: float = 0.1
+    v7_passage_clearance_m: float = 0.10
     # Robots gossip one catalog entry at this rate so a task missed in a radio hole is
     # eventually learned from a peer; the WMS is not required to coordinate retries.
     task_gossip_period_s: float = 1.0
