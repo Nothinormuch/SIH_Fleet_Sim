@@ -67,9 +67,21 @@ def test_embedded_cli_parsers_select_candidate_without_running_jobs(
         argv = argv + ["--policy", POLICY_BIOS_PIBT_V6]
     with pytest.raises(Parsed) as caught:
         entry(argv)
-    assert caught.value.value.policy == (POLICY_BIOS_PIBT_V6 if override else DEFAULT_ROUTE_POLICY)
+    assert caught.value.value.policy == (POLICY_BIOS_PIBT_V6 if override else
+                                        None if entry is main.main else DEFAULT_ROUTE_POLICY)
     if allocation:
         assert caught.value.value.allocation_policy == DEFAULT_ALLOCATION_POLICY
+
+
+def test_grand_challenge_default_and_explicit_override():
+    from src.release_profile import default_route_policy
+    from src.scenarios import SHOWCASE_SCENARIOS
+    for scenario in SHOWCASE_SCENARIOS:
+        expected = POLICY_BIOS_PIBT_V6 if scenario == "showcase_grand_challenge" else DEFAULT_ROUTE_POLICY
+        assert default_route_policy(scenario) == expected
+        assert parse_run_request({"scenario": scenario})["policy"] == expected
+    assert parse_run_request({"scenario": "showcase_grand_challenge",
+                              "policy": DEFAULT_ROUTE_POLICY})["policy"] == DEFAULT_ROUTE_POLICY
 
 
 @pytest.mark.parametrize("entry", [

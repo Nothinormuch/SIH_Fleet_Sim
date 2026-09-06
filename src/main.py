@@ -40,7 +40,8 @@ from .amr import (AMRBrain, CENTRAL_POLICIES, POLICIES, POLICY_HIERARCHICAL,
 from .fleet_manager import FleetManager, MANAGER_ID
 from .geometry import Cell
 from .metrics import PolicyResult, compare, safety_report
-from .release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY
+from .release_profile import DEFAULT_ALLOCATION_POLICY
+from .release_profile import default_route_policy
 from .scenarios import (SCENARIOS, SEED_99_DEMO_ROBOTS, SEED_99_DEMO_SEED,
                         Scenario, seed_99_congestion, workload_fingerprint)
 from .settings import Config, DEFAULT
@@ -752,7 +753,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Headless AMR fleet simulation (SIH26123).")
     ap.add_argument("--scenario", default="crossing_chokepoint",
                     choices=sorted(SCENARIOS))
-    ap.add_argument("--policy", default=DEFAULT_ROUTE_POLICY,
+    ap.add_argument("--policy", default=None,
                     choices=sorted(POLICIES) + ["all"],
                     help="route/traffic policy")
     ap.add_argument("--allocation-policy", choices=sorted(ALLOCATION_POLICIES),
@@ -772,6 +773,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="write full results as JSON")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.policy is None:
+        args.policy = default_route_policy(args.scenario)
 
     policies = list(POLICIES) if args.policy == "all" else [args.policy]
     by_policy: dict[str, list[PolicyResult]] = {}

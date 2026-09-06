@@ -1,5 +1,25 @@
 # BIOS7 smaller-fleet demo release candidate
 
+## Current user-approved mixed demo release
+
+The user explicitly authorized a scenario-specific merge after reviewing the
+comparison below: BIOS7 for Open Floor, Chokepoint, Human Interaction and Dead-Zone
+Mesh; BIOS6 for Grand Challenge. Auction V2 remains the default allocator.
+Dashboard scenario selection and HTTP/CLI requests with omitted policies apply
+this mapping. Explicit overrides remain available and recording labels retain
+their actual executed policy. Other scenarios retain the BIOS7 fallback; no new
+acceptance claim is made for them.
+
+The five measured selected configurations completed 52/52 tasks with zero contacts.
+Only Chokepoint showed a V7 improvement over current-source V6 (8.50%); three
+presets tied and Grand Challenge intentionally retains V6. These results are from
+the unchanged controller source be01a30; the release edits select defaults only.
+The failed seed-2017 report and three strict LAN timing failures remain visible.
+This approval supersedes the earlier publication block **for the mixed demo only**,
+not for universal V7 performance, hardware deployment or hard-real-time claims.
+
+### Historical decision before mixed-profile authorization
+
 Status: **not promoted: latest-source seed 2017 failed completion, and the
 subsequent demo-only comparison regressed Grand Challenge by 13.75% versus V6**.
 

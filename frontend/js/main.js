@@ -298,6 +298,9 @@ function selectScenarioProfile(id, announce = true) {
   const profile = App.showcase.find(item => item.id === id);
   if (!profile) return;
   el('scenario').value = profile.id;
+  el('policy').value = profile.default_policy || 'BIOS_PIBT.7';
+  syncPolicyUI();
+  updatePolicyProfile();
   el('robots').value = profile.robots;
   el('seed').value = profile.seed;
   el('duration').value = profile.duration;

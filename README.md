@@ -70,11 +70,12 @@ fallback is available. The scene follows received live positions and task/cargo 
 
 ## Decentralized priority algorithm
 
-The `seven` release candidate prepares `BIOS_PIBT.7` plus Auction V2
-(`auction_bundle`) as the public launch defaults. **Promotion to personal main is
-blocked: the completed two-host campaign passed 2/7 sessions**, despite passing
-headless acceptance. Ten-AMR live liveness and timing still require repair; see the
-[candidate release notes](docs/25-BIOS7-DEMO-RELEASE.md). Plain `auction` and the
+The user-approved **mixed demo profile** selects `BIOS_PIBT.7` for Open Floor,
+Chokepoint, Human Interaction and Dead-Zone Mesh, and `BIOS_PIBT.6` for Grand
+Challenge. All use Auction V2 (`auction_bundle`). Explicit policy choices remain
+available. This is not a full BIOS7 acceptance release: seed 2017 failed completion
+and three of seven LAN rounds failed strict timing. See the
+[demo release notes](docs/25-BIOS7-DEMO-RELEASE.md). Plain `auction` and the
 earlier route policies remain selectable controls. BIOS 6 combines V5's
 battery-aware priority/deadline cargo allocation with event-triggered communication,
 bounded predictive hints and measured recovery escalation. Every AMR broadcasts a
@@ -235,7 +236,7 @@ The additional `central` policy is a centralized prioritized-space-time A* refer
 `hierarchical` adds peer fallback when its fleet manager is unavailable. The
 [documented reference execution limitations](docs/23-BIOS7-EXPERIMENT.md#important-centralized-reference-limitation)
 prevent treating their current results as proof of superiority over validated
-industrial planners. `BIOS_PIBT.7` remains a release candidate until its release gates pass;
+industrial planners. `BIOS_PIBT.7` is demo-scoped, not broadly acceptance-qualified;
 it adds execution-identity-checked corridor passage release to the shared controller.
 
 Task ownership is selected independently of the route policy. `auction` lets peers

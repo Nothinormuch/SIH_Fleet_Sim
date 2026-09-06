@@ -55,6 +55,7 @@ from src.environment import DOCK, FREE, RACK, STATION, Warehouse  # noqa: E402
 from src.task_allocation import ALLOCATION_POLICIES  # noqa: E402
 from src.edge_lab import EdgeLab  # noqa: E402
 from src.release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY  # noqa: E402
+from src.release_profile import default_route_policy  # noqa: E402
 from backend.multihost_view import read_state as read_multihost_state  # noqa: E402
 
 _EDGE_LAB = EdgeLab()
@@ -176,7 +177,7 @@ def parse_run_request(payload: object) -> dict[str, object]:
         return value
 
     scenario = str(scalar("scenario", "open_floor_control"))
-    policy = str(scalar("policy", DEFAULT_ROUTE_POLICY))
+    policy = str(scalar("policy", default_route_policy(scenario)))
     policy = {
         "Already-Established_algorithm": POLICY_PRIORITIZED_SPACE_TIME,
         "stop-and-wait(Competition)": POLICY_STOP_WAIT_COMPETITION,
@@ -641,6 +642,7 @@ class Handler(BaseHTTPRequestHandler):
         for scenario_id, profile in SHOWCASE_SCENARIOS.items():
             showcase.append({
                 "id": scenario_id,
+                "default_policy": default_route_policy(scenario_id),
                 **{key: value for key, value in profile.items() if key != "builder"},
             })
         all_showcase = showcase + custom_scenarios

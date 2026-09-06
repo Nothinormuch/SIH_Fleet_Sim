@@ -1,5 +1,10 @@
 # BIOS 7 release checks and evidence boundaries
 
+Current scope: the user subsequently approved a mixed demo profile, BIOS7 for
+four dashboard presets and BIOS6 for Grand Challenge. See docs/25. The checks
+below remain the broader BIOS7 qualification criteria, which have **not passed**;
+the mixed-profile authorization is not a retroactive acceptance pass.
+
 Status: candidate verification in progress. This checklist does not approve a
 release or change the default policy. Personal `main` and collaborator `main` are
 not modified by running tests.
