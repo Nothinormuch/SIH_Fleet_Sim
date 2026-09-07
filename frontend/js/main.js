@@ -53,6 +53,7 @@ const App = {
   presentationMode: false,
   showcase: [],
   seed99Active: false,
+  commsEnabled: false,
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -115,6 +116,7 @@ async function boot() {
   el('camTargetSelect').addEventListener('change', e => selectRobot(e.target.value));
   el('camZoomIn').addEventListener('click', () => adjustZoom(0.4));
   el('camZoomOut').addEventListener('click', () => adjustZoom(-0.4));
+  el('commsToggleBtn')?.addEventListener('click', toggleCommsOverlay);
 
   // PiP Viewfinder Controls
   el('camPipToggle').addEventListener('click', togglePip);
@@ -155,6 +157,7 @@ async function boot() {
     adjustZoom,
     togglePresentationMode,
     toggleFullscreen,
+    toggleCommsOverlay,
     step,
     openBuilder,
     closeBuilder,
@@ -325,6 +328,14 @@ function setCameraMode(mode, redraw = true) {
     if (firstRobot) selectRobot(firstRobot.id);
   }
   if (redraw) draw();
+}
+
+function toggleCommsOverlay() {
+  App.commsEnabled = !App.commsEnabled;
+  el('commsToggleBtn')?.classList.toggle('active', App.commsEnabled);
+  el('commsToggleBtn')?.classList.toggle('comms-active', App.commsEnabled);
+  window.Shell?.toast(App.commsEnabled ? 'MANET overlay on' : 'MANET overlay off', 'Mesh radio');
+  draw();
 }
 
 function cycleCameraMode() {
@@ -576,6 +587,18 @@ async function run() {
     // HUD is re-inited on every run; init() disposes any previous instance so
     // replaying / re-running never stacks overlays.
     Hud.init(App.view, App.imgs, payload);
+
+    // MANET communication layer: synthesise packets from the telemetry and
+    // render the hardware diagram.
+    if (typeof ManetSim !== 'undefined') {
+      ManetSim.init(payload);
+    }
+    if (typeof CommsPanel !== 'undefined') {
+      CommsPanel.init();
+    }
+    if (typeof HwDiagram !== 'undefined') {
+      HwDiagram.render(document.getElementById('commsHwDiagram'));
+    }
 
     draw();
     // The first frame is on the canvas, so there is finally something behind the
@@ -999,6 +1022,11 @@ function draw() {
       robotSizeCells: Math.max(0.55, diameterCells),
       selectedRobotId: App.selectedRobotId,
     });
+    // MANET overlay: RSSI-coloured links, coverage rings, packet trails.
+    // Drawn over the fleet so packet animations are visible above chassis.
+    if (App.commsEnabled && typeof drawManetOverlay === 'function') {
+      drawManetOverlay(ctx, App.view, frame, App.imgs, frame.t);
+    }
     ctx.restore();
   }
 
@@ -1016,6 +1044,12 @@ function draw() {
   updateEventSpotlight(frame);
   if (App.presentationMode) updatePresentation(frame);
   Hud.render(frame, App.data.summary, App.data.meta, frame.t);
+
+  // MANET communication panel — always rendered when data is available,
+  // so the Comms tab in the command menu stays live during playback.
+  if (typeof CommsPanel !== 'undefined') {
+    CommsPanel.render(frame, App.data.meta, frame.t, App.selectedRobotId);
+  }
 }
 
 function renderPiP(frame, activeRobot) {

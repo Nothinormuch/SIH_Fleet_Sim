@@ -127,6 +127,7 @@
         <button id="camModeTactical" class="cam-btn">Tactical</button>
         <button id="camModeFollow" class="cam-btn">Chase</button>
         <button id="camModePov" class="cam-btn">POV</button>
+        <button id="commsToggleBtn" class="cam-btn" title="Toggle MANET Mesh Overlay (M)">📡 MANET</button>
       </div>
       <div class="persp-target">
         <select id="camTargetSelect" class="cam-select" aria-label="Focus robot"><option value="">Select AMR</option></select>
@@ -182,6 +183,7 @@
         <button class="rail-item" data-tab="coordination" role="menuitem"><i>⟡</i><span>Coordination</span><kbd>3</kbd></button>
         <button class="rail-item" data-tab="evidence" role="menuitem"><i>▤</i><span>Evidence</span><kbd>4</kbd></button>
         <button class="rail-item" data-tab="system" role="menuitem"><i>⚙</i><span>System</span><kbd>5</kbd></button>
+        <button class="rail-item" data-tab="comms" role="menuitem"><i>📡</i><span>Comms</span><kbd>6</kbd></button>
       </nav>
       <div class="rail-prompt">
         <button id="openPanelBtn"><kbd>↵</kbd>Open</button>
@@ -432,6 +434,51 @@
         </div>
       </section>
 
+      <!-- ------------------------------------------------------------ COMMS -->
+      <section class="panel split wide" data-panel="comms" role="tabpanel">
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">MANET Wireless Communication</span>
+            <h2>Protocol Stack</h2>
+            <p>How an actual packet travels between AMRs: from BIOS application layer through UDP, IP, 802.11 MAC, and 2.4 GHz radio.</p>
+          </div>
+          <div class="scroller">
+            <div class="frame comms-section">
+              <h3>Live packet inspector</h3>
+              <div id="commsStack"><p class="comms-muted">Run a simulation and select a robot to inspect the protocol stack.</p></div>
+            </div>
+            <div class="frame comms-section">
+              <h3>Peer link metrics</h3>
+              <div id="commsLinkMetrics"><p class="comms-muted">No active links.</p></div>
+            </div>
+            <div class="frame comms-section">
+              <h3>Packet feed</h3>
+              <div id="commsPacketFeed"><p class="comms-muted">No packets yet.</p></div>
+            </div>
+            <div class="frame comms-section">
+              <h3>Network statistics</h3>
+              <div id="commsNetStats"><p class="comms-muted">Run a simulation to see aggregate network statistics.</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="col-head">
+            <span class="eyebrow">Hardware architecture</span>
+            <h2>AMR Edge Node</h2>
+            <p>The physical hardware on each robot that maps to each layer of the protocol stack.</p>
+          </div>
+          <div class="scroller">
+            <div class="frame comms-section">
+              <h3>Edge node info</h3>
+              <div id="commsNodeInfo"><p class="comms-muted">Select a robot to see its network identity.</p></div>
+            </div>
+            <div class="frame comms-section">
+              <div id="commsHwDiagram"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       </div>
     </div>
 
@@ -505,6 +552,10 @@
   <script src="/js/amr.js"></script>
   <script src="/js/hud.js"></script>
   <script src="/js/network.js"></script>
+  <script src="/js/manet-sim.js"></script>
+  <script src="/js/comms-panel.js"></script>
+  <script src="/js/manet-overlay.js"></script>
+  <script src="/js/hw-diagram.js"></script>
   <script src="/js/shell.js"></script>
   <script type="module" src="/js/main.js"></script>
 </body>

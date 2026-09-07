@@ -25,13 +25,14 @@
  */
 
 const Shell = (() => {
-  const TABS = ['deployment', 'fleet', 'coordination', 'evidence', 'system'];
+  const TABS = ['deployment', 'fleet', 'coordination', 'evidence', 'system', 'comms'];
   const TITLES = {
     deployment:   ['Demo library', 'Deployment'],
     fleet:        ['Edge agents', 'Fleet'],
     coordination: ['Task allocation', 'Coordination'],
     evidence:     ['Run evidence', 'Evidence'],
     system:       ['Display and controls', 'System'],
+    comms:        ['Wireless network & protocol stack', 'Communications'],
   };
   const CAMERAS = [
     ['overview', '◉', 'Orbit'],
@@ -48,7 +49,7 @@ const Shell = (() => {
   // Categories that have nothing to show until a run exists. Deployment and
   // System are always reachable - one of them is how you get a run in the first
   // place, and the other is how you get out of trouble.
-  const NEEDS_RUN = new Set(['fleet', 'coordination', 'evidence']);
+  const NEEDS_RUN = new Set(['fleet', 'coordination', 'evidence', 'comms']);
 
   const el = id => document.getElementById(id);
   const body = document.body;
@@ -349,6 +350,9 @@ const Shell = (() => {
       case 'KeyJ':
         bios.togglePresentationMode?.();
         break;
+      case 'KeyM':
+        bios.toggleCommsOverlay?.();
+        break;
       case 'F1':
         event.preventDefault();
         body.classList.toggle('hud-hidden');
@@ -372,7 +376,7 @@ const Shell = (() => {
       case 'KeyE':
         if (isMenuOpen()) stepTab(1);
         break;
-      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5': {
+      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5': case 'Digit6': {
         const index = Number(event.code.slice(-1)) - 1;
         if (!isMenuOpen()) openMenu();
         openSheet(TABS[index]);

@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIH26123 — Fault Campaign & Communications Degradation Benchmark</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #06090e;
+      --surface: #0b111a;
+      --surface2: #101826;
+      --surface3: #162235;
+      --border: #1b2a40;
+      --border-accent: rgba(0, 212, 255, 0.35);
+      --accent: #00d4ff;
+      --accent-glow: rgba(0, 212, 255, 0.15);
+      --purple: #8b5cf6;
+      --green: #10b981;
+      --green-glow: rgba(16, 185, 129, 0.15);
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --text-faint: #475569;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+      padding-bottom: 80px;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Top Navigation Header */
+    .top-nav {
+      background: rgba(11, 17, 26, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 12px 0;
+    }
+    .top-nav .nav-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-badge {
+      background: var(--accent);
+      color: #04080e;
+      font: 800 11px/1 var(--mono);
+      padding: 5px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .brand-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 600;
+      transition: color 0.2s;
+    }
+    .nav-link:hover { color: var(--accent); }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--green-glow);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: var(--green);
+      font: 700 11px/1 var(--mono);
+      padding: 6px 12px;
+      border-radius: 999px;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* Hero Section */
+    .hero {
+      padding: 48px 0 36px;
+      border-bottom: 1px solid var(--border);
+      background: radial-gradient(1000px 400px at 50% 0%, rgba(0, 212, 255, 0.06), transparent 100%);
+      text-align: center;
+    }
+    .hero-tag {
+      display: inline-block;
+      color: var(--accent);
+      font: 700 11px/1 var(--mono);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      background: rgba(0, 212, 255, 0.1);
+      border: 1px solid rgba(0, 212, 255, 0.25);
+      padding: 5px 14px;
+      border-radius: 20px;
+    }
+    .hero h1 {
+      font-size: clamp(26px, 4vw, 42px);
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      color: #ffffff;
+      margin-bottom: 12px;
+    }
+    .hero h1 span {
+      background: linear-gradient(135deg, #00d4ff, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      max-width: 820px;
+      margin: 0 auto 24px;
+      color: var(--text-muted);
+      font-size: 14.5px;
+    }
+
+    /* Metric Strip */
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 14px;
+      text-align: center;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .stat-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--border-accent);
+    }
+    .stat-val {
+      font: 900 24px/1 var(--mono);
+      color: #ffffff;
+    }
+    .stat-val.c-accent { color: var(--accent); }
+    .stat-val.c-green { color: var(--green); }
+    .stat-val.c-amber { color: var(--amber); }
+    .stat-val.c-purple { color: var(--purple); }
+    .stat-lbl {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 6px;
+    }
+
+    /* Main Grid */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+      gap: 24px;
+      margin-top: 32px;
+    }
+    @media (max-width: 640px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+    .panel-title h2 {
+      font-size: 16px;
+      font-weight: 800;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-title p {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .badge-chip {
+      font: 700 10px/1 var(--mono);
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    .badge-chip.green {
+      background: var(--green-glow);
+      color: var(--green);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    /* Chart Containers */
+    .chart-box {
+      position: relative;
+      height: 320px;
+      width: 100%;
+    }
+
+    /* Table Styles */
+    .table-wrap {
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      text-align: left;
+    }
+    th {
+      background: var(--surface2);
+      color: var(--text-muted);
+      font: 700 11px/1 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    .mono-cell { font-family: var(--mono); font-weight: 600; }
+    .tag-success {
+      color: var(--green);
+      background: rgba(16, 185, 129, 0.1);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      display: inline-block;
+    }
+
+    /* Root-Cause Cards */
+    .defect-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      margin-top: 16px;
+      position: relative;
+      border-left: 4px solid var(--amber);
+    }
+    .defect-card.green { border-left-color: var(--green); }
+    .defect-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .defect-title {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: #ffffff;
+    }
+    .defect-tag {
+      font: 700 9px var(--mono);
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--amber);
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+    .defect-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .defect-fix {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 11.5px;
+      color: #a7f3d0;
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+    }
+    .defect-fix b { color: #ffffff; }
+
+    /* Interactive Simulator Box */
+    .sim-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 16px;
+    }
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .step-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      transition: border-color 0.2s;
+    }
+    .step-item:hover { border-color: var(--accent); }
+    .step-num {
+      background: var(--surface3);
+      color: var(--accent);
+      font: 800 11px/1 var(--mono);
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .step-text b { color: #ffffff; font-size: 12px; display: block; margin-bottom: 2px; }
+    .step-text p { color: var(--text-muted); font-size: 11.5px; }
+
+    /* Callout Alert */
+    .callout {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-top: 24px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+    .callout-icon {
+      font-size: 20px;
+      color: var(--amber);
+      flex-shrink: 0;
+    }
+    .callout-text h4 {
+      font-size: 13px;
+      font-weight: 800;
+      color: #fbbf24;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .callout-text p {
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .callout-quote {
+      margin-top: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 6px 12px;
+      border-radius: 4px;
+      color: #38bdf8;
+      display: inline-block;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 40px 0;
+      color: var(--text-faint);
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      margin-top: 48px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header class="top-nav">
+    <div class="container nav-content">
+      <div class="brand-group">
+        <span class="brand-badge">SIH26123</span>
+        <span class="brand-title">Fault Campaign & Reliability Benchmark</span>
+      </div>
+      <div class="nav-links">
+        <span class="status-pill"><span class="status-dot"></span> 180/180 SEEDS PASS</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <span class="hero-tag">Release Gate & Communications Stress Suite</span>
+      <h1>When Things Go Wrong: <span>Loss, Partitions & Crashes</span></h1>
+      <p>
+        Empirical evaluation across 180 deterministic stress seeds testing random packet loss up to 20%, 
+        temporary network partitions, and fatal process failure (auction winner crashes) with zero safety compromises.
+      </p>
+
+      <div class="hero-stats">
+        <div class="stat-card">
+          <div class="stat-val c-green">180 / 180</div>
+          <div class="stat-lbl">Runs Completed (100%)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val c-accent">0</div>
+          <div class="stat-lbl">Observed Contacts</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val c-purple">60</div>
+          <div class="stat-lbl">Tasks Reassigned (Crashes)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val c-amber">388.1 s</div>
+          <div class="stat-lbl">Median Makespan (20% Loss)</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Dashboard -->
+  <main class="container">
+
+    <!-- Row 1: The Main Empirical Benchmark Chart + Data Table -->
+    <div class="grid-2">
+      
+      <!-- Primary Makespan & P95 Chart -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <h2>📊 Makespan Stability Across Fault Modes</h2>
+            <p>Median vs. P95 Makespans (30 runs per condition)</p>
+          </div>
+          <span class="badge-chip green">Table 18 Verified</span>
+        </div>
+        <div class="chart-box">
+          <canvas id="faultMakespanChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Ground Truth Table 18 -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <h2>📋 Ground Truth Fault Campaign Data</h2>
+            <p>180/180 runs complete · 0 observed physical contacts</p>
+          </div>
+          <span class="badge-chip">30 Seeds / Condition</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Condition</th>
+                <th>Completed</th>
+                <th>Median Makespan</th>
+                <th>P95 Makespan</th>
+                <th>Contacts</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><b>0% packet loss (Baseline)</b></td>
+                <td><span class="tag-success">30/30 (100%)</span></td>
+                <td class="mono-cell">384.030 s</td>
+                <td class="mono-cell">411.668 s</td>
+                <td class="mono-cell" style="color: var(--green); font-weight:800;">0</td>
+              </tr>
+              <tr>
+                <td><b>5% packet loss</b></td>
+                <td><span class="tag-success">30/30 (100%)</span></td>
+                <td class="mono-cell">385.810 s</td>
+                <td class="mono-cell">416.035 s</td>
+                <td class="mono-cell" style="color: var(--green); font-weight:800;">0</td>
+              </tr>
+              <tr>
+                <td><b>10% packet loss</b></td>
+                <td><span class="tag-success">30/30 (100%)</span></td>
+                <td class="mono-cell">392.120 s</td>
+                <td class="mono-cell">412.687 s</td>
+                <td class="mono-cell" style="color: var(--green); font-weight:800;">0</td>
+              </tr>
+              <tr>
+                <td><b>20% packet loss</b></td>
+                <td><span class="tag-success">30/30 (100%)</span></td>
+                <td class="mono-cell">388.120 s</td>
+                <td class="mono-cell">412.941 s</td>
+                <td class="mono-cell" style="color: var(--green); font-weight:800;">0</td>
+              </tr>
+              <tr>
+                <td><b>Network partition, then heal</b></td>
+                <td><span class="tag-success">30/30 (100%)</span></td>
+                <td class="mono-cell">19.380 s</td>
+                <td class="mono-cell">19.380 s</td>
+                <td class="mono-cell" style="color: var(--green); font-weight:800;">0</td>
+              </tr>
+              <tr>
+                <td><b>Auction winner crashes</b></td>
+                <td><span class="tag-success">30/30 (100%)</span></td>
+                <td class="mono-cell">47.280 s</td>
+                <td class="mono-cell">47.280 s</td>
+                <td class="mono-cell" style="color: var(--green); font-weight:800;">0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size: 11px; color: var(--text-muted); margin-top: 14px;">
+          * Note: Winner crash runs recorded <b>60 task-reassignment observations</b>; all contact totals stayed strictly at zero.
+        </p>
+      </div>
+
+    </div>
+
+    <!-- Row 2: Packet Loss Tolerance Curve + Recovery State Machine -->
+    <div class="grid-2">
+      
+      <!-- Packet Loss Impact Curve -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <h2>📈 Network Degradation Makespan Trend</h2>
+            <p>Evaluating latency penalty as packet drop rate scales to 20%</p>
+          </div>
+          <span class="badge-chip">&lt; 2.1% Overhead</span>
+        </div>
+        <div class="chart-box">
+          <canvas id="packetLossCurveChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Recovery Mechanics Breakdown -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <h2>⚙️ Decentralized Recovery Mechanics</h2>
+            <p>How the autonomous fleet resolves degraded states in plain words</p>
+          </div>
+          <span class="badge-chip green">Autonomous</span>
+        </div>
+
+        <div class="step-list">
+          <div class="step-item">
+            <div class="step-num">1</div>
+            <div class="step-text">
+              <b>Crashed Winner Lease Expiry (20s TTL)</b>
+              <p>When a robot crashes after winning an auction, its local claim lease expires autonomously. The unfinished task immediately returns to the unallocated catalog for surviving peers to bid on.</p>
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">2</div>
+            <div class="step-text">
+              <b>Physical Obstacle Sensing</b>
+              <p>The failed chassis does not disappear; onboard LiDAR sensors register it as a physical obstacle at Layer 0 (50 Hz), preventing any collision without needing network coordination.</p>
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">3</div>
+            <div class="step-text">
+              <b>Anonymous Blocked Cell Replanning</b>
+              <p>Persistent stationary detections become expiring blocked cells in local occupancy grids, allowing surviving AMRs to replan A* bypass routes around the disabled unit.</p>
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">4</div>
+            <div class="step-text">
+              <b>Partition Healing via Gossip Sync</b>
+              <p>When partitioned network zones reconnect, peer task gossip (1.0s period) and lease expiry deterministically repair state views across all nodes in 19.38 seconds.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Row 3: Engineering Defects Caught & Resolved -->
+    <div class="panel" style="margin-top: 24px;">
+      <div class="panel-header">
+        <div class="panel-title">
+          <h2>🛠️ Critical Defects Caught & Resolved by the Campaign</h2>
+          <p>Real runtime race conditions uncovered during stress testing and eliminated prior to release</p>
+        </div>
+        <span class="badge-chip green">2/2 Fixed & Tested</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px;">
+        
+        <!-- Defect 1 -->
+        <div class="defect-card">
+          <div class="defect-header">
+            <span class="defect-title">1. Corridor-Wave Drift under Packet Loss</span>
+            <span class="defect-tag">RACE CONDITION</span>
+          </div>
+          <p class="defect-desc">
+            Under network loss, peers held different unclaimed corridor-wave memberships when completion gossip arrived out of order. This caused desynchronization in unidirectional block directions.
+          </p>
+          <div class="defect-fix">
+            <span><b>Fix:</b> Active claims now maintain their admitted phase, and unclaimed wave membership is re-derived deterministically from the canonical smallest unfinished task ID. Backed by seed-specific regression tests.</span>
+          </div>
+        </div>
+
+        <!-- Defect 2 -->
+        <div class="defect-card green">
+          <div class="defect-header">
+            <span class="defect-title">2. Empty-Approach Conflict at 20% Loss</span>
+            <span class="defect-tag" style="background: rgba(16,185,129,0.15); color: var(--green);">RESOLVED (2/12 → 12/12)</span>
+          </div>
+          <p class="defect-desc">
+            At 20% loss, a task could be awarded before an empty cross-corridor approach opposed an active loaded wave, creating deadlocks where the failing seed finished only 2 of 12 tasks.
+          </p>
+          <div class="defect-fix" style="color: #a7f3d0;">
+            <span><b>Fix:</b> Cross-corridor work is no longer awarded before approach. After lease convergence and fleet quiescence, one elected idle bidder repositions to the pickup side and joins the next auction. Passing rate jumped from 2/12 to 12/12 (100%).</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Jury Phrasing & Scientific Integrity Callout -->
+    <div class="callout">
+      <div class="callout-icon">⚖️</div>
+      <div class="callout-text">
+        <h4>Methodological Scope & Jury-Safe Claims</h4>
+        <p>
+          Passing the fault campaign demonstrates resilience under the simulated physical and network degradation models. It does <b>not</b> claim unbounded progress during permanent split-brain partitions or physical hardware actuator immunity.
+        </p>
+        <div class="callout-quote">
+          "The fleet recovers from packet loss up to 20%, partitions and crashed winners in simulation, with zero observed contacts."
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      SIH26123 · Decentralized AMR Multi-Robot Coordination Digital Twin · Fault Campaign Handbook Report
+    </div>
+  </footer>
+
+  <!-- Chart.js Render Scripts -->
+  <script>
+    // 1. Fault Campaign Makespan Bar Chart
+    const ctxMakespan = document.getElementById('faultMakespanChart').getContext('2d');
+    new Chart(ctxMakespan, {
+      type: 'bar',
+      data: {
+        labels: [
+          '0% Loss (Baseline)',
+          '5% Packet Loss',
+          '10% Packet Loss',
+          '20% Packet Loss',
+          'Partition & Heal',
+          'Winner Crashes'
+        ],
+        datasets: [
+          {
+            label: 'Median Makespan (s)',
+            data: [384.030, 385.810, 392.120, 388.120, 19.380, 47.280],
+            backgroundColor: '#00d4ff',
+            borderRadius: 6,
+            barPercentage: 0.55,
+          },
+          {
+            label: 'P95 Makespan (s)',
+            data: [411.668, 416.035, 412.687, 412.941, 19.380, 47.280],
+            backgroundColor: 'rgba(139, 92, 246, 0.85)',
+            borderRadius: 6,
+            barPercentage: 0.55,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { color: '#94a3b8', font: { family: 'Inter', size: 11, weight: '600' } }
+          },
+          tooltip: {
+            backgroundColor: '#101826',
+            borderColor: '#1b2a40',
+            borderWidth: 1,
+            titleFont: { family: 'Inter', weight: '700' },
+            bodyFont: { family: 'JetBrains Mono', size: 11 },
+            callbacks: {
+              footer: (items) => {
+                const idx = items[0].dataIndex;
+                if (idx === 5) return 'Outcome: 60 Task Reassignments | 0 Contacts';
+                if (idx === 4) return 'Outcome: Partition Healed | 0 Contacts';
+                return 'Outcome: 30/30 Completed (100%) | 0 Contacts';
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#94a3b8', font: { family: 'Inter', size: 10, weight: '500' } },
+            grid: { color: 'rgba(27, 42, 64, 0.4)' }
+          },
+          y: {
+            title: { display: true, text: 'Makespan Duration (seconds)', color: '#94a3b8', font: { family: 'Inter', size: 11 } },
+            ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } },
+            grid: { color: 'rgba(27, 42, 64, 0.4)' }
+          }
+        }
+      }
+    });
+
+    // 2. Packet Loss Degradation Curve Chart
+    const ctxCurve = document.getElementById('packetLossCurveChart').getContext('2d');
+    new Chart(ctxCurve, {
+      type: 'line',
+      data: {
+        labels: ['0% Drop', '5% Drop', '10% Drop', '20% Drop'],
+        datasets: [
+          {
+            label: 'Median Makespan (s)',
+            data: [384.030, 385.810, 392.120, 388.120],
+            borderColor: '#00d4ff',
+            backgroundColor: 'rgba(0, 212, 255, 0.12)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.3,
+            pointBackgroundColor: '#00d4ff',
+            pointRadius: 5,
+          },
+          {
+            label: 'P95 Makespan (s)',
+            data: [411.668, 416.035, 412.687, 412.941],
+            borderColor: '#8b5cf6',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderDash: [5, 5],
+            pointBackgroundColor: '#8b5cf6',
+            pointRadius: 4,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { color: '#94a3b8', font: { family: 'Inter', size: 11, weight: '600' } }
+          },
+          tooltip: {
+            backgroundColor: '#101826',
+            borderColor: '#1b2a40',
+            borderWidth: 1,
+            bodyFont: { family: 'JetBrains Mono', size: 11 }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#94a3b8', font: { family: 'Inter', size: 10 } },
+            grid: { color: 'rgba(27, 42, 64, 0.4)' }
+          },
+          y: {
+            min: 360,
+            max: 430,
+            title: { display: true, text: 'Makespan (s)', color: '#94a3b8', font: { size: 11 } },
+            ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } },
+            grid: { color: 'rgba(27, 42, 64, 0.4)' }
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>

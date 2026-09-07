@@ -157,7 +157,8 @@ export class DigitalTwin {
     this.world = new THREE.Group();
     this.dynamic = new THREE.Group();
     this.routes = new THREE.Group();
-    this.scene.add(this.world, this.routes, this.dynamic);
+    this.manetGroup = new THREE.Group();
+    this.scene.add(this.world, this.routes, this.dynamic, this.manetGroup);
     this.robots = new Map();
     this.humans = new Map();
     this.obstacles = new Map();
@@ -199,11 +200,13 @@ export class DigitalTwin {
     disposeObject(this.world);
     disposeObject(this.routes);
     disposeObject(this.dynamic);
-    this.scene.remove(this.world, this.routes, this.dynamic);
+    disposeObject(this.manetGroup);
+    this.scene.remove(this.world, this.routes, this.dynamic, this.manetGroup);
     this.world = new THREE.Group();
     this.routes = new THREE.Group();
     this.dynamic = new THREE.Group();
-    this.scene.add(this.world, this.routes, this.dynamic);
+    this.manetGroup = new THREE.Group();
+    this.scene.add(this.world, this.routes, this.dynamic, this.manetGroup);
     this.robots.clear();
     this.humans.clear();
     this.obstacles.clear();
@@ -1267,6 +1270,7 @@ export class DigitalTwin {
       this._refreshRoutes(frame);
       this.lastRouteRefresh = simTime;
     }
+    this._updateManet(frame, simTime);
     this._updateCamera(frame, simTime);
     if (this.cameraMode === 'chase' || this.cameraMode === 'pov' || this.cameraMode === 'follow' || this.cameraMode === 'orbit') {
       // When locked to a robot, OrbitControls would overwrite the placed camera.
@@ -1323,6 +1327,111 @@ export class DigitalTwin {
         );
         link.computeLineDistances();
         this.routes.add(link);
+      }
+    }
+  }
+
+  _updateManet(frame, simTime) {
+    disposeObject(this.manetGroup);
+    this.scene.remove(this.manetGroup);
+    this.manetGroup = new THREE.Group();
+    this.scene.add(this.manetGroup);
+
+    if (typeof window === 'undefined' || !window.ManetSim || !window.ManetSim.isReady()) return;
+    if (!window.App || !window.App.commsEnabled) return;
+
+    const robots = frame.robots || [];
+    if (robots.length < 2) return;
+
+    const posById = new Map(robots.map(r => [r.id, r]));
+
+    // 1. Signal rings around AMRs
+    const ringGeo = new THREE.RingGeometry(0.65, 0.72, 28);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x35c6f4,
+      transparent: true,
+      opacity: 0.35 + 0.15 * Math.sin(simTime * 4),
+      side: THREE.DoubleSide,
+    });
+
+    for (const r of robots) {
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.copy(this._toWorld(r.x, r.y, 0.12));
+      const pulse = 1 + 0.15 * Math.sin(simTime * 3 + (r.x * 2 + r.y * 3));
+      ring.scale.set(pulse, 1, pulse);
+      this.manetGroup.add(ring);
+    }
+
+    // 2. RSSI-colored wireless links
+    const drawn = new Set();
+    for (const info of frame.fleet || []) {
+      const r1 = posById.get(info.id);
+      if (!r1) continue;
+      for (const peerId of (info.peers || [])) {
+        const key = info.id < peerId ? `${info.id}|${peerId}` : `${peerId}|${info.id}`;
+        if (drawn.has(key)) continue;
+        drawn.add(key);
+        const r2 = posById.get(peerId);
+        if (!r2) continue;
+
+        const metrics = window.ManetSim.linkMetrics(info.id, peerId, frame);
+        if (!metrics) continue;
+
+        let col = 0x46d39a; // green
+        let opacity = 0.65;
+        if (metrics.rssi_dbm < -75) {
+          col = 0xff6577; // red
+          opacity = 0.35;
+        } else if (metrics.rssi_dbm < -60) {
+          col = 0xf5b843; // yellow
+          opacity = 0.5;
+        }
+
+        const p1 = this._toWorld(r1.x, r1.y, 0.32);
+        const p2 = this._toWorld(r2.x, r2.y, 0.32);
+        const line = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([p1, p2]),
+          new THREE.LineDashedMaterial({
+            color: col,
+            transparent: true,
+            opacity,
+            dashSize: 0.3,
+            gapSize: 0.15,
+          }),
+        );
+        line.computeLineDistances();
+        this.manetGroup.add(line);
+      }
+    }
+
+    // 3. In-flight packet spheres
+    const packets = window.ManetSim.packetsAt(frame.t, 0.35);
+    if (packets && packets.length > 0) {
+      const sphereGeo = new THREE.SphereGeometry(0.12, 12, 12);
+      for (const pkt of packets) {
+        const src = posById.get(pkt.src);
+        const dst = posById.get(pkt.dst);
+        if (!src || !dst) continue;
+
+        const elapsed = (frame.t - pkt.t) * 1000;
+        const progress = Math.min(1, Math.max(0, elapsed / Math.max(1, pkt.latency_ms)));
+
+        const pSrc = this._toWorld(src.x, src.y, 0.42);
+        const pDst = this._toWorld(dst.x, dst.y, 0.42);
+        const pNow = new THREE.Vector3().lerpVectors(pSrc, pDst, progress);
+
+        const sphereMat = new THREE.MeshBasicMaterial({
+          color: pkt.type === 'HB' ? 0x35c6f4 :
+                 pkt.type === 'CL' ? 0xb78cff :
+                 pkt.type === 'YD' ? 0xff6577 :
+                 pkt.type === 'BD' || pkt.type === 'AW' ? 0xf5b843 : 0x46d39a,
+          transparent: true,
+          opacity: 0.92,
+        });
+        const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+        sphere.position.copy(pNow);
+        this.manetGroup.add(sphere);
       }
     }
   }
