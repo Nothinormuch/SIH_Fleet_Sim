@@ -3,9 +3,9 @@
 Everything physical is SI. One grid cell is CELL_M metres square; the planner works
 in cells, the world works in metres, and this file is the only place the two meet.
 
-Numbers here are not invented: they are the operating envelope of commercial warehouse
-AMRs (Locus Origin, 6 River Chuck, Geek+ P-series) so that the latency and throughput
-arguments in the report survive arithmetic.
+These values define the declared simulation operating envelope. They are not a
+validated specification for a particular manufacturer's chassis. A hardware adapter
+must use measured, vendor-approved dimensions, speed and braking characteristics.
 """
 
 from dataclasses import dataclass, field, asdict
@@ -21,7 +21,7 @@ class RobotSpec:
     omega_max: float = 1.6          # rad/s  (~92 deg/s turn-in-place)
     alpha_max: float = 3.2          # rad/s^2
 
-    # --- Layer 0: protective stop. Certified, local, never network-dependent. ---
+    # --- Layer 0: simulated local protective stop; not safety-certified. ---
     # The protective field is SPEED-DEPENDENT, which is how real AMR safety scanners
     # work (ISO 3691-4 / EN ISO 13849 field switching) and not an optimisation. A fixed
     # field is wrong in both directions: too small at speed to stop in time, and so
@@ -105,7 +105,7 @@ class Rates:
     """
 
     world_hz: float = 50.0          # ground-truth integration
-    safety_hz: float = 50.0         # Layer 0 - onboard, certified, no network
+    safety_hz: float = 50.0         # simulated protective stop; not certified
     reactive_hz: float = 10.0       # Layer 1 - local avoidance / yielding
     route_hz: float = 1.0           # Layer 2 - global route; central when reachable
     heartbeat_hz: float = 5.0       # pose/intent broadcast
@@ -194,6 +194,11 @@ class TrafficSpec:
     # bidirectional single-file block.  The phase flips only after those jobs finish,
     # which avoids injecting two opposing queues into a corridor that cannot pass.
     auction_corridor_capacity: int = 2
+    # BIOS 7 releases task-admission pressure only after observing its owner cross
+    # and fully leave the loaded corridor. Physical tokens and Layer 0 are unchanged.
+    v7_passage_release: bool = True
+    v7_passage_observe_s: float = 0.1
+    v7_passage_clearance_m: float = 0.10
     # Robots gossip one catalog entry at this rate so a task missed in a radio hole is
     # eventually learned from a peer; the WMS is not required to coordinate retries.
     task_gossip_period_s: float = 1.0

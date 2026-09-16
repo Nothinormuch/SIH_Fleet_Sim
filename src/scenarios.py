@@ -87,6 +87,7 @@ class Scenario:
     # Optional per-robot starting state of charge for energy-allocation experiments.
     initial_battery_fracs: list[float] = field(default_factory=list)
     seed: int = 0
+    human_randomized: bool = False
 
     @property
     def n_robots(self) -> int:
@@ -159,8 +160,38 @@ def workload_fingerprint(sc: Scenario, cfg: Config,
         "seed": sc.seed,
         "config": asdict(cfg),
     }
+    if sc.human_randomized:
+        payload["human_behavior"] = "seeded-speed-pause-reversal-v1"
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                          allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def scenario_catalog_payload(sc: Scenario) -> dict:
+    """All exogenous experiment inputs, independent of task allocator choice.
+
+    Unlike a hand-maintained list this includes every Scenario/Task dataclass field,
+    including pedestrian behavior, obstacle schedules and announcement timestamps.
+    Static ownership queues and allocator selection are intentionally excluded: an
+    architecture comparison gives each allocator the same external task catalog.
+    """
+    payload = asdict(sc)
+    queues = payload.pop("assignments")
+    unassigned = payload.pop("unassigned")
+    payload.pop("use_auction")
+    catalog = {}
+    for task in [task for queue in queues for task in queue] + unassigned:
+        previous = catalog.get(task["tid"])
+        if previous is not None and previous != task:
+            raise ValueError(f"conflicting task descriptors for {task['tid']}")
+        catalog[task["tid"]] = task
+    payload["task_catalog"] = [catalog[tid] for tid in sorted(catalog)]
+    return {"schema": 1, "exogenous_world": payload}
+
+
+def scenario_catalog_fingerprint(sc: Scenario) -> str:
+    encoded = json.dumps(scenario_catalog_payload(sc), sort_keys=True,
+                         separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -493,6 +524,91 @@ def open_floor_control(n_robots: int = 8, tasks_per_robot: int = 4,
         tuple(stations), tuple(docks), "isolated_lanes_control")
     return Scenario("open_floor_control", env, starts, assignments,
                     duration_s=600.0, pose_noise_m=0.0, seed=seed)
+
+
+def deployment_socket_acceptance(n_robots: int = 3, tasks_per_robot: int = 1,
+                                 seed: int = 0) -> Scenario:
+    """Short, complete workload for proving the deployed I/O boundary.
+
+    Each AMR has one reachable task in its own isolated lane. The scenario is not a
+    traffic-performance benchmark; it makes a strict 20-second socket/HIL proof finish
+    every declared job so process startup, live task injection, auction convergence,
+    motion commands, completion gossip and persistence are all exercised on stage.
+    """
+    if n_robots < 3:
+        raise ValueError("deployment acceptance requires at least three AMRs")
+    width = 8
+    height = 2 * n_robots + 1
+    grid = [[RACK] * width for _ in range(height)]
+    stations = []
+    docks = []
+    starts = []
+    assignments: list[list[Task]] = []
+    for robot_index in range(n_robots):
+        y = 2 * robot_index + 1
+        grid[y] = [FREE] * width
+        grid[y][1] = STATION
+        grid[y][width - 2] = DOCK
+        stations.append((1, y))
+        docks.append((width - 2, y))
+        starts.append((2, y))
+        assignments.append([
+            Task(f"DEPLOY-{robot_index + 1:02d}", (3, y), (5, y), 0.0)
+        ])
+    env = Warehouse(
+        width, height, tuple(tuple(row) for row in grid),
+        tuple(stations), tuple(docks), "deployment_socket_acceptance",
+    )
+    return Scenario(
+        "deployment_socket_acceptance", env, starts, assignments,
+        duration_s=20.0, pose_noise_m=0.0, seed=seed,
+    )
+
+
+def edge_overlap(n_robots: int = 3, tasks_per_robot: int = 1,
+                 seed: int = 0) -> Scenario:
+    """Crossed endpoints force shared paths instead of merely opposite headings.
+
+    The older fixture kept every pickup/drop in a different row, which was an
+    isolated-lane control despite its name. Mirroring destination rows creates
+    shared intersection/vertical-path cells without changing bodies or speeds.
+    """
+    height = max(10, n_robots + 5)
+    env = open_floor(12, height, name="edge_overlap")
+    starts, assignments = [], []
+    for i in range(n_robots):
+        y = 2 + i
+        left, right = (2, y), (9, y)
+        pick = left if i % 2 == 0 else right
+        drop = (9 if i % 2 == 0 else 2, 2 + n_robots - 1 - i)
+        starts.append(pick)
+        assignments.append([Task(f"EDGE-{i:02d}-{j}", pick, drop, 0.0)
+                            for j in range(tasks_per_robot)])
+    return Scenario("edge_overlap", env, starts, assignments,
+                    duration_s=180.0, pose_noise_m=0.0, seed=seed)
+
+
+def edge_chokepoint(n_robots: int = 3, tasks_per_robot: int = 1,
+                    seed: int = 0) -> Scenario:
+    sc = edge_overlap(n_robots, tasks_per_robot, seed)
+    grid = [list(row) for row in sc.env.grid]
+    for y in range(sc.env.height):
+        if y != sc.env.height // 2:
+            grid[y][6] = RACK
+    sc.env = Warehouse(sc.env.width, sc.env.height,
+                       tuple(tuple(row) for row in grid), sc.env.stations,
+                       sc.env.docks, "edge_chokepoint")
+    sc.name, sc.duration_s = "edge_chokepoint", 240.0
+    return sc
+
+
+def edge_human_crossing(n_robots: int = 3, tasks_per_robot: int = 1,
+                        seed: int = 0) -> Scenario:
+    sc = edge_overlap(n_robots, tasks_per_robot, seed)
+    sc.name, sc.duration_s = "edge_human_crossing", 240.0
+    sc.humans = [[(x, 1), (x, sc.env.height - 2)] for x in (4, 6, 8)]
+    sc.human_randomized = True
+    return sc
 
 
 def blocked_aisle(n_robots: int = 3, tasks_per_robot: int = 1,
@@ -833,6 +949,10 @@ SCENARIOS = {
     "dead_zone_infra": lambda **kw: dead_zone(mesh_radio=False, **kw),
     "dead_zone_mesh": lambda **kw: dead_zone(mesh_radio=True, **kw),
     "open_floor_control": open_floor_control,
+    "deployment_socket_acceptance": deployment_socket_acceptance,
+    "edge_overlap": edge_overlap,
+    "edge_chokepoint": edge_chokepoint,
+    "edge_human_crossing": edge_human_crossing,
     "blocked_aisle": blocked_aisle,
     "robot_failure_reassignment": robot_failure_reassignment,
     "partition_recovery": partition_recovery,

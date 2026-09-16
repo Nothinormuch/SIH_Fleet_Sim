@@ -34,7 +34,7 @@ from .main import run_scenario
 from .metrics import PolicyResult, percentile
 from .scenarios import (blocked_aisle, human_in_aisle, partition_recovery,
                         robot_failure_reassignment, showcase_open_floor,
-                        sih_acceptance_overlap)
+                        sih_acceptance_overlap, scenario_catalog_fingerprint)
 from .task_allocation import (ALLOCATION_AUCTION_BUNDLE, ALLOCATION_HUNGARIAN,
                               ALLOCATION_PREASSIGNED)
 
@@ -79,34 +79,7 @@ def _catalog_tasks(scenario) -> list:
 
 
 def _catalog_digest(scenario) -> str:
-    payload = {
-        "map": scenario.env.to_json(),
-        "starts": [list(cell) for cell in scenario.starts],
-        "tasks": [
-            {
-                "id": task.tid,
-                "pick": list(task.pick),
-                "drop": list(task.drop),
-                "cargo_type": task.cargo_type,
-                "cargo_weight": task.cargo_weight,
-                "priority": task.priority,
-                "deadline": task.deadline,
-                "generation": task.generation,
-            }
-            for task in _catalog_tasks(scenario)
-        ],
-        "network": scenario.net.__dict__,
-        "duration_s": scenario.duration_s,
-        "failures": scenario.robot_fail_at,
-        "restarts": scenario.robot_restart_at,
-        "partition_at": scenario.partition_at,
-        "heal_at": scenario.heal_at,
-        "partition_groups": [sorted(group) for group in scenario.partition_groups],
-    }
-    wire = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(wire).hexdigest()
+    return scenario_catalog_fingerprint(scenario)
 
 
 def _worker(spec: tuple[str, int, int, str]) -> tuple[str, int, str, str, PolicyResult]:

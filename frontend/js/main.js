@@ -1,4 +1,5 @@
 import { DigitalTwin } from './digital-twin.js';
+import { policyProfile } from './policy-profile.js';
 
 /* App shell: fetch a run, play it back, keep the panel in sync.
  *
@@ -53,6 +54,7 @@ const App = {
   presentationMode: false,
   showcase: [],
   seed99Active: false,
+  autoRunWindow: true,
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -72,11 +74,12 @@ async function boot() {
 
   try {
     const r = await fetch('/api/scenarios');
-    const { scenarios, showcase, policies, allocation_policies } = await r.json();
+    const { scenarios, showcase, policies, allocation_policies,
+      default_policy, default_allocation_policy } = await r.json();
     App.showcase = showcase || [];
     fill(el('scenario'), scenarios, OPENING_SCENARIO);
-    fill(el('policy'), policies, 'BIOS_PIBT.6');
-    fill(el('allocationPolicy'), allocation_policies, 'auction_bundle');
+    fill(el('policy'), policies, default_policy || 'BIOS_PIBT.7');
+    fill(el('allocationPolicy'), allocation_policies, default_allocation_policy || 'auction_bundle');
     renderScenarioGallery(App.showcase);
     updatePolicyProfile();
     window.BiosBoot?.stage('library');
@@ -88,6 +91,15 @@ async function boot() {
   // Simulation controls
   el('runBtn').addEventListener('click', run);
   el('seed').addEventListener('input', syncSeed99Mode);
+  el('robots').addEventListener('input', syncRunWindow);
+  el('autoRunWindow').addEventListener('change', () => {
+    App.autoRunWindow = el('autoRunWindow').checked;
+    syncRunWindow();
+  });
+  el('duration').addEventListener('input', () => {
+    App.autoRunWindow = false;
+    syncRunWindow();
+  });
   el('policy').addEventListener('change', () => { syncPolicyUI(); updatePolicyProfile(); });
   el('allocationPolicy').addEventListener('change', updatePolicyProfile);
   el('trainBtn').addEventListener('click', startTraining);
@@ -186,20 +198,40 @@ async function boot() {
 }
 
 function updatePolicyProfile() {
-  const policy = el('policy').value;
   const allocation = el('allocationPolicy').value;
-  const isV6 = policy === 'BIOS_PIBT.6';
-  el('bios6Intelligence')?.classList.toggle('is-v6', isV6);
-  const proof = el('predictiveProof');
-  if (proof) proof.hidden = !isV6;
+  const draftProfile = policyProfile(el('policy').value);
   const profile = el('launchProfile');
   if (profile) {
-    profile.textContent = isV6
-      ? `BIOS 6.0 · ${allocation} · predictive edge`
-      : `${policy.replaceAll('_', ' ')} · ${allocation} · energy gate`;
+    profile.textContent = `${draftProfile.title} · ${allocation} · ${draftProfile.predictive ? 'predictive edge' : 'energy gate'}`;
   }
+  // Deployment controls only arm the next request. Titles and evidence badges
+  // describe the recording on screen, including while a new request is pending
+  // or has failed. Never relabel measured BIOS 6 playback as a BIOS 7 result.
+  const profileInfo = policyProfile(App.data?.meta?.policy);
+  el('bios6Intelligence')?.classList.toggle('is-v6', profileInfo.predictive);
+  const proof = el('predictiveProof');
+  if (proof) proof.hidden = !profileInfo.predictive;
   const mode = el('collectiveMode');
-  if (mode) mode.textContent = isV6 ? 'PREDICTIVE EDGE' : 'V6 NOT SELECTED';
+  if (mode) mode.textContent = App.data ? profileInfo.mode : 'NO RECORDING LOADED';
+  document.querySelectorAll('[data-policy-title]').forEach(node => {
+    node.textContent = profileInfo.title;
+  });
+  updateRecordingScenarioTitle();
+}
+
+function updateRecordingScenarioTitle() {
+  const title = el('activeScenarioTitle');
+  if (!title) return;
+  const meta = App.data?.meta;
+  if (!meta) {
+    title.textContent = 'No recording loaded';
+    return;
+  }
+  const scenario = App.showcase.find(item => item.id === meta.scenario);
+  // The server may execute Seed 99 instead of the selected gallery scenario.
+  // Use executed metadata, not the current selector or requested scenario name.
+  title.textContent = meta.seed_99_demo ? 'Seed 99 · Launch Gridlock'
+    : scenario?.title || String(meta.scenario || 'Recorded simulation').replaceAll('_', ' ');
 }
 
 function renderScenarioGallery(showcase) {
@@ -230,15 +262,52 @@ function renderScenarioGallery(showcase) {
   selectScenarioProfile(opening, false);
 }
 
+// Presentation-only observation allowance. This is not a completion-time
+// prediction and never changes a benchmark, server request or loaded recording.
+function suggestedDemoWindow(profile, robots) {
+  if (!profile || !profile.id.startsWith('showcase_')
+      || !Number.isInteger(robots) || robots < 2 || robots > 100
+      || !(profile.robots > 0) || !(profile.duration > 0)) return null;
+  const scaled = Math.ceil(profile.duration * Math.max(1, robots / profile.robots) / 10) * 10;
+  // Match the existing API limits; do not silently submit an invalid job.
+  const cap = Math.min(900, Math.floor(24000 / robots / 10) * 10);
+  return {seconds: Math.min(scaled, cap), capped: scaled > cap};
+}
+
+function syncRunWindow() {
+  const checkbox = el('autoRunWindow');
+  const hint = el('runWindowHint');
+  const profile = App.showcase.find(item => item.id === el('scenario').value);
+  const suggestion = suggestedDemoWindow(profile, Number(el('robots').value));
+  const pinned = App.seed99Active || Number(el('seed').value) === SEED_99_DEMO;
+  if (checkbox) {
+    checkbox.checked = App.autoRunWindow;
+    checkbox.disabled = pinned || !suggestion;
+  }
+  if (pinned) {
+    if (hint) hint.textContent = 'Seed 99 keeps its fixed six-AMR, 180 s evidence window.';
+    return;
+  }
+  if (App.autoRunWindow && suggestion) el('duration').value = suggestion.seconds;
+  if (hint) hint.textContent = App.autoRunWindow && suggestion
+    ? `Automatic demo window: ${suggestion.seconds} s${suggestion.capped ? ' (server resource cap)' : ' (fleet-scaled)'}. Not a completion guarantee; edit Duration for a fixed cutoff.`
+    : 'Fixed observation window. Increasing the fleet can also add tasks; unfinished work stays visible in the result.';
+}
+
 function selectScenarioProfile(id, announce = true) {
   const profile = App.showcase.find(item => item.id === id);
   if (!profile) return;
   el('scenario').value = profile.id;
+  el('policy').value = profile.default_policy || 'BIOS_PIBT.7';
+  syncPolicyUI();
+  updatePolicyProfile();
   el('robots').value = profile.robots;
   el('seed').value = profile.seed;
   el('duration').value = profile.duration;
   App.seed99Active = false;
-  el('activeScenarioTitle').textContent = profile.title;
+  App.autoRunWindow = true;
+  syncRunWindow();
+  updateRecordingScenarioTitle();
   el('activeScenarioEyebrow').textContent = profile.eyebrow;
   el('activeScenarioDescription').textContent = profile.description;
   const deployTitle = el('deployTitle');
@@ -246,7 +315,7 @@ function selectScenarioProfile(id, announce = true) {
   document.querySelectorAll('.scenario-card').forEach(card => {
     card.classList.toggle('active', card.dataset.scenario === id);
   });
-  if (announce) setStatus(`${profile.title} selected · energy-aware auction is active.`);
+  if (announce) setStatus(`${profile.title} selected for the next launch.`);
 }
 
 function syncSeed99Mode() {
@@ -261,7 +330,8 @@ function syncSeed99Mode() {
     // same thing. The server also reports the requested and executed scenario names.
     el('robots').value = 6;
     el('duration').value = 180;
-    el('activeScenarioTitle').textContent = 'Seed 99 · Launch Gridlock';
+    syncRunWindow();
+    updateRecordingScenarioTitle();
     el('activeScenarioEyebrow').textContent = 'Six-AMR congestion proof';
     el('activeScenarioDescription').textContent =
       'Six AMRs begin in a measured mutual standstill, negotiate locally, separate, and complete their fixed tasks.';
@@ -274,7 +344,9 @@ function syncSeed99Mode() {
   if (profile) {
     el('robots').value = profile.robots;
     el('duration').value = profile.duration;
-    el('activeScenarioTitle').textContent = profile.title;
+    App.autoRunWindow = true;
+    syncRunWindow();
+    updateRecordingScenarioTitle();
     el('activeScenarioEyebrow').textContent = profile.eyebrow;
     el('activeScenarioDescription').textContent = profile.description;
     const deployTitle = el('deployTitle');
@@ -285,6 +357,7 @@ function syncSeed99Mode() {
 
 function fill(select, values, preferred) {
   const labels = {
+    'BIOS_PIBT.7': 'BIOS 7.0 · Corridor release',
     'BIOS_PIBT.6': 'BIOS 6.0 · Predictive',
     'BIOS_PIBT.5': 'BIOS 5.0 · Energy-aware',
     'BIOS_PIBT.3': 'BIOS 3.0 · Priority traffic',
@@ -525,6 +598,7 @@ async function run() {
     window.BiosBoot?.stage('simulation');
 
     App.data = payload;
+    updatePolicyProfile();
     App.auctionEvents = payload.frames.flatMap(f => f.auction_events || []);
     const seenDecisions = new Set();
     App.decisionEvents = payload.frames.flatMap(frame =>
@@ -1127,12 +1201,12 @@ function renderCollectiveIntelligence(frame) {
   const metrics = el('collectiveMetrics');
   const stream = el('thoughtStream');
   if (!metrics || !stream || !App.data) return;
-  const isV6 = App.data.meta.policy === 'BIOS_PIBT.6';
-  el('bios6Intelligence')?.classList.toggle('is-v6', isV6);
-  el('collectiveMode').textContent = isV6 ? 'PREDICTIVE EDGE' : 'V6 NOT SELECTED';
-  if (!isV6) {
-    metrics.innerHTML = '<p class="muted">Select BIOS_PIBT.6 to activate predictive telemetry.</p>';
-    stream.innerHTML = '<p class="muted">This policy does not publish BIOS 6 decision reasons.</p>';
+  const profileInfo = policyProfile(App.data.meta.policy);
+  el('bios6Intelligence')?.classList.toggle('is-v6', profileInfo.predictive);
+  el('collectiveMode').textContent = profileInfo.mode;
+  if (!profileInfo.predictive) {
+    metrics.innerHTML = '<p class="muted">Select BIOS 6 or 7 to inspect predictive telemetry.</p>';
+    stream.innerHTML = '<p class="muted">This reference policy does not publish predictive decision reasons.</p>';
     return;
   }
 
@@ -1146,6 +1220,9 @@ function renderCollectiveIntelligence(frame) {
     <div class="metric"><span>Predictive reroutes</span><b>${Number(s.predictive_reroutes || 0)}</b></div>
     <div class="metric"><span>Packets suppressed</span><b class="good">${suppressed.toLocaleString()}</b></div>
     <div class="metric"><span>Decision events</span><b>${Number(s.decision_events || 0)}</b></div>`;
+  if (profileInfo.passageRelease) {
+    metrics.innerHTML += `<div class="metric"><span>Passage-release observations</span><b>${Number(s.v7_passage_releases || 0)}</b></div>`;
+  }
 
   const visible = App.decisionEvents
     .filter(decision => decision.t <= frame.t + 1e-6)
@@ -1248,6 +1325,7 @@ function updateManagerDot(frame) {
   if (routePolicy === 'BIOS_PIBT.1' || routePolicy === 'BIOS_PIBT.2'
       || routePolicy === 'BIOS_PIBT.3' || routePolicy === 'BIOS_PIBT.5'
       || routePolicy === 'BIOS_PIBT.6'
+      || routePolicy === 'BIOS_PIBT.7'
       || routePolicy === 'BIOS_1.0.0') {
     dot.className = 'dot up';
     text.textContent = 'edge-only peer coordination · no manager';
@@ -1438,8 +1516,8 @@ function renderSummary(s, meta, demoEvidence = null) {
       <dd>${s.min_separation_m.toFixed(2)} m</dd>
       <dt>Safety-stop control ticks</dt>
       <dd>${Number(s.safety_stop_ticks || 0)}</dd>
-      <dt>Energy-risk bids blocked</dt>
-      <dd class="good">${Number(s.energy_bids_suppressed || 0)}</dd>
+      <dt title="Repeated candidate checks rejected by feasibility or ranked-candidate filtering; not unique bids or battery failures.">Candidate checks filtered</dt>
+      <dd>${Number(s.energy_bids_suppressed || 0)}</dd>
     </dl>
     <details class="run-diagnostics">
       <summary>Coordination diagnostics <i>⌄</i></summary>

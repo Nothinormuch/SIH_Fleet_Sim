@@ -72,6 +72,12 @@ def _expect_error(fn, code: int):
 def test_scenarios_lists_bios4(base_url):
     _, body, _ = _get(f"{base_url}/api/scenarios")
     assert "BIOS_4" in body["policies"]
+    assert body["default_policy"] == "BIOS_PIBT.6"
+    assert body["default_allocation_policy"] == "auction_bundle"
+    chokepoint = next(s for s in body["showcase"] if s["id"] == "showcase_chokepoint")
+    assert chokepoint["default_policy"] == "BIOS_PIBT.7"
+    other = next(s for s in body["showcase"] if s["id"] != "showcase_chokepoint")
+    assert other["default_policy"] == "BIOS_PIBT.6"
 
 
 def _custom_floor(**overrides):

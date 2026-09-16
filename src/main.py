@@ -34,17 +34,18 @@ from .amr import (AMRBrain, CENTRAL_POLICIES, POLICIES, POLICY_HIERARCHICAL,
                   POLICY_CENTRAL, POLICY_PRIORITIZED_SPACE_TIME,
                   POLICY_STOP_WAIT, POLICY_BIOS, POLICY_BIOS_PIBT,
                   POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3, POLICY_BIOS_PIBT_V5,
-                  POLICY_BIOS_PIBT_V6,
+                  POLICY_BIOS_PIBT_V6, POLICY_BIOS_PIBT_V7,
                   POLICY_DECENTRALIZED, POLICY_BIOS4,
                   PIBT_POLICIES, Task)
 from .fleet_manager import FleetManager, MANAGER_ID
 from .geometry import Cell
 from .metrics import PolicyResult, compare, safety_report
+from .release_profile import DEFAULT_ALLOCATION_POLICY
+from .release_profile import default_route_policy
 from .scenarios import (SCENARIOS, SEED_99_DEMO_ROBOTS, SEED_99_DEMO_SEED,
                         Scenario, seed_99_congestion, workload_fingerprint)
 from .settings import Config, DEFAULT
-from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_AUCTION_BUNDLE,
-                               ALLOCATION_HUNGARIAN,
+from .task_allocation import (ALLOCATION_AUCTION, ALLOCATION_HUNGARIAN,
                                ALLOCATION_POLICIES, ALLOCATION_PREASSIGNED,
                                ACTIVE_ALLOCATION_POLICIES,
                                validate_allocation_policy)
@@ -124,6 +125,7 @@ def run_scenario(sc: Scenario, policy: str, seed: int = 0,
     dt = 1.0 / cfg.rates.world_hz
 
     world = World(sc.env, cfg, seed=seed)
+    world.human_randomized = sc.human_randomized
     net = SimNetwork(cfg, seed=seed)
     net.register(WMS_ID)
     announced_tasks = _announced_tasks(sc, allocation_policy)
@@ -429,6 +431,14 @@ def _summarize(sc, policy, allocation_policy, seed, cfg, world, net, brains,
         dynamic_obstacles_detected=int(agg("dynamic_obstacles_detected")),
         dynamic_reroutes=int(agg("dynamic_reroutes")),
         task_reassignments=int(agg("task_reassignments")),
+        recovery_paths_rejected=int(agg("recovery_paths_rejected")),
+        recovery_staged_paths=int(agg("recovery_staged_paths")),
+        recovery_braking_stops=int(agg("recovery_braking_stops")),
+        protective_turn_commands=int(agg("protective_turn_commands")),
+        v7_passages_observed=int(agg("v7_passages_observed")),
+        v7_passage_releases=int(agg("v7_passage_releases")),
+        v7_empty_reserved_block_ticks=int(agg("v7_empty_reserved_block_ticks")),
+        v7_passage_release_uses=int(agg("v7_passage_release_uses")),
         auction_bids_sent=int(agg("auction_bids_sent")),
         energy_bids_suppressed=int(agg("energy_bids_suppressed")),
         energy_no_eligible_rounds=int(agg("energy_no_eligible_rounds")),
@@ -567,7 +577,7 @@ def _seed_99_demo_evidence(frames: list[dict]) -> dict:
 
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
                       seed: int = 0, duration: float | None = None,
-                      allocation_policy: str = ALLOCATION_AUCTION_BUNDLE,
+                      allocation_policy: str = DEFAULT_ALLOCATION_POLICY,
                       policy_model=None, **extra) -> dict:
     """One run, packaged for the web dashboard: map, every frame, and the summary.
 
@@ -743,11 +753,11 @@ def main(argv: list[str] | None = None) -> int:
         description="Headless AMR fleet simulation (SIH26123).")
     ap.add_argument("--scenario", default="crossing_chokepoint",
                     choices=sorted(SCENARIOS))
-    ap.add_argument("--policy", default=POLICY_BIOS_PIBT_V6,
+    ap.add_argument("--policy", default=None,
                     choices=sorted(POLICIES) + ["all"],
                     help="route/traffic policy")
     ap.add_argument("--allocation-policy", choices=sorted(ALLOCATION_POLICIES),
-                    default=ALLOCATION_AUCTION_BUNDLE,
+                    default=DEFAULT_ALLOCATION_POLICY,
                     help=("task allocator: decentralized auction, Hungarian "
                           "comparison, or preassigned workload"))
     ap.add_argument("--robots", type=int, default=None)
@@ -763,6 +773,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="write full results as JSON")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.policy is None:
+        args.policy = default_route_policy(args.scenario)
 
     policies = list(POLICIES) if args.policy == "all" else [args.policy]
     by_policy: dict[str, list[PolicyResult]] = {}
@@ -800,7 +813,8 @@ def main(argv: list[str] | None = None) -> int:
                      POLICY_PRIORITIZED_SPACE_TIME,
                      POLICY_DECENTRALIZED, POLICY_BIOS_PIBT,
                      POLICY_BIOS_PIBT_V2, POLICY_BIOS_PIBT_V3,
-                     POLICY_BIOS_PIBT_V5, POLICY_BIOS_PIBT_V6, POLICY_BIOS4):
+                     POLICY_BIOS_PIBT_V5, POLICY_BIOS_PIBT_V6,
+                     POLICY_BIOS_PIBT_V7, POLICY_BIOS4):
             if cand in by_policy:
                 c = compare(by_policy[POLICY_STOP_WAIT], by_policy[cand])
                 print(f"VS STOP-AND-WAIT  {cand}: {json.dumps(c)}")

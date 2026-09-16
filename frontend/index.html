@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#071019">
-  <meta name="description" content="BIOS 6.0 predictive decentralized warehouse AMR digital twin">
-  <title>BIOS 6.0 · Predictive AMR Digital Twin</title>
+  <meta name="description" content="BIOS distributed warehouse AMR digital twin and measured coordination evidence">
+  <title>BIOS · AMR Digital Twin</title>
   <link rel="stylesheet" href="/css/bios.css">
 </head>
 <!--
@@ -50,7 +50,7 @@
       </div>
 
       <div class="boot-readout" id="bootReadout">
-        <div class="boot-readout-head"><b>Power-on self-test</b><span>BIOS 6.0</span></div>
+        <div class="boot-readout-head"><b>Power-on self-test</b><span data-policy-title>BIOS</span></div>
         <ol class="boot-stages">
           <li class="boot-stage" data-stage="interface"><i class="boot-stage-pip"></i><b>Interface</b><i class="boot-stage-leader"></i><span class="boot-stage-value">····</span></li>
           <li class="boot-stage" data-stage="sprites"><i class="boot-stage-pip"></i><b>Sprite set</b><i class="boot-stage-leader"></i><span class="boot-stage-value">····</span></li>
@@ -86,14 +86,14 @@
         <div class="vital-track"><i class="vital-ghost" id="vitalChargeGhost"></i><i class="vital-fill" id="vitalChargeFill"></i></div>
       </div>
       <div class="vital margin" id="vitalMargin">
-        <div class="vital-head"><b>Safety margin</b><span id="vitalMarginVal">—</span></div>
+        <div class="vital-head"><b>Closest separation</b><span id="vitalMarginVal">—</span></div>
         <div class="vital-track"><i class="vital-ghost" id="vitalMarginGhost"></i><i class="vital-fill" id="vitalMarginFill"></i></div>
       </div>
     </div>
 
     <!-- coordination state, top right -->
     <div class="link-state">
-      <div class="link-mark">BIOS&nbsp;<em>6.0</em></div>
+      <div class="link-mark" data-policy-title>BIOS</div>
       <span id="linkState"><i class="dot" id="mgrDot"></i><b id="mgrText">initialising edge peers</b></span>
       <div class="proof-pips">
         <span><i class="energy"></i>15% reserve held</span>
@@ -175,7 +175,7 @@
          carry a scrim, and only wide enough to put ground under their text. -->
 
     <div class="rail rail-left">
-      <div class="rail-mark"><b>BIOS <em>6.0</em></b><small>Command menu</small></div>
+      <div class="rail-mark"><b data-policy-title>BIOS</b><small>Command menu</small></div>
       <nav class="rail-list" role="menu" aria-label="Command menu">
         <button class="rail-item" data-tab="deployment" role="menuitem"><i>◈</i><span>Deployment</span><kbd>1</kbd></button>
         <button class="rail-item" data-tab="fleet" role="menuitem"><i>❖</i><span>Fleet</span><kbd>2</kbd></button>
@@ -243,10 +243,12 @@
                 <label class="field"><span>Seed</span><input type="number" id="seed" value="7" min="0"></label>
                 <label class="field"><span>Duration (s)</span><input type="number" id="duration" value="320" min="10" max="900" step="10"></label>
               </div>
+              <label class="window-mode"><input type="checkbox" id="autoRunWindow" checked><span>Scale demo window with fleet</span></label>
+              <p class="window-hint" id="runWindowHint" aria-live="polite">Observation limit, not a guaranteed completion time. Edit Duration to keep a fixed cutoff.</p>
               <button id="runBtn" class="launch">
                 <span class="launch-beam"></span>
                 <b>Launch</b>
-                <small id="launchProfile">BIOS 6.0 · auction · predictive edge</small>
+                <small id="launchProfile">BIOS 7.0 · auction_bundle · predictive edge</small>
               </button>
               <p class="status" id="status">Preparing the warehouse…</p>
             </div>
@@ -295,7 +297,7 @@
         </div>
         <div class="col" id="bios6Intelligence">
           <div class="col-head">
-            <span class="eyebrow">BIOS 6.0</span>
+            <span class="eyebrow" data-policy-title>BIOS</span>
             <h2>Collective intelligence</h2>
           </div>
           <div class="scroller">
@@ -304,7 +306,7 @@
                 <span class="collective-pulse"></span>
                 <div><b id="collectiveMode">Predictive edge</b><small>Soft forecasts · proven safety fallback</small></div>
               </div>
-              <div id="collectiveMetrics" class="collective-metrics"><p class="muted">Run BIOS_PIBT.6 to inspect measured intelligence.</p></div>
+              <div id="collectiveMetrics" class="collective-metrics"><p class="muted">Run BIOS 6 or 7 to inspect measured coordination.</p></div>
             </div>
             <div class="frame">
               <div class="thought-heading"><span>Decision trace</span><small>machine-derived · not generated narration</small></div>
@@ -324,15 +326,15 @@
           <div class="scroller">
             <div class="frame">
               <h3>Contacts</h3>
-              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">A contact is any tick where two bodies came closer than their combined radii. Zero is the only passing score, and it is measured, not asserted.</p>
+              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">A recorded contact means simulated body footprints overlapped. Repeated contact events for the same pair are logged at most once per second. Zero recorded contacts is required; it is not physical safety certification.</p>
             </div>
             <div class="frame">
               <h3>Closest separation</h3>
-              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">The single tightest gap observed all run. It is the number that shows the safety field did work rather than got lucky.</p>
+              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">The smallest measured centre-to-centre separation between robot and human bodies during the run, including robot pairs. It is not the free gap between their surfaces or a certified braking margin. Read it alongside the contact counts.</p>
             </div>
             <div class="frame">
               <h3>Suppressed traffic</h3>
-              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">Messages BIOS 6 decided not to send. Bandwidth is the cost of decentralization, so the count of packets avoided is the cost we removed.</p>
+              <p class="muted" style="font-style:normal;color:var(--dust);line-height:1.6">Messages the selected predictive policy suppressed. This is a measured counter, not a claim of zero network cost or a speedup against another policy.</p>
             </div>
           </div>
         </div>
