@@ -912,31 +912,31 @@ SHOWCASE_SCENARIOS = {
         "builder": showcase_open_floor, "title": "Open Floor",
         "eyebrow": "Energy-aware allocation",
         "description": "Watch identical AMRs reject unsafe jobs and self-select the best battery-feasible task.",
-        "robots": 4, "humans": 0, "seed": 4, "duration": 180, "accent": "cyan",
+        "robots": 4, "humans": 0, "seed": 4, "duration": 180, "tasks_per_robot": 2, "accent": "cyan",
     },
     "showcase_chokepoint": {
         "builder": showcase_chokepoint, "title": "Chokepoint",
         "eyebrow": "Priority negotiation",
         "description": "Opposing robots coordinate a single-file aisle with priority, yielding and expiring leases.",
-        "robots": 4, "humans": 0, "seed": 7, "duration": 320, "accent": "amber",
+        "robots": 4, "humans": 0, "seed": 7, "duration": 320, "tasks_per_robot": 2, "accent": "amber",
     },
     "showcase_human": {
         "builder": showcase_human, "title": "Human Interaction",
         "eyebrow": "Cooperative mixed traffic",
         "description": "Three workers follow seeded shelf-inspection orders between rack aisles while people and AMRs independently yield and re-route.",
-        "robots": 5, "humans": 3, "seed": 7, "duration": 520, "accent": "violet",
+        "robots": 5, "humans": 3, "seed": 7, "duration": 520, "tasks_per_robot": 2, "accent": "violet",
     },
     "showcase_dead_zone": {
         "builder": showcase_dead_zone, "title": "Dead-Zone Mesh",
         "eyebrow": "Network resilience",
         "description": "Visualise degraded links, stale-lease expiry and recovery on a genuine peer radio path.",
-        "robots": 6, "humans": 0, "seed": 4, "duration": 650, "accent": "rose",
+        "robots": 6, "humans": 0, "seed": 4, "duration": 650, "tasks_per_robot": 1, "accent": "rose",
     },
     "showcase_grand_challenge": {
         "builder": showcase_grand_challenge, "title": "Grand Challenge",
         "eyebrow": "The full BIOS story",
         "description": "Open traffic, shared human work aisles, chokepoints, a blocked aisle, mixed cargo, a dead zone and robot recovery.",
-        "robots": 10, "humans": 5, "seed": 1, "duration": 800, "accent": "lime",
+        "robots": 10, "humans": 5, "seed": 1, "duration": 800, "tasks_per_robot": 2, "accent": "lime",
     },
 }
 

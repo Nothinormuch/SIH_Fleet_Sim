@@ -55,6 +55,7 @@ const App = {
   showcase: [],
   seed99Active: false,
   autoRunWindow: true,
+  manualParams: false,
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -96,12 +97,17 @@ async function boot() {
     App.autoRunWindow = el('autoRunWindow').checked;
     syncRunWindow();
   });
+  el('manualParams').addEventListener('change', () => {
+    App.manualParams = el('manualParams').checked;
+    syncManualParams();
+  });
   el('duration').addEventListener('input', () => {
     App.autoRunWindow = false;
     syncRunWindow();
   });
   el('policy').addEventListener('change', () => { syncPolicyUI(); updatePolicyProfile(); });
   el('allocationPolicy').addEventListener('change', updatePolicyProfile);
+  syncManualParams();
   el('trainBtn').addEventListener('click', startTraining);
   el('cancelBtn').addEventListener('click', cancelTraining);
   el('uploadBtn').addEventListener('click', () => el('modelFile').click());
@@ -294,6 +300,16 @@ function syncRunWindow() {
     : 'Fixed observation window. Increasing the fleet can also add tasks; unfinished work stays visible in the result.';
 }
 
+// Manual mode is opt-in: the field stays out of the way until asked for, but its
+// value must already match the picked scenario so ticking the box mid-session does
+// not silently swap in some other scenario's task count.
+function syncManualParams() {
+  const field = el('tasksPerRobotField');
+  const hint = el('manualParamsHint');
+  if (field) field.hidden = !App.manualParams;
+  if (hint) hint.hidden = !App.manualParams;
+}
+
 function selectScenarioProfile(id, announce = true) {
   const profile = App.showcase.find(item => item.id === id);
   if (!profile) return;
@@ -304,6 +320,7 @@ function selectScenarioProfile(id, announce = true) {
   el('robots').value = profile.robots;
   el('seed').value = profile.seed;
   el('duration').value = profile.duration;
+  el('tasksPerRobot').value = profile.tasks_per_robot || 2;
   App.seed99Active = false;
   App.autoRunWindow = true;
   syncRunWindow();
@@ -331,6 +348,9 @@ function syncSeed99Mode() {
     el('robots').value = 6;
     el('duration').value = 180;
     syncRunWindow();
+    // Seed 99 is a fixed pinned proof; it has no task-count knob to override.
+    el('manualParamsWrap').classList.toggle('is-disabled', true);
+    el('manualParams').disabled = true;
     updateRecordingScenarioTitle();
     el('activeScenarioEyebrow').textContent = 'Six-AMR congestion proof';
     el('activeScenarioDescription').textContent =
@@ -341,9 +361,12 @@ function syncSeed99Mode() {
     return;
   }
 
+  el('manualParamsWrap').classList.toggle('is-disabled', false);
+  el('manualParams').disabled = false;
   if (profile) {
     el('robots').value = profile.robots;
     el('duration').value = profile.duration;
+    el('tasksPerRobot').value = profile.tasks_per_robot || 2;
     App.autoRunWindow = true;
     syncRunWindow();
     updateRecordingScenarioTitle();
@@ -577,6 +600,11 @@ async function run() {
     seed: Number(el('seed').value),
     duration: Number(el('duration').value),
   };
+  // Omitted (not sent as null/0) when manual mode is off, so the server falls back
+  // to the selected scenario's own built-in task count instead of overriding it.
+  if (App.manualParams && !App.seed99Active) {
+    request.tasks_per_robot = Number(el('tasksPerRobot').value);
+  }
   // BIOS_4 is the only policy that takes one; sending it for the others would be
   // asking the server to validate a field that means nothing to them.
   if (request.policy === 'BIOS_4' && App.model) request.model = App.model.id;

@@ -78,6 +78,19 @@ def test_scenarios_lists_bios4(base_url):
     assert chokepoint["default_policy"] == "BIOS_PIBT.7"
     other = next(s for s in body["showcase"] if s["id"] != "showcase_chokepoint")
     assert other["default_policy"] == "BIOS_PIBT.6"
+    assert all(isinstance(s["tasks_per_robot"], int) for s in body["showcase"])
+
+
+def test_run_accepts_a_manual_tasks_per_robot_override(base_url):
+    status, run = _run(base_url, scenario="crossing_chokepoint", policy="BIOS_PIBT.6",
+                       robots=3, seed=0, duration=60, tasks_per_robot=1)
+    assert status == 200
+    assert run["summary"]["tasks_announced"] == 3
+    assert run["meta"]["requested_tasks_per_robot"] == 1
+
+    body = _expect_error(
+        lambda: _run(base_url, robots=3, tasks_per_robot=99), 400)
+    assert "tasks_per_robot must be between" in body["error"]
 
 
 def _custom_floor(**overrides):

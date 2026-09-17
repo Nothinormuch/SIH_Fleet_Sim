@@ -150,6 +150,11 @@ MAX_ROBOT_SECONDS = 24_000.0
 MAX_SEED = 2**31 - 1
 MIN_CUSTOM_SIDE = 4
 MAX_CUSTOM_SIDE = 64
+MIN_TASKS_PER_ROBOT = 1
+MAX_TASKS_PER_ROBOT = 20
+# Same reasoning as MAX_ROBOT_SECONDS: each field is individually bounded, but the
+# product drives how much A* replanning a single synchronous request does.
+MAX_ROBOT_TASKS = 400
 CUSTOM_CELL_VALUES = frozenset((FREE, RACK, STATION, DOCK))
 
 mimetypes.add_type("application/javascript", ".js")
@@ -218,6 +223,26 @@ def parse_run_request(payload: object) -> dict[str, object]:
         raise RequestValidationError(
             f"requested workload exceeds {MAX_ROBOT_SECONDS:g} robot-seconds")
 
+    raw_tasks_per_robot = payload.get("tasks_per_robot")
+    tasks_per_robot = None
+    if raw_tasks_per_robot is not None:
+        if isinstance(raw_tasks_per_robot, (dict, list, bool)):
+            raise RequestValidationError("tasks_per_robot must be a scalar value")
+        try:
+            tasks_per_robot = int(raw_tasks_per_robot)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise RequestValidationError("tasks_per_robot must be a whole number") from exc
+        if isinstance(raw_tasks_per_robot, float) and not raw_tasks_per_robot.is_integer():
+            raise RequestValidationError("tasks_per_robot must be a whole number")
+        if not MIN_TASKS_PER_ROBOT <= tasks_per_robot <= MAX_TASKS_PER_ROBOT:
+            raise RequestValidationError(
+                f"tasks_per_robot must be between {MIN_TASKS_PER_ROBOT} "
+                f"and {MAX_TASKS_PER_ROBOT}")
+        if robots * tasks_per_robot > MAX_ROBOT_TASKS:
+            raise RequestValidationError(
+                f"requested workload exceeds {MAX_ROBOT_TASKS:g} total tasks "
+                f"(robots x tasks_per_robot)")
+
     model_id = payload.get("model")
     if model_id is not None and not isinstance(model_id, str):
         raise RequestValidationError("model must be a model id string")
@@ -236,6 +261,7 @@ def parse_run_request(payload: object) -> dict[str, object]:
         "robots": robots,
         "seed": seed,
         "duration": duration,
+        "tasks_per_robot": tasks_per_robot,
         "model": model_id or None,
     }
 

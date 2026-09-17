@@ -577,6 +577,7 @@ def _seed_99_demo_evidence(frames: list[dict]) -> dict:
 
 def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
                       seed: int = 0, duration: float | None = None,
+                      tasks_per_robot: int | None = None,
                       allocation_policy: str = DEFAULT_ALLOCATION_POLICY,
                       policy_model=None, **extra) -> dict:
     """One run, packaged for the web dashboard: map, every frame, and the summary.
@@ -614,8 +615,9 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         drop_cells = docks_list if docks_list else [c for c in custom_env.free_cells()]
         tasks: list[Task] = []
         n_robots = len(starts)
-        tasks_per_robot = max(2, max(1, (len(pick_cells) // n_robots) if pick_cells else 2))
-        for i in range(n_robots * tasks_per_robot):
+        custom_tasks_per_robot = tasks_per_robot if tasks_per_robot is not None else max(
+            2, max(1, (len(pick_cells) // n_robots) if pick_cells else 2))
+        for i in range(n_robots * custom_tasks_per_robot):
             pick = rng.choice(pick_cells) if pick_cells else starts[i % len(starts)]
             drop = rng.choice(drop_cells) if drop_cells else starts[i % len(starts)]
             cargo_type = rng.choice(["normal", "fragile", "heavy"])
@@ -668,6 +670,8 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
         kw: dict = {"seed": seed}
         if robots is not None:
             kw["n_robots"] = robots
+        if tasks_per_robot is not None:
+            kw["tasks_per_robot"] = tasks_per_robot
         sc = SCENARIOS[scenario](**kw)
     if duration is not None and not scenario.startswith("custom_"):
         sc.duration_s = float(duration)
@@ -696,6 +700,7 @@ def run_for_dashboard(scenario: str, policy: str, robots: int | None = None,
             "requested_scenario": requested_scenario,
             "requested_robots": robots,
             "requested_duration_s": duration,
+            "requested_tasks_per_robot": tasks_per_robot,
             "seed_99_demo": seed_99_demo,
             "allocation_policy": allocation_policy, "seed": seed,
             "robots": sc.n_robots, "duration_s": sc.duration_s,
@@ -763,6 +768,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--robots", type=int, default=None)
     ap.add_argument("--duration", type=float, default=None,
                     help="override the scenario duration in simulated seconds")
+    ap.add_argument("--tasks-per-robot", type=int, default=None,
+                    help="override the scenario's task count per robot")
     ap.add_argument("--seed", type=int, default=0,
                     help="first deterministic seed (default: 0)")
     ap.add_argument("--seeds", type=int, default=1,
@@ -786,6 +793,8 @@ def main(argv: list[str] | None = None) -> int:
             kw = {"seed": seed}
             if args.robots is not None:
                 kw["n_robots"] = args.robots
+            if args.tasks_per_robot is not None:
+                kw["tasks_per_robot"] = args.tasks_per_robot
             sc = SCENARIOS[args.scenario](**kw)
             if args.duration is not None:
                 sc.duration_s = args.duration

@@ -41,12 +41,36 @@ def test_run_request_validation_rejects_clamping_and_combined_overload():
         parse_run_request({"seed": 1e999})
     with pytest.raises(RequestValidationError, match="JSON object"):
         parse_run_request([])
+    with pytest.raises(RequestValidationError, match="tasks_per_robot must be between"):
+        parse_run_request({"tasks_per_robot": 21})
+    with pytest.raises(RequestValidationError, match="tasks_per_robot must be a whole number"):
+        parse_run_request({"tasks_per_robot": 2.5})
+    with pytest.raises(RequestValidationError, match="total tasks"):
+        parse_run_request({"robots": 100, "tasks_per_robot": 20})
 
     parsed = parse_run_request({"robots": "100", "duration": "120", "seed": "9"})
     assert parsed["robots"] == 100
     assert parsed["duration"] == 120.0
     assert parsed["seed"] == 9
     assert parsed["policy"] == "BIOS_PIBT.6"
+    assert parsed["tasks_per_robot"] is None
+
+    parsed = parse_run_request({"tasks_per_robot": "5"})
+    assert parsed["tasks_per_robot"] == 5
+
+
+def test_manual_tasks_per_robot_overrides_the_scenario_default():
+    """The dashboard's Manual toggle only means anything if this number actually
+    changes what gets simulated, not just what the request body says."""
+    default_run = run_for_dashboard(
+        "crossing_chokepoint", POLICY_BIOS_PIBT_V6, robots=3, seed=0, duration=60)
+    manual_run = run_for_dashboard(
+        "crossing_chokepoint", POLICY_BIOS_PIBT_V6, robots=3, seed=0, duration=60,
+        tasks_per_robot=1)
+    assert manual_run["summary"]["tasks_announced"] < default_run["summary"]["tasks_announced"]
+    assert manual_run["summary"]["tasks_announced"] == 3
+    assert manual_run["meta"]["requested_tasks_per_robot"] == 1
+    assert default_run["meta"]["requested_tasks_per_robot"] is None
 
 
 def test_jury_showcases_share_the_energy_aware_auction_profile():

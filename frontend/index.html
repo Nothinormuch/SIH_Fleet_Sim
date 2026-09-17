@@ -235,16 +235,28 @@
           </div>
           <div class="scroller">
             <div class="frame">
-              <h3>Mission parameters</h3>
+              <div class="frame-head-row">
+                <h3>Mission parameters</h3>
+                <label class="switch-toggle" id="manualParamsWrap">
+                  <input type="checkbox" id="manualParams">
+                  <span class="switch-track"><i class="switch-thumb"></i></span>
+                  <span class="switch-label">Manual</span>
+                </label>
+              </div>
               <div class="field-grid">
                 <label class="field span-3"><span>Route intelligence</span><select id="policy"></select></label>
                 <label class="field span-3"><span>Task allocation</span><select id="allocationPolicy"></select></label>
                 <label class="field"><span>AMRs</span><input type="number" id="robots" value="4" min="2" max="100"></label>
                 <label class="field"><span>Seed</span><input type="number" id="seed" value="7" min="0"></label>
                 <label class="field"><span>Duration (s)</span><input type="number" id="duration" value="320" min="10" max="900" step="10"></label>
+                <label class="field manual-only" id="tasksPerRobotField" hidden>
+                  <span>Tasks / robot</span>
+                  <input type="number" id="tasksPerRobot" value="2" min="1" max="20">
+                </label>
               </div>
               <label class="window-mode"><input type="checkbox" id="autoRunWindow" checked><span>Scale demo window with fleet</span></label>
               <p class="window-hint" id="runWindowHint" aria-live="polite">Observation limit, not a guaranteed completion time. Edit Duration to keep a fixed cutoff.</p>
+              <p class="window-hint" id="manualParamsHint" hidden>Manual mode overrides this scenario's built-in task count. Every other field above is already yours to edit either way.</p>
               <button id="runBtn" class="launch">
                 <span class="launch-beam"></span>
                 <b>Launch</b>
