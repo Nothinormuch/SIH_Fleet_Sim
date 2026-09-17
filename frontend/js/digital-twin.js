@@ -136,7 +136,10 @@ export class DigitalTwin {
     this.renderer = new THREE.WebGLRenderer({canvas, antialias: true, powerPreference: 'high-performance'});
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // PCFSoftShadowMap is deprecated in this build and silently falls back to hard
+    // PCFShadowMap (confirmed via the console warning) - VSM is the replacement that
+    // actually blurs, via shadow.radius/blurSamples on the casting light below.
+    this.renderer.shadowMap.type = THREE.VSMShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     // A little hotter than the pre-rework 1.05: the shell lays a vignette over the
@@ -175,6 +178,7 @@ export class DigitalTwin {
     this.cameraMode = 'overview';
     this.lastRouteRefresh = -Infinity;
     this._addLighting();
+    this._buildEnvironment();
     canvas.addEventListener('pointerdown', event => this._selectAt(event));
   }
 
@@ -189,10 +193,71 @@ export class DigitalTwin {
     key.shadow.camera.right = 35;
     key.shadow.camera.top = 35;
     key.shadow.camera.bottom = -35;
+    // VSM blurs via a two-pass box filter over `radius` texels with `blurSamples`
+    // taps - unlike PCF's radius (a no-op without PCFSoftShadowMap, which this build
+    // silently doesn't support), this one actually softens the shadow edge.
+    key.shadow.radius = 6;
+    key.shadow.blurSamples = 16;
+    key.shadow.bias = -0.0006;
     this.scene.add(key);
     const rim = new THREE.DirectionalLight(0x35c6f4, 1.2);
     rim.position.set(22, 14, -22);
     this.scene.add(rim);
+  }
+
+  /* Image-based lighting for every MeshStandardMaterial in the scene, generated
+   * once from a small procedural "room" rather than loaded from a file - the twin
+   * is vendored with no CDN and no baked HDRI, so the environment has to be built,
+   * not fetched.
+   *
+   * Without this, metal (the racks, the robot chassis, the dock housings) can only
+   * ever show the two or three discrete highlights the direct lights produce - a
+   * flat-shaded look no amount of roughness tuning fixes, because reflective
+   * materials are supposed to mirror their surroundings, not just catch a highlight.
+   * `scene.environmentIntensity` is the dial that keeps this from re-lighting scenes
+   * that were already tuned against direct light alone: it scales the IBL
+   * contribution down without touching every material's own envMapIntensity.
+   */
+  _buildEnvironment() {
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const envScene = new THREE.Scene();
+
+    const room = new THREE.Mesh(
+      new THREE.BoxGeometry(40, 18, 40),
+      new THREE.MeshStandardMaterial({side: THREE.BackSide, color: 0x0d1720, roughness: 1}),
+    );
+    envScene.add(room);
+
+    const panel = (w, h, d, x, y, z, color) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshBasicMaterial({color}));
+      mesh.position.set(x, y, z);
+      envScene.add(mesh);
+    };
+    // A bank of overhead fixtures - the dominant reflection on the floor and on
+    // every rack upright, the same way real ceiling lighting is.
+    panel(20, 0.4, 20, 0, 8.5, 0, 0xdfeef8);
+    // Dim walls with the dashboard's own accent colours worked in at low strength,
+    // so a robot's paint reflects a hint of the room it is actually standing in
+    // (cyan/amber, the same palette as the HUD) rather than a neutral studio grey.
+    panel(0.6, 10, 34, -19, 1, 0, 0x123044);
+    panel(0.6, 10, 34, 19, 1, 0, 0x2a2412);
+    panel(34, 10, 0.6, 0, 1, -19, 0x0f1e28);
+    panel(34, 10, 0.6, 0, 1, 19, 0x0f1e28);
+    panel(6, 0.5, 6, -10, 8.2, -8, PALETTE.cyan);
+    panel(6, 0.5, 6, 10, 8.2, 8, PALETTE.amber);
+
+    // A low sigma bakes the overhead panel as a near-mirror-sharp hotspot - visible
+    // live as a blown-out white glare on the floor and rack uprights at grazing
+    // angles. A wider blur turns it into the soft glow a diffuse ceiling actually
+    // reads as, without giving up the reflection itself. PMREMGenerator's internal
+    // sample budget maxes out at 20 (confirmed live: samples scale linearly with
+    // sigma, and both 0.09 and 0.045 clipped it) - 0.04 is the largest safe value.
+    const envMap = pmrem.fromScene(envScene, 0.04).texture;
+    this.scene.environment = envMap;
+    this.scene.environmentIntensity = 0.4;
+    pmrem.dispose();
+    disposeObject(envScene);
   }
 
   load(data) {
@@ -399,8 +464,11 @@ export class DigitalTwin {
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(widthM + apronMargin * 2 + .8, .35,
                             heightM + apronMargin * 2 + .8),
+      // Sealed warehouse concrete, not raw concrete: low enough roughness that the
+      // overhead fixtures in the environment map read as a faint sheen underfoot,
+      // which is what tells an eye "this floor has been walked and driven on."
       new THREE.MeshStandardMaterial({map: floorMap, color: 0xb9c4d2,
-                                      roughness: .82, metalness: .12}),
+                                      roughness: .68, metalness: .12}),
     );
     floor.position.y = -.22;
     floor.receiveShadow = true;
