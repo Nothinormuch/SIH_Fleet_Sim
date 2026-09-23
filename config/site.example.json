@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "fleet_id": "warehouse-demo-a",
+  "map_version": "2026-09-04.1",
+  "map_frame": "map",
+  "robot_model": "replace-with-purchased-amr-model",
+  "cell_m": 1.4,
+  "warehouse": {
+    "name": "vendor-neutral-demo-warehouse",
+    "width": 12,
+    "height": 8,
+    "grid": [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
+      [0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0],
+      [0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0],
+      [0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0],
+      [0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0],
+      [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ],
+    "stations": [[0, 1], [0, 6]],
+    "docks": [[11, 1], [11, 6]]
+  },
+  "starts": [[1, 1], [1, 3], [1, 6]],
+  "robot_profile": {
+    "radius_m": 0.35,
+    "v_max": 1.2,
+    "a_max": 0.8,
+    "omega_max": 1.6,
+    "alpha_max": 3.2,
+    "reaction_s": 0.1,
+    "safety_margin_m": 0.15,
+    "omni_stop_m": 0.45,
+    "safety_cone_rad": 1.05,
+    "static_cone_rad": 0.35,
+    "v_turn": 0.2,
+    "sense_radius_m": 4.0,
+    "battery_full_wh": 480.0,
+    "draw_move_w": 210.0,
+    "draw_idle_w": 45.0,
+    "charge_w": 900.0,
+    "max_payload_kg": 100.0
+  }
+}

@@ -3,6 +3,9 @@ venv/
 env/
 .venv/
 .env
+# Private network-demo credentials and transient live telemetry
+*.key
+artifacts/deployment/multihost-live.json
 
 # Python cache
 __pycache__/

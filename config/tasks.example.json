@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "task_id": "ORDER-001",
+      "pickup": [0, 1],
+      "drop": [11, 6],
+      "cargo_type": "normal",
+      "cargo_weight_kg": 12.5,
+      "priority": 2,
+      "deadline_s": 180.0,
+      "generation": 0
+    },
+    {
+      "task_id": "ORDER-002",
+      "pickup": [0, 6],
+      "drop": [11, 1],
+      "cargo_type": "fragile",
+      "cargo_weight_kg": 8.0,
+      "priority": 5,
+      "deadline_s": 120.0,
+      "generation": 0
+    }
+  ]
+}

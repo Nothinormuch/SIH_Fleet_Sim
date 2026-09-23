@@ -1,0 +1,6038 @@
+{
+  "scope": "headless_state_diagnostic_not_timing_evidence",
+  "source": "85ab5125e6a720cec641fbdff9e5c5bbe8fee9dbf08b63735fd31653cce22ea3",
+  "post_run_probes": [
+    {
+      "id": "AMR01",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR08",
+          "cell": [
+            29,
+            14
+          ],
+          "pose": [
+            41.402,
+            20.292,
+            -0.116
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR08"
+          },
+          "battery_frac": 0.997,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 6970,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR09",
+          "cell": [
+            10,
+            19
+          ],
+          "pose": [
+            14.686,
+            27.255,
+            2.801
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.4200000000001,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR09"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.4200000000001,
+          "pose_seq": 5959,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR03",
+          "cell": [
+            30,
+            10
+          ],
+          "pose": [
+            42.772,
+            14.709,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.7,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR03"
+          },
+          "battery_frac": 0.793,
+          "task_id": null,
+          "pose_seen_t": 799.7,
+          "pose_seq": 7696,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR10",
+          "cell": [
+            9,
+            1
+          ],
+          "pose": [
+            13.2,
+            2.093,
+            -3.137
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR10"
+          },
+          "battery_frac": 0.565,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 8007,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR06",
+          "cell": [
+            10,
+            1
+          ],
+          "pose": [
+            14.67,
+            2.079,
+            -2.663
+          ],
+          "priority": 1000.0,
+          "blocked_on": null,
+          "state": "blocked",
+          "goal": [
+            30,
+            2
+          ],
+          "last_seen": 799.82,
+          "intent": [
+            [
+              10,
+              2
+            ],
+            [
+              10,
+              3
+            ],
+            [
+              10,
+              4
+            ],
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              6
+            ]
+          ],
+          "windows": [
+            [
+              799.82,
+              801.6800000000001
+            ],
+            [
+              801.2800000000001,
+              803.1400000000001
+            ],
+            [
+              802.74,
+              804.59
+            ],
+            [
+              804.2,
+              806.0500000000001
+            ],
+            [
+              805.6500000000001,
+              807.5100000000001
+            ]
+          ],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 1,
+            "service_age": 135,
+            "loaded": 1,
+            "distance_bias": -21,
+            "robot_id": "AMR06"
+          },
+          "battery_frac": 0.518,
+          "task_id": "T017",
+          "pose_seen_t": 799.82,
+          "pose_seq": 10104,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR04",
+          "cell": [
+            10,
+            3
+          ],
+          "pose": [
+            14.715,
+            4.697,
+            1.557
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": [
+            10,
+            3
+          ],
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR04"
+          },
+          "battery_frac": 0.813,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 10656,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR02",
+          "cell": [
+            15,
+            6
+          ],
+          "pose": [
+            21.798,
+            9.103,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR02"
+          },
+          "battery_frac": 0.569,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 9604,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            1,
+            12
+          ],
+          "normal": [
+            [
+              2.0999999999999996,
+              17.5
+            ]
+          ],
+          "boundary": [
+            [
+              2.0999999999999996,
+              17.5
+            ]
+          ]
+        },
+        {
+          "cell": [
+            0,
+            13
+          ],
+          "normal": [
+            [
+              0.7,
+              18.9
+            ]
+          ],
+          "boundary": [
+            [
+              0.7,
+              18.9
+            ]
+          ]
+        },
+        {
+          "cell": [
+            0,
+            11
+          ],
+          "normal": [
+            [
+              0.7,
+              16.099999999999998
+            ]
+          ],
+          "boundary": [
+            [
+              0.7,
+              16.099999999999998
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AMR02",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR03",
+          "cell": [
+            30,
+            10
+          ],
+          "pose": [
+            42.772,
+            14.709,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.7,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR03"
+          },
+          "battery_frac": 0.793,
+          "task_id": null,
+          "pose_seen_t": 799.7,
+          "pose_seq": 7696,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR01",
+          "cell": [
+            0,
+            12
+          ],
+          "pose": [
+            0.631,
+            17.544,
+            3.13
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR01"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 5985,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR06",
+          "cell": [
+            10,
+            1
+          ],
+          "pose": [
+            14.67,
+            2.079,
+            -2.663
+          ],
+          "priority": 1000.0,
+          "blocked_on": null,
+          "state": "blocked",
+          "goal": [
+            30,
+            2
+          ],
+          "last_seen": 799.82,
+          "intent": [
+            [
+              10,
+              2
+            ],
+            [
+              10,
+              3
+            ],
+            [
+              10,
+              4
+            ],
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              6
+            ]
+          ],
+          "windows": [
+            [
+              799.82,
+              801.6800000000001
+            ],
+            [
+              801.2800000000001,
+              803.1400000000001
+            ],
+            [
+              802.74,
+              804.59
+            ],
+            [
+              804.2,
+              806.0500000000001
+            ],
+            [
+              805.6500000000001,
+              807.5100000000001
+            ]
+          ],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 1,
+            "service_age": 135,
+            "loaded": 1,
+            "distance_bias": -21,
+            "robot_id": "AMR06"
+          },
+          "battery_frac": 0.518,
+          "task_id": "T017",
+          "pose_seen_t": 799.82,
+          "pose_seq": 10104,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR10",
+          "cell": [
+            9,
+            1
+          ],
+          "pose": [
+            13.2,
+            2.093,
+            -3.137
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR10"
+          },
+          "battery_frac": 0.565,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 8007,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR08",
+          "cell": [
+            29,
+            14
+          ],
+          "pose": [
+            41.402,
+            20.292,
+            -0.116
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR08"
+          },
+          "battery_frac": 0.997,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 6970,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR04",
+          "cell": [
+            10,
+            3
+          ],
+          "pose": [
+            14.715,
+            4.697,
+            1.557
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": [
+            10,
+            3
+          ],
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR04"
+          },
+          "battery_frac": 0.813,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 10656,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR09",
+          "cell": [
+            10,
+            19
+          ],
+          "pose": [
+            14.686,
+            27.255,
+            2.801
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.4200000000001,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR09"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.4200000000001,
+          "pose_seq": 5959,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            16,
+            6
+          ],
+          "normal": [
+            [
+              23.099999999999998,
+              9.1
+            ]
+          ],
+          "boundary": [
+            [
+              23.099999999999998,
+              9.1
+            ]
+          ]
+        },
+        {
+          "cell": [
+            14,
+            6
+          ],
+          "normal": [
+            [
+              20.299999999999997,
+              9.1
+            ]
+          ],
+          "boundary": [
+            [
+              20.299999999999997,
+              9.1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AMR03",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR10",
+          "cell": [
+            9,
+            1
+          ],
+          "pose": [
+            13.2,
+            2.093,
+            -3.137
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR10"
+          },
+          "battery_frac": 0.565,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 8007,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR01",
+          "cell": [
+            0,
+            12
+          ],
+          "pose": [
+            0.631,
+            17.544,
+            3.13
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR01"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 5985,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR09",
+          "cell": [
+            10,
+            19
+          ],
+          "pose": [
+            14.686,
+            27.255,
+            2.801
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.4200000000001,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR09"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.4200000000001,
+          "pose_seq": 5959,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR08",
+          "cell": [
+            29,
+            14
+          ],
+          "pose": [
+            41.402,
+            20.292,
+            -0.116
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR08"
+          },
+          "battery_frac": 0.997,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 6970,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR06",
+          "cell": [
+            10,
+            1
+          ],
+          "pose": [
+            14.67,
+            2.079,
+            -2.663
+          ],
+          "priority": 1000.0,
+          "blocked_on": null,
+          "state": "blocked",
+          "goal": [
+            30,
+            2
+          ],
+          "last_seen": 799.82,
+          "intent": [
+            [
+              10,
+              2
+            ],
+            [
+              10,
+              3
+            ],
+            [
+              10,
+              4
+            ],
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              6
+            ]
+          ],
+          "windows": [
+            [
+              799.82,
+              801.6800000000001
+            ],
+            [
+              801.2800000000001,
+              803.1400000000001
+            ],
+            [
+              802.74,
+              804.59
+            ],
+            [
+              804.2,
+              806.0500000000001
+            ],
+            [
+              805.6500000000001,
+              807.5100000000001
+            ]
+          ],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 1,
+            "service_age": 135,
+            "loaded": 1,
+            "distance_bias": -21,
+            "robot_id": "AMR06"
+          },
+          "battery_frac": 0.518,
+          "task_id": "T017",
+          "pose_seen_t": 799.82,
+          "pose_seq": 10104,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR04",
+          "cell": [
+            10,
+            3
+          ],
+          "pose": [
+            14.715,
+            4.697,
+            1.557
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": [
+            10,
+            3
+          ],
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR04"
+          },
+          "battery_frac": 0.813,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 10656,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR02",
+          "cell": [
+            15,
+            6
+          ],
+          "pose": [
+            21.798,
+            9.103,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR02"
+          },
+          "battery_frac": 0.569,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 9604,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            29,
+            10
+          ],
+          "normal": [
+            [
+              41.3,
+              14.7
+            ]
+          ],
+          "boundary": [
+            [
+              41.3,
+              14.7
+            ]
+          ]
+        },
+        {
+          "cell": [
+            30,
+            11
+          ],
+          "normal": [
+            [
+              42.699999999999996,
+              16.099999999999998
+            ]
+          ],
+          "boundary": [
+            [
+              42.699999999999996,
+              16.099999999999998
+            ]
+          ]
+        },
+        {
+          "cell": [
+            30,
+            9
+          ],
+          "normal": [
+            [
+              42.699999999999996,
+              13.299999999999999
+            ]
+          ],
+          "boundary": [
+            [
+              42.699999999999996,
+              13.299999999999999
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AMR04",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR06",
+          "cell": [
+            10,
+            1
+          ],
+          "pose": [
+            14.67,
+            2.079,
+            -2.663
+          ],
+          "priority": 1000.0,
+          "blocked_on": null,
+          "state": "blocked",
+          "goal": [
+            30,
+            2
+          ],
+          "last_seen": 799.82,
+          "intent": [
+            [
+              10,
+              2
+            ],
+            [
+              10,
+              3
+            ],
+            [
+              10,
+              4
+            ],
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              6
+            ]
+          ],
+          "windows": [
+            [
+              799.82,
+              801.6800000000001
+            ],
+            [
+              801.2800000000001,
+              803.1400000000001
+            ],
+            [
+              802.74,
+              804.59
+            ],
+            [
+              804.2,
+              806.0500000000001
+            ],
+            [
+              805.6500000000001,
+              807.5100000000001
+            ]
+          ],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 1,
+            "service_age": 135,
+            "loaded": 1,
+            "distance_bias": -21,
+            "robot_id": "AMR06"
+          },
+          "battery_frac": 0.518,
+          "task_id": "T017",
+          "pose_seen_t": 799.82,
+          "pose_seq": 10104,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR03",
+          "cell": [
+            30,
+            10
+          ],
+          "pose": [
+            42.772,
+            14.709,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.7,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR03"
+          },
+          "battery_frac": 0.793,
+          "task_id": null,
+          "pose_seen_t": 799.7,
+          "pose_seq": 7696,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR08",
+          "cell": [
+            29,
+            14
+          ],
+          "pose": [
+            41.402,
+            20.292,
+            -0.116
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR08"
+          },
+          "battery_frac": 0.997,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 6970,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR01",
+          "cell": [
+            0,
+            12
+          ],
+          "pose": [
+            0.631,
+            17.544,
+            3.13
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR01"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 5985,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR10",
+          "cell": [
+            9,
+            1
+          ],
+          "pose": [
+            13.2,
+            2.093,
+            -3.137
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR10"
+          },
+          "battery_frac": 0.565,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 8007,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR09",
+          "cell": [
+            10,
+            19
+          ],
+          "pose": [
+            14.686,
+            27.255,
+            2.801
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.4200000000001,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR09"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.4200000000001,
+          "pose_seq": 5959,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR02",
+          "cell": [
+            15,
+            6
+          ],
+          "pose": [
+            21.798,
+            9.103,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR02"
+          },
+          "battery_frac": 0.569,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 9604,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            10,
+            4
+          ],
+          "normal": [
+            [
+              14.7,
+              6.3
+            ]
+          ],
+          "boundary": [
+            [
+              14.7,
+              6.3
+            ]
+          ]
+        },
+        {
+          "cell": [
+            10,
+            2
+          ],
+          "normal": [
+            [
+              14.7,
+              3.5
+            ]
+          ],
+          "boundary": [
+            [
+              14.7,
+              3.5
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AMR05",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR07",
+          "cell": [
+            16,
+            7
+          ],
+          "pose": [
+            23.059,
+            10.553,
+            1.679
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR07"
+          },
+          "battery_frac": 0.728,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 10139,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            19,
+            6
+          ],
+          "normal": [
+            [
+              27.299999999999997,
+              9.1
+            ]
+          ],
+          "boundary": [
+            [
+              27.299999999999997,
+              9.1
+            ]
+          ]
+        },
+        {
+          "cell": [
+            17,
+            6
+          ],
+          "normal": [
+            [
+              24.5,
+              9.1
+            ]
+          ],
+          "boundary": [
+            [
+              24.5,
+              9.1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AMR06",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR09",
+          "cell": [
+            10,
+            19
+          ],
+          "pose": [
+            14.686,
+            27.255,
+            2.801
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.4200000000001,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR09"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.4200000000001,
+          "pose_seq": 5959,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR08",
+          "cell": [
+            29,
+            14
+          ],
+          "pose": [
+            41.402,
+            20.292,
+            -0.116
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR08"
+          },
+          "battery_frac": 0.997,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 6970,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR03",
+          "cell": [
+            30,
+            10
+          ],
+          "pose": [
+            42.771,
+            14.687,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.08,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR03"
+          },
+          "battery_frac": 0.793,
+          "task_id": null,
+          "pose_seen_t": 799.08,
+          "pose_seq": 7694,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR01",
+          "cell": [
+            0,
+            12
+          ],
+          "pose": [
+            0.631,
+            17.544,
+            3.13
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR01"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 5985,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR10",
+          "cell": [
+            9,
+            1
+          ],
+          "pose": [
+            13.2,
+            2.093,
+            -3.137
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR10"
+          },
+          "battery_frac": 0.565,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 8007,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR04",
+          "cell": [
+            10,
+            3
+          ],
+          "pose": [
+            14.715,
+            4.697,
+            1.557
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": [
+            10,
+            3
+          ],
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR04"
+          },
+          "battery_frac": 0.813,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 10656,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR02",
+          "cell": [
+            15,
+            6
+          ],
+          "pose": [
+            21.798,
+            9.103,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR02"
+          },
+          "battery_frac": 0.569,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 9604,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            11,
+            1
+          ],
+          "normal": [
+            [
+              16.099999999999998,
+              2.0999999999999996
+            ]
+          ],
+          "boundary": [
+            [
+              16.099999999999998,
+              2.0999999999999996
+            ]
+          ]
+        },
+        {
+          "cell": [
+            9,
+            1
+          ],
+          "normal": null,
+          "boundary": null
+        },
+        {
+          "cell": [
+            10,
+            2
+          ],
+          "normal": [
+            [
+              14.7,
+              3.5
+            ]
+          ],
+          "boundary": [
+            [
+              14.7,
+              3.5
+            ]
+          ]
+        },
+        {
+          "cell": [
+            10,
+            0
+          ],
+          "normal": [
+            [
+              14.7,
+              0.7
+            ]
+          ],
+          "boundary": [
+            [
+              14.7,
+              0.7
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AMR07",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR05",
+          "cell": [
+            18,
+            6
+          ],
+          "pose": [
+            25.657,
+            9.095,
+            -0.003
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR05"
+          },
+          "battery_frac": 0.894,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 8830,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            16,
+            8
+          ],
+          "normal": [
+            [
+              23.099999999999998,
+              11.899999999999999
+            ]
+          ],
+          "boundary": [
+            [
+              23.099999999999998,
+              11.899999999999999
+            ]
+          ]
+        },
+        {
+          "cell": [
+            16,
+            6
+          ],
+          "normal": [
+            [
+              23.099999999999998,
+              9.1
+            ]
+          ],
+          "boundary": [
+            [
+              23.099999999999998,
+              9.1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AMR08",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR03",
+          "cell": [
+            30,
+            10
+          ],
+          "pose": [
+            42.772,
+            14.709,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.7,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR03"
+          },
+          "battery_frac": 0.793,
+          "task_id": null,
+          "pose_seen_t": 799.7,
+          "pose_seq": 7696,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR09",
+          "cell": [
+            10,
+            19
+          ],
+          "pose": [
+            14.686,
+            27.255,
+            2.801
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.4200000000001,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR09"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.4200000000001,
+          "pose_seq": 5959,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR01",
+          "cell": [
+            0,
+            12
+          ],
+          "pose": [
+            0.631,
+            17.544,
+            3.13
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR01"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 5985,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR10",
+          "cell": [
+            9,
+            1
+          ],
+          "pose": [
+            13.168,
+            2.114,
+            -3.137
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR10"
+          },
+          "battery_frac": 0.565,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 8006,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR06",
+          "cell": [
+            10,
+            1
+          ],
+          "pose": [
+            14.67,
+            2.079,
+            -2.663
+          ],
+          "priority": 1000.0,
+          "blocked_on": null,
+          "state": "blocked",
+          "goal": [
+            30,
+            2
+          ],
+          "last_seen": 799.82,
+          "intent": [
+            [
+              10,
+              2
+            ],
+            [
+              10,
+              3
+            ],
+            [
+              10,
+              4
+            ],
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              6
+            ]
+          ],
+          "windows": [
+            [
+              799.82,
+              801.6800000000001
+            ],
+            [
+              801.2800000000001,
+              803.1400000000001
+            ],
+            [
+              802.74,
+              804.59
+            ],
+            [
+              804.2,
+              806.0500000000001
+            ],
+            [
+              805.6500000000001,
+              807.5100000000001
+            ]
+          ],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 1,
+            "service_age": 135,
+            "loaded": 1,
+            "distance_bias": -21,
+            "robot_id": "AMR06"
+          },
+          "battery_frac": 0.518,
+          "task_id": "T017",
+          "pose_seen_t": 799.82,
+          "pose_seq": 10104,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR04",
+          "cell": [
+            10,
+            3
+          ],
+          "pose": [
+            14.715,
+            4.697,
+            1.557
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": [
+            10,
+            3
+          ],
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR04"
+          },
+          "battery_frac": 0.813,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 10656,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR02",
+          "cell": [
+            15,
+            6
+          ],
+          "pose": [
+            21.798,
+            9.103,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR02"
+          },
+          "battery_frac": 0.569,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 9604,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            30,
+            14
+          ],
+          "normal": [
+            [
+              42.699999999999996,
+              20.299999999999997
+            ]
+          ],
+          "boundary": [
+            [
+              42.699999999999996,
+              20.299999999999997
+            ]
+          ]
+        },
+        {
+          "cell": [
+            28,
+            14
+          ],
+          "normal": [
+            [
+              39.9,
+              20.299999999999997
+            ]
+          ],
+          "boundary": [
+            [
+              39.9,
+              20.299999999999997
+            ]
+          ]
+        },
+        {
+          "cell": [
+            29,
+            15
+          ],
+          "normal": [
+            [
+              41.3,
+              21.7
+            ]
+          ],
+          "boundary": [
+            [
+              41.3,
+              21.7
+            ]
+          ]
+        },
+        {
+          "cell": [
+            29,
+            13
+          ],
+          "normal": [
+            [
+              41.3,
+              18.9
+            ]
+          ],
+          "boundary": [
+            [
+              41.3,
+              18.9
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AMR09",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR03",
+          "cell": [
+            30,
+            10
+          ],
+          "pose": [
+            42.772,
+            14.709,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.7,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR03"
+          },
+          "battery_frac": 0.793,
+          "task_id": null,
+          "pose_seen_t": 799.7,
+          "pose_seq": 7696,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR08",
+          "cell": [
+            29,
+            14
+          ],
+          "pose": [
+            41.402,
+            20.292,
+            -0.116
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR08"
+          },
+          "battery_frac": 0.997,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 6970,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR01",
+          "cell": [
+            0,
+            12
+          ],
+          "pose": [
+            0.631,
+            17.544,
+            3.13
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR01"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 5985,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR10",
+          "cell": [
+            9,
+            1
+          ],
+          "pose": [
+            13.2,
+            2.093,
+            -3.137
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR10"
+          },
+          "battery_frac": 0.565,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 8007,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR06",
+          "cell": [
+            10,
+            1
+          ],
+          "pose": [
+            14.67,
+            2.079,
+            -2.663
+          ],
+          "priority": 1000.0,
+          "blocked_on": null,
+          "state": "blocked",
+          "goal": [
+            30,
+            2
+          ],
+          "last_seen": 799.82,
+          "intent": [
+            [
+              10,
+              2
+            ],
+            [
+              10,
+              3
+            ],
+            [
+              10,
+              4
+            ],
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              6
+            ]
+          ],
+          "windows": [
+            [
+              799.82,
+              801.6800000000001
+            ],
+            [
+              801.2800000000001,
+              803.1400000000001
+            ],
+            [
+              802.74,
+              804.59
+            ],
+            [
+              804.2,
+              806.0500000000001
+            ],
+            [
+              805.6500000000001,
+              807.5100000000001
+            ]
+          ],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 1,
+            "service_age": 135,
+            "loaded": 1,
+            "distance_bias": -21,
+            "robot_id": "AMR06"
+          },
+          "battery_frac": 0.518,
+          "task_id": "T017",
+          "pose_seen_t": 799.82,
+          "pose_seq": 10104,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR04",
+          "cell": [
+            10,
+            3
+          ],
+          "pose": [
+            14.715,
+            4.697,
+            1.557
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": [
+            10,
+            3
+          ],
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR04"
+          },
+          "battery_frac": 0.813,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 10656,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR02",
+          "cell": [
+            15,
+            6
+          ],
+          "pose": [
+            21.799,
+            9.098,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.2,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR02"
+          },
+          "battery_frac": 0.569,
+          "task_id": null,
+          "pose_seen_t": 799.2,
+          "pose_seq": 9602,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            11,
+            19
+          ],
+          "normal": [
+            [
+              16.099999999999998,
+              27.299999999999997
+            ]
+          ],
+          "boundary": [
+            [
+              16.099999999999998,
+              27.299999999999997
+            ]
+          ]
+        },
+        {
+          "cell": [
+            9,
+            19
+          ],
+          "normal": [
+            [
+              13.299999999999999,
+              27.299999999999997
+            ]
+          ],
+          "boundary": [
+            [
+              13.299999999999999,
+              27.299999999999997
+            ]
+          ]
+        },
+        {
+          "cell": [
+            10,
+            20
+          ],
+          "normal": [
+            [
+              14.7,
+              28.7
+            ]
+          ],
+          "boundary": [
+            [
+              14.7,
+              28.7
+            ]
+          ]
+        },
+        {
+          "cell": [
+            10,
+            18
+          ],
+          "normal": [
+            [
+              14.7,
+              25.9
+            ]
+          ],
+          "boundary": [
+            [
+              14.7,
+              25.9
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AMR10",
+      "circulation": true,
+      "clearance_available": false,
+      "target": null,
+      "peers": [
+        {
+          "rid": "AMR08",
+          "cell": [
+            29,
+            14
+          ],
+          "pose": [
+            41.402,
+            20.292,
+            -0.116
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR08"
+          },
+          "battery_frac": 0.997,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 6970,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR01",
+          "cell": [
+            0,
+            12
+          ],
+          "pose": [
+            0.631,
+            17.544,
+            3.13
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.62,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR01"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.62,
+          "pose_seq": 5985,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR09",
+          "cell": [
+            10,
+            19
+          ],
+          "pose": [
+            14.686,
+            27.255,
+            2.801
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.4200000000001,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR09"
+          },
+          "battery_frac": 0.439,
+          "task_id": null,
+          "pose_seen_t": 799.4200000000001,
+          "pose_seq": 5959,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR03",
+          "cell": [
+            30,
+            10
+          ],
+          "pose": [
+            42.772,
+            14.709,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.7,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR03"
+          },
+          "battery_frac": 0.793,
+          "task_id": null,
+          "pose_seen_t": 799.7,
+          "pose_seq": 7696,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR06",
+          "cell": [
+            10,
+            1
+          ],
+          "pose": [
+            14.67,
+            2.079,
+            -2.663
+          ],
+          "priority": 1000.0,
+          "blocked_on": null,
+          "state": "blocked",
+          "goal": [
+            30,
+            2
+          ],
+          "last_seen": 799.82,
+          "intent": [
+            [
+              10,
+              2
+            ],
+            [
+              10,
+              3
+            ],
+            [
+              10,
+              4
+            ],
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              6
+            ]
+          ],
+          "windows": [
+            [
+              799.82,
+              801.6800000000001
+            ],
+            [
+              801.2800000000001,
+              803.1400000000001
+            ],
+            [
+              802.74,
+              804.59
+            ],
+            [
+              804.2,
+              806.0500000000001
+            ],
+            [
+              805.6500000000001,
+              807.5100000000001
+            ]
+          ],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 1,
+            "service_age": 135,
+            "loaded": 1,
+            "distance_bias": -21,
+            "robot_id": "AMR06"
+          },
+          "battery_frac": 0.518,
+          "task_id": "T017",
+          "pose_seen_t": 799.82,
+          "pose_seq": 10104,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR04",
+          "cell": [
+            10,
+            3
+          ],
+          "pose": [
+            14.715,
+            4.697,
+            1.557
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": [
+            10,
+            3
+          ],
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR04"
+          },
+          "battery_frac": 0.813,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 10656,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        },
+        {
+          "rid": "AMR02",
+          "cell": [
+            15,
+            6
+          ],
+          "pose": [
+            21.798,
+            9.103,
+            -0.007
+          ],
+          "priority": 0.0,
+          "blocked_on": null,
+          "state": "idle",
+          "goal": null,
+          "last_seen": 799.82,
+          "intent": [],
+          "windows": [],
+          "priority_key": {
+            "emergency": 0,
+            "exiting_branch": 0,
+            "waiting_age": 0,
+            "service_age": 0,
+            "loaded": 0,
+            "distance_bias": 0,
+            "robot_id": "AMR02"
+          },
+          "battery_frac": 0.569,
+          "task_id": null,
+          "pose_seen_t": 799.82,
+          "pose_seq": 9604,
+          "pose_session": "",
+          "task_generation": null,
+          "task_descriptor_hash": null,
+          "task_auction_epoch": null,
+          "execution_context": null
+        }
+      ],
+      "candidates": [
+        {
+          "cell": [
+            10,
+            1
+          ],
+          "normal": null,
+          "boundary": null
+        },
+        {
+          "cell": [
+            8,
+            1
+          ],
+          "normal": [
+            [
+              11.899999999999999,
+              2.0999999999999996
+            ]
+          ],
+          "boundary": [
+            [
+              11.899999999999999,
+              2.0999999999999996
+            ]
+          ]
+        },
+        {
+          "cell": [
+            9,
+            0
+          ],
+          "normal": [
+            [
+              13.299999999999999,
+              0.7
+            ]
+          ],
+          "boundary": [
+            [
+              13.299999999999999,
+              0.7
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "source_unchanged": true,
+  "result": {
+    "policy": "BIOS_PIBT.7",
+    "scenario": "showcase_grand_challenge",
+    "seed": 4,
+    "allocation_policy": "auction_bundle",
+    "workload_id": "7fb653059dda7fa9f5255a3646dbfeaa207bc7af17e9aed33f0e39f0176974cc",
+    "sim_seconds": 800.0,
+    "robots": 10,
+    "tasks_completed": 19,
+    "tasks_announced": 20,
+    "makespan_s": 800.0,
+    "task_times": [
+      79.72,
+      126.96,
+      155.82,
+      74.08,
+      394.88,
+      104.9,
+      171.6,
+      116.76,
+      126.02,
+      156.56,
+      38.3,
+      129.46,
+      111.1,
+      193.98,
+      178.86,
+      156.5,
+      165.64,
+      119.3,
+      136.56
+    ],
+    "throughput_per_robot_hr": 8.55,
+    "contacts_robot_robot": 0,
+    "contacts_robot_human": 0,
+    "contacts_robot_rack": 0,
+    "min_separation_m": 0.837,
+    "p05_separation_m": 0.985,
+    "robot_hours": 2.22222,
+    "progress_cells": 1060,
+    "bios4_unstick": 0,
+    "deadlocks_detected": 0,
+    "retreats": 17,
+    "yields": 1498,
+    "replans": 584,
+    "dynamic_obstacles_detected": 155,
+    "dynamic_reroutes": 11,
+    "task_reassignments": 33,
+    "recovery_paths_rejected": 131,
+    "recovery_staged_paths": 7,
+    "recovery_braking_stops": 0,
+    "protective_turn_commands": 22395,
+    "auction_bids_sent": 492,
+    "energy_bids_suppressed": 111,
+    "energy_no_eligible_rounds": 5,
+    "nonproductive_wait_ticks": 151956,
+    "safety_stop_ticks": 59566,
+    "human_yield_ticks": 31121,
+    "human_work_visits": 361,
+    "human_distance_m": 2576.68,
+    "seconds_degraded": 0.0,
+    "msgs_sent": 83963,
+    "bytes_sent": 17658616,
+    "msgs_per_robot_s": 10.5,
+    "bytes_per_robot_s": 2207.3,
+    "heartbeat_messages_sent": 28317,
+    "intent_messages_sent": 20705,
+    "auction_messages_sent": 22597,
+    "coordination_messages_sent": 12344,
+    "heartbeat_messages_suppressed": 8604,
+    "intent_messages_suppressed": 3389,
+    "lease_renewals_suppressed": 15154,
+    "bid_rebroadcasts_suppressed": 0,
+    "decision_events": 126,
+    "congestion_samples": 1486,
+    "experience_messages_sent": 0,
+    "experience_updates_received": 0,
+    "experience_guided_replans": 0,
+    "predictive_hazards_seen": 0,
+    "predictive_reroutes": 0,
+    "charger_contentions_avoided": 0,
+    "v7_passages_observed": 0,
+    "v7_passage_releases": 0,
+    "v7_empty_reserved_block_ticks": 0,
+    "v7_passage_release_uses": 0,
+    "future_candidates_evaluated": 0,
+    "future_bids_sent": 0,
+    "future_bids_won": 0,
+    "future_bids_lost": 0,
+    "future_capacity_rejections": 0,
+    "stale_future_awards_rejected": 0,
+    "future_version_mismatches": 0,
+    "future_lease_renewals": 0,
+    "future_lease_expiries": 0,
+    "future_invalidations": 0,
+    "future_promotions": 0,
+    "future_promotion_failures": 0,
+    "future_network_fallbacks": 0,
+    "future_energy_rejections": 0,
+    "future_deadline_rejections": 0,
+    "future_charger_rejections": 0,
+    "future_hysteresis_prevented": 0,
+    "rejected_unknown_bids": 13,
+    "deferred_unknown_bids": 14,
+    "rejected_epoch_jumps": 0,
+    "rejected_task_conflicts": 0,
+    "rejected_task_completions": 0,
+    "rejected_directed_awards": 0,
+    "completion_certificates_accepted": 189,
+    "completion_certificates_relayed": 6338,
+    "task_resurrections_suppressed": 43,
+    "deadline_misses": 0,
+    "allocation_compute_mean_ms": 0.1507,
+    "allocation_compute_median_ms": 0.0436,
+    "allocation_compute_p95_ms": 0.8458,
+    "allocation_compute_max_ms": 3.3652,
+    "plan_cpu_total_s": 0.0333,
+    "plan_calls": 584,
+    "plan_cpu_mean_ms": 0.057,
+    "plan_cpu_max_ms": 0.881,
+    "priority_decisions": 0,
+    "priority_inheritances": 0,
+    "priority_backtracks": 0,
+    "priority_forced_moves": 0,
+    "priority_waits": 0,
+    "net_loss": 0.05,
+    "manager_killed_at": null,
+    "robot_failures": 1,
+    "completed_all": false
+  },
+  "world": {
+    "t": 800.0,
+    "robots": [
+      {
+        "id": "AMR01",
+        "x": 0.639,
+        "y": 17.516,
+        "th": 3.13,
+        "v": 0.0,
+        "batt": 0.439,
+        "carry": null
+      },
+      {
+        "id": "AMR02",
+        "x": 21.798,
+        "y": 9.101,
+        "th": -0.007,
+        "v": 0.0,
+        "batt": 0.569,
+        "carry": null
+      },
+      {
+        "id": "AMR03",
+        "x": 42.774,
+        "y": 14.706,
+        "th": -0.007,
+        "v": 0.0,
+        "batt": 0.794,
+        "carry": null
+      },
+      {
+        "id": "AMR04",
+        "x": 14.709,
+        "y": 4.83,
+        "th": 1.557,
+        "v": 0.487,
+        "batt": 0.813,
+        "carry": null
+      },
+      {
+        "id": "AMR05",
+        "x": 25.664,
+        "y": 9.108,
+        "th": -0.003,
+        "v": 0.0,
+        "batt": 0.894,
+        "carry": null
+      },
+      {
+        "id": "AMR06",
+        "x": 14.667,
+        "y": 2.107,
+        "th": -2.457,
+        "v": 0.0,
+        "batt": 0.518,
+        "carry": "T017"
+      },
+      {
+        "id": "AMR07",
+        "x": 23.094,
+        "y": 10.555,
+        "th": 1.679,
+        "v": 0.0,
+        "batt": 0.728,
+        "carry": null
+      },
+      {
+        "id": "AMR08",
+        "x": 41.38,
+        "y": 20.305,
+        "th": -0.116,
+        "v": 0.0,
+        "batt": 0.997,
+        "carry": null
+      },
+      {
+        "id": "AMR09",
+        "x": 14.68,
+        "y": 27.245,
+        "th": 2.801,
+        "v": 0.0,
+        "batt": 0.439,
+        "carry": null
+      },
+      {
+        "id": "AMR10",
+        "x": 13.21,
+        "y": 2.102,
+        "th": -3.137,
+        "v": 0.0,
+        "batt": 0.565,
+        "carry": null
+      }
+    ],
+    "humans": [
+      {
+        "id": "H1",
+        "x": 2.1,
+        "y": 11.061,
+        "th": 1.571,
+        "paused": false,
+        "mode": "walking",
+        "yield_ticks": 3165,
+        "work_visits": 85,
+        "distance_m": 573.84,
+        "uses_apron": false
+      },
+      {
+        "id": "H2",
+        "x": 23.1,
+        "y": 13.3,
+        "th": -1.571,
+        "paused": true,
+        "mode": "working",
+        "yield_ticks": 23199,
+        "work_visits": 35,
+        "distance_m": 313.56,
+        "uses_apron": false
+      },
+      {
+        "id": "H3",
+        "x": 39.179,
+        "y": 9.1,
+        "th": 0.0,
+        "paused": false,
+        "mode": "walking",
+        "yield_ticks": 1094,
+        "work_visits": 79,
+        "distance_m": 561.49,
+        "uses_apron": false
+      },
+      {
+        "id": "H4",
+        "x": 14.7,
+        "y": 20.3,
+        "th": 1.571,
+        "paused": true,
+        "mode": "working",
+        "yield_ticks": 2127,
+        "work_visits": 84,
+        "distance_m": 573.57,
+        "uses_apron": false
+      },
+      {
+        "id": "H5",
+        "x": 31.5,
+        "y": 6.3,
+        "th": -1.571,
+        "paused": true,
+        "mode": "working",
+        "yield_ticks": 1536,
+        "work_visits": 78,
+        "distance_m": 554.23,
+        "uses_apron": false
+      }
+    ],
+    "obstacles": [],
+    "contacts": 0
+  },
+  "map": {
+    "name": "classic",
+    "width": 31,
+    "height": 21,
+    "grid": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        3
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        3
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        3
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "stations": [
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        6
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        0,
+        14
+      ],
+      [
+        0,
+        18
+      ]
+    ],
+    "docks": [
+      [
+        30,
+        2
+      ],
+      [
+        30,
+        6
+      ],
+      [
+        30,
+        10
+      ],
+      [
+        30,
+        14
+      ]
+    ]
+  },
+  "nodes": [
+    {
+      "id": "AMR01",
+      "state": "idle",
+      "task": null,
+      "carry": null,
+      "pick": null,
+      "drop": null,
+      "goal": null,
+      "cargo_type": null,
+      "done": 1,
+      "path": [],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": -1000000000.0,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 19,
+        "yields": 102,
+        "deadlocks_detected": 0,
+        "retreats": 1,
+        "safety_stops": 112,
+        "msgs_sent": 5986,
+        "bytes_sent": 1292963,
+        "msgs_recv": 65574,
+        "plan_cpu_s": 0.0009051239758264273,
+        "plan_calls": 19,
+        "plan_cpu_max_s": 0.0001312500098720193,
+        "central_plans": 0,
+        "local_plans": 19,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 22,
+        "recovery_staged_paths": 0,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 9,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 73,
+        "dynamic_obstacles_detected": 11,
+        "dynamic_reroutes": 0,
+        "task_reassignments": 2,
+        "auction_bids_sent": 23,
+        "energy_bids_suppressed": 16,
+        "energy_no_eligible_rounds": 0,
+        "nonproductive_wait_ticks": 6255,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 2320,
+        "intent_messages_sent": 1022,
+        "auction_messages_sent": 1870,
+        "coordination_messages_sent": 774,
+        "heartbeat_messages_suppressed": 1417,
+        "intent_messages_suppressed": 261,
+        "lease_renewals_suppressed": 763,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 12,
+        "congestion_samples": 97,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 0,
+        "deferred_unknown_bids": 0,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 19,
+        "completion_certificates_relayed": 677,
+        "task_resurrections_suppressed": 3,
+        "deadline_misses": 0
+      },
+      "last_refused": {
+        "sensor": {
+          "t": 306.6200000000111,
+          "pose": [
+            2.1755944051959704,
+            16.412011830534624,
+            1.6243370652283944
+          ],
+          "v": 0.023999999999999952,
+          "omega": 0.0,
+          "battery_frac": 0.4528796874998502,
+          "cell": [
+            1,
+            11
+          ],
+          "clearance_m": 1.8243950389157884,
+          "clearance_static_m": 1.8243950389157884,
+          "clearance_dynamic_m": 2.6399999999999997,
+          "clearance_omni_m": 0.38974350694296045,
+          "detections": [
+            {
+              "x": 3.21211388125772,
+              "y": 16.102049524052244,
+              "r": 0.35,
+              "range_m": 1.0897435069429604,
+              "vx": -0.223098325497785,
+              "vy": -9.309804994196539e-06
+            },
+            {
+              "x": 0.6948179000159586,
+              "y": 16.15198274886389,
+              "r": 0.35,
+              "range_m": 1.4912599587496103,
+              "vx": 0.0,
+              "vy": -0.0
+            },
+            {
+              "x": 2.0999999999999996,
+              "y": 20.299999999999997,
+              "r": 0.3,
+              "range_m": 3.8974313055585728,
+              "vx": 0.0,
+              "vy": 0.0
+            }
+          ],
+          "on_dock": false
+        },
+        "turn": {
+          "v": 0.0,
+          "omega": 0.008547488855152678,
+          "safety_stop": false
+        },
+        "reason": "momentum"
+      },
+      "turn_rejections": {
+        "momentum": 12
+      },
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          0.6392044322887418,
+          17.51568522599938,
+          3.129874416835777
+        ],
+        "v": 0.0,
+        "omega": 0.0,
+        "battery_frac": 0.4391928819445836,
+        "cell": [
+          0,
+          12
+        ],
+        "clearance_m": 0.3334290203854674,
+        "clearance_static_m": 0.3334290203854674,
+        "clearance_dynamic_m": 2.6399999999999997,
+        "clearance_omni_m": 99.0,
+        "detections": [],
+        "on_dock": false
+      },
+      "retreat_since": 300.3,
+      "last_progress": 736.76
+    },
+    {
+      "id": "AMR02",
+      "state": "idle",
+      "task": null,
+      "carry": null,
+      "pick": null,
+      "drop": null,
+      "goal": null,
+      "cargo_type": null,
+      "done": 2,
+      "path": [],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": 564.86,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 119,
+        "yields": 138,
+        "deadlocks_detected": 0,
+        "retreats": 2,
+        "safety_stops": 15539,
+        "msgs_sent": 9605,
+        "bytes_sent": 2053990,
+        "msgs_recv": 58704,
+        "plan_cpu_s": 0.008159701072145253,
+        "plan_calls": 119,
+        "plan_cpu_max_s": 0.0008814999891910702,
+        "central_plans": 0,
+        "local_plans": 119,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 0,
+        "recovery_staged_paths": 1,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 191,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 115,
+        "dynamic_obstacles_detected": 23,
+        "dynamic_reroutes": 0,
+        "task_reassignments": 5,
+        "auction_bids_sent": 34,
+        "energy_bids_suppressed": 5,
+        "energy_no_eligible_rounds": 0,
+        "nonproductive_wait_ticks": 22535,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 3335,
+        "intent_messages_sent": 2823,
+        "auction_messages_sent": 2361,
+        "coordination_messages_sent": 1086,
+        "heartbeat_messages_suppressed": 402,
+        "intent_messages_suppressed": 350,
+        "lease_renewals_suppressed": 1719,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 21,
+        "congestion_samples": 138,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 0,
+        "deferred_unknown_bids": 0,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 19,
+        "completion_certificates_relayed": 666,
+        "task_resurrections_suppressed": 4,
+        "deadline_misses": 0
+      },
+      "last_refused": {
+        "sensor": {
+          "t": 229.82000000004376,
+          "pose": [
+            21.7867111143005,
+            9.085656161815006,
+            -0.07736853153818296
+          ],
+          "v": 0.042961333210609104,
+          "omega": 0.0,
+          "battery_frac": 0.5965449652776103,
+          "cell": [
+            15,
+            6
+          ],
+          "clearance_m": 0.21772133466625776,
+          "clearance_static_m": 1.876541538872956,
+          "clearance_dynamic_m": 0.21772133466625776,
+          "clearance_omni_m": 0.21772133466625776,
+          "detections": [
+            {
+              "x": 22.69139802564953,
+              "y": 9.099301068905412,
+              "r": 0.35,
+              "range_m": 0.9177213346662577,
+              "vx": 0.0,
+              "vy": 0.0
+            },
+            {
+              "x": 23.057026774114203,
+              "y": 8.113049976358289,
+              "r": 0.35,
+              "range_m": 1.6236040296957506,
+              "vx": 0.0,
+              "vy": 0.0
+            },
+            {
+              "x": 22.70839768059776,
+              "y": 10.202821108518508,
+              "r": 0.3,
+              "range_m": 1.4398141506242486,
+              "vx": 0.0,
+              "vy": 0.0
+            }
+          ],
+          "on_dock": false
+        },
+        "turn": {
+          "v": 0.0,
+          "omega": 0.05827151293038783,
+          "safety_stop": false
+        },
+        "reason": "momentum"
+      },
+      "turn_rejections": {
+        "momentum": 19
+      },
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          21.797595345921074,
+          9.10092868861842,
+          -0.0071234558460256244
+        ],
+        "v": 0.0,
+        "omega": 0.0,
+        "battery_frac": 0.5694265624999665,
+        "cell": [
+          15,
+          6
+        ],
+        "clearance_m": 1.2483757919136287,
+        "clearance_static_m": 1.7872518161192494,
+        "clearance_dynamic_m": 1.2483757919136287,
+        "clearance_omni_m": 1.2483757919136287,
+        "detections": [
+          {
+            "x": 25.664300039598675,
+            "y": 9.107703371777122,
+            "r": 0.35,
+            "range_m": 3.8667106284851847,
+            "vx": 0.0,
+            "vy": -0.0
+          },
+          {
+            "x": 23.09432751957648,
+            "y": 10.555113648079212,
+            "r": 0.35,
+            "range_m": 1.9483757919136289,
+            "vx": -0.0,
+            "vy": 0.0
+          }
+        ],
+        "on_dock": false
+      },
+      "retreat_since": 558.86,
+      "last_progress": 777.64
+    },
+    {
+      "id": "AMR03",
+      "state": "idle",
+      "task": null,
+      "carry": null,
+      "pick": null,
+      "drop": null,
+      "goal": null,
+      "cargo_type": null,
+      "done": 2,
+      "path": [],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": 565.0,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 37,
+        "yields": 119,
+        "deadlocks_detected": 0,
+        "retreats": 1,
+        "safety_stops": 0,
+        "msgs_sent": 7697,
+        "bytes_sent": 1653315,
+        "msgs_recv": 57593,
+        "plan_cpu_s": 0.00184137505129911,
+        "plan_calls": 37,
+        "plan_cpu_max_s": 0.0001324170152656734,
+        "central_plans": 0,
+        "local_plans": 37,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 0,
+        "recovery_staged_paths": 0,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 0,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 85,
+        "dynamic_obstacles_detected": 10,
+        "dynamic_reroutes": 0,
+        "task_reassignments": 1,
+        "auction_bids_sent": 46,
+        "energy_bids_suppressed": 0,
+        "energy_no_eligible_rounds": 0,
+        "nonproductive_wait_ticks": 17744,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 2532,
+        "intent_messages_sent": 2113,
+        "auction_messages_sent": 2140,
+        "coordination_messages_sent": 912,
+        "heartbeat_messages_suppressed": 756,
+        "intent_messages_suppressed": 276,
+        "lease_renewals_suppressed": 1536,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 9,
+        "congestion_samples": 119,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 0,
+        "deferred_unknown_bids": 0,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 18,
+        "completion_certificates_relayed": 607,
+        "task_resurrections_suppressed": 3,
+        "deadline_misses": 0
+      },
+      "last_refused": null,
+      "turn_rejections": {},
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          42.77361104281061,
+          14.705716013515527,
+          -0.006564002616182823
+        ],
+        "v": 0.0,
+        "omega": 0.0,
+        "battery_frac": 0.7935039930553761,
+        "cell": [
+          30,
+          10
+        ],
+        "clearance_m": 0.31843219951292523,
+        "clearance_static_m": 0.31843219951292523,
+        "clearance_dynamic_m": 2.6399999999999997,
+        "clearance_omni_m": 99.0,
+        "detections": [],
+        "on_dock": true
+      },
+      "retreat_since": 559.0,
+      "last_progress": 627.8000000000001
+    },
+    {
+      "id": "AMR04",
+      "state": "idle",
+      "task": null,
+      "carry": null,
+      "pick": null,
+      "drop": null,
+      "goal": null,
+      "cargo_type": null,
+      "done": 2,
+      "path": [],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": 550.08,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 124,
+        "yields": 147,
+        "deadlocks_detected": 0,
+        "retreats": 2,
+        "safety_stops": 15646,
+        "msgs_sent": 10657,
+        "bytes_sent": 2217625,
+        "msgs_recv": 61321,
+        "plan_cpu_s": 0.004270956094842404,
+        "plan_calls": 124,
+        "plan_cpu_max_s": 0.0005545000021811575,
+        "central_plans": 0,
+        "local_plans": 124,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 1,
+        "recovery_staged_paths": 4,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 15353,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 95,
+        "dynamic_obstacles_detected": 15,
+        "dynamic_reroutes": 1,
+        "task_reassignments": 3,
+        "auction_bids_sent": 28,
+        "energy_bids_suppressed": 16,
+        "energy_no_eligible_rounds": 0,
+        "nonproductive_wait_ticks": 22670,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 3472,
+        "intent_messages_sent": 2845,
+        "auction_messages_sent": 2565,
+        "coordination_messages_sent": 1775,
+        "heartbeat_messages_suppressed": 265,
+        "intent_messages_suppressed": 304,
+        "lease_renewals_suppressed": 2142,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 19,
+        "congestion_samples": 146,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 0,
+        "deferred_unknown_bids": 0,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 19,
+        "completion_certificates_relayed": 640,
+        "task_resurrections_suppressed": 5,
+        "deadline_misses": 0
+      },
+      "last_refused": {
+        "sensor": {
+          "t": 531.4799999998066,
+          "pose": [
+            22.685259281342315,
+            9.057927070666045,
+            0.0004524145734819676
+          ],
+          "v": 0.032,
+          "omega": -0.023650962101543858,
+          "battery_frac": 0.8336213541666881,
+          "cell": [
+            16,
+            6
+          ],
+          "clearance_m": 1.6919199235171196,
+          "clearance_static_m": 1.6919199235171196,
+          "clearance_dynamic_m": 2.6399999999999997,
+          "clearance_omni_m": 0.21792460253074697,
+          "detections": [
+            {
+              "x": 21.774470718592355,
+              "y": 9.10757656447699,
+              "r": 0.35,
+              "range_m": 0.9179246025307469,
+              "vx": 0.0,
+              "vy": -0.0
+            },
+            {
+              "x": 20.488949673097423,
+              "y": 9.105582935101431,
+              "r": 0.35,
+              "range_m": 2.203417304130344,
+              "vx": 0.0,
+              "vy": -0.0
+            },
+            {
+              "x": 18.84940132861629,
+              "y": 9.36579204054935,
+              "r": 0.35,
+              "range_m": 3.8521854979055137,
+              "vx": 0.0,
+              "vy": -0.0
+            },
+            {
+              "x": 23.067576799806883,
+              "y": 7.932460465071724,
+              "r": 0.35,
+              "range_m": 1.2256868728881511,
+              "vx": 0.006240733172661513,
+              "vy": -0.1999026094113522
+            },
+            {
+              "x": 22.70839768059776,
+              "y": 10.202821108518508,
+              "r": 0.3,
+              "range_m": 1.1036356646351497,
+              "vx": 0.0,
+              "vy": 0.0
+            }
+          ],
+          "on_dock": false
+        },
+        "turn": {
+          "v": 0.0,
+          "omega": 0.04090936004916313,
+          "safety_stop": false
+        },
+        "reason": "momentum"
+      },
+      "turn_rejections": {
+        "momentum": 40,
+        "envelope": 3
+      },
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          14.70931472712872,
+          4.829554564112415,
+          1.5568314556203426
+        ],
+        "v": 0.4871025423412685,
+        "omega": 0.0,
+        "battery_frac": 0.8125482638888266,
+        "cell": [
+          10,
+          3
+        ],
+        "clearance_m": 1.5902243730461287,
+        "clearance_static_m": 1.5902243730461287,
+        "clearance_dynamic_m": 2.6399999999999997,
+        "clearance_omni_m": 2.0233561482915534,
+        "detections": [
+          {
+            "x": 14.666914030887371,
+            "y": 2.1065285099962128,
+            "r": 0.35,
+            "range_m": 2.7233561482915536,
+            "vx": -0.0,
+            "vy": -0.0
+          },
+          {
+            "x": 13.210374701427991,
+            "y": 2.1018793890536585,
+            "r": 0.35,
+            "range_m": 3.1123998877521384,
+            "vx": -0.0,
+            "vy": -0.0
+          }
+        ],
+        "on_dock": false
+      },
+      "retreat_since": 544.08,
+      "last_progress": 799.24
+    },
+    {
+      "id": "AMR05",
+      "state": "idle",
+      "task": null,
+      "carry": null,
+      "pick": null,
+      "drop": null,
+      "goal": null,
+      "cargo_type": null,
+      "done": 3,
+      "path": [],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": 557.1800000000001,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 27,
+        "yields": 193,
+        "deadlocks_detected": 0,
+        "retreats": 1,
+        "safety_stops": 1035,
+        "msgs_sent": 8831,
+        "bytes_sent": 1793278,
+        "msgs_recv": 53355,
+        "plan_cpu_s": 0.006409917987184599,
+        "plan_calls": 27,
+        "plan_cpu_max_s": 0.0008540830167476088,
+        "central_plans": 0,
+        "local_plans": 27,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 0,
+        "recovery_staged_paths": 0,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 586,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 110,
+        "dynamic_obstacles_detected": 23,
+        "dynamic_reroutes": 2,
+        "task_reassignments": 3,
+        "auction_bids_sent": 113,
+        "energy_bids_suppressed": 15,
+        "energy_no_eligible_rounds": 0,
+        "nonproductive_wait_ticks": 13209,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 2720,
+        "intent_messages_sent": 2105,
+        "auction_messages_sent": 2482,
+        "coordination_messages_sent": 1524,
+        "heartbeat_messages_suppressed": 1017,
+        "intent_messages_suppressed": 528,
+        "lease_renewals_suppressed": 1799,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 8,
+        "congestion_samples": 193,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 0,
+        "deferred_unknown_bids": 0,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 19,
+        "completion_certificates_relayed": 592,
+        "task_resurrections_suppressed": 2,
+        "deadline_misses": 0
+      },
+      "last_refused": {
+        "sensor": {
+          "t": 306.86000000001087,
+          "pose": [
+            3.1839445116858434,
+            16.100895193695976,
+            -3.14155092398484
+          ],
+          "v": 0.031098325692032164,
+          "omega": 0.0,
+          "battery_frac": 0.9220902777775211,
+          "cell": [
+            2,
+            11
+          ],
+          "clearance_m": 0.362677888139868,
+          "clearance_static_m": 2.6399999999999997,
+          "clearance_dynamic_m": 0.362677888139868,
+          "clearance_omni_m": 0.362677888139868,
+          "detections": [
+            {
+              "x": 2.1647205476586873,
+              "y": 16.40422545958672,
+              "r": 0.35,
+              "range_m": 1.062677888139868,
+              "vx": -0.0018009519654634011,
+              "vy": 0.03194928124415467
+            },
+            {
+              "x": 0.6948179000159586,
+              "y": 16.15198274886389,
+              "r": 0.35,
+              "range_m": 2.4892132837220915,
+              "vx": 0.0,
+              "vy": -0.0
+            }
+          ],
+          "on_dock": false
+        },
+        "turn": {
+          "v": 0.0,
+          "omega": 0.48,
+          "safety_stop": false
+        },
+        "reason": "momentum"
+      },
+      "turn_rejections": {
+        "momentum": 4
+      },
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          25.664300039598675,
+          9.107703371777122,
+          -0.0029444199685314297
+        ],
+        "v": 0.0,
+        "omega": 0.0,
+        "battery_frac": 0.8942281249997812,
+        "cell": [
+          18,
+          6
+        ],
+        "clearance_m": 2.1391325628862634,
+        "clearance_static_m": 2.1391325628862634,
+        "clearance_dynamic_m": 2.6399999999999997,
+        "clearance_omni_m": 2.2495347534169046,
+        "detections": [
+          {
+            "x": 21.797595345921074,
+            "y": 9.10092868861842,
+            "r": 0.35,
+            "range_m": 3.8667106284851847,
+            "vx": 0.0,
+            "vy": -0.0
+          },
+          {
+            "x": 23.09432751957648,
+            "y": 10.555113648079212,
+            "r": 0.35,
+            "range_m": 2.9495347534169047,
+            "vx": -0.0,
+            "vy": 0.0
+          }
+        ],
+        "on_dock": false
+      },
+      "retreat_since": 551.1800000000001,
+      "last_progress": 586.78
+    },
+    {
+      "id": "AMR06",
+      "state": "to_drop",
+      "task": "T017",
+      "carry": "T017",
+      "pick": [
+        13,
+        2
+      ],
+      "drop": [
+        30,
+        2
+      ],
+      "goal": [
+        30,
+        2
+      ],
+      "cargo_type": "hazardous",
+      "done": 2,
+      "path": [
+        [
+          10,
+          2
+        ],
+        [
+          10,
+          3
+        ],
+        [
+          10,
+          4
+        ],
+        [
+          10,
+          5
+        ],
+        [
+          10,
+          6
+        ],
+        [
+          11,
+          6
+        ],
+        [
+          12,
+          6
+        ],
+        [
+          13,
+          6
+        ]
+      ],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": 751.52,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 56,
+        "yields": 136,
+        "deadlocks_detected": 0,
+        "retreats": 6,
+        "safety_stops": 17633,
+        "msgs_sent": 10108,
+        "bytes_sent": 2124183,
+        "msgs_recv": 60564,
+        "plan_cpu_s": 0.003644914977485314,
+        "plan_calls": 56,
+        "plan_cpu_max_s": 0.00011116699897684157,
+        "central_plans": 0,
+        "local_plans": 56,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 12,
+        "recovery_staged_paths": 0,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 2178,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 89,
+        "dynamic_obstacles_detected": 20,
+        "dynamic_reroutes": 1,
+        "task_reassignments": 2,
+        "auction_bids_sent": 127,
+        "energy_bids_suppressed": 4,
+        "energy_no_eligible_rounds": 0,
+        "nonproductive_wait_ticks": 24886,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 3356,
+        "intent_messages_sent": 2945,
+        "auction_messages_sent": 2668,
+        "coordination_messages_sent": 1139,
+        "heartbeat_messages_suppressed": 381,
+        "intent_messages_suppressed": 209,
+        "lease_renewals_suppressed": 2146,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 17,
+        "congestion_samples": 135,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 2,
+        "deferred_unknown_bids": 2,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 19,
+        "completion_certificates_relayed": 537,
+        "task_resurrections_suppressed": 2,
+        "deadline_misses": 0
+      },
+      "last_refused": {
+        "sensor": {
+          "t": 742.2599999996149,
+          "pose": [
+            18.929476352705905,
+            9.652929719915422,
+            -1.5688310989620027
+          ],
+          "v": 0.02863426381637045,
+          "omega": 0.0,
+          "battery_frac": 0.5216977430555658,
+          "cell": [
+            13,
+            6
+          ],
+          "clearance_m": 0.2850539528146928,
+          "clearance_static_m": 1.7743395217757025,
+          "clearance_dynamic_m": 0.2850539528146928,
+          "clearance_omni_m": 0.2850539528146928,
+          "detections": [
+            {
+              "x": 19.72768878615439,
+              "y": 9.096925348871096,
+              "r": 0.35,
+              "range_m": 0.9850539528146928,
+              "vx": -0.0,
+              "vy": 0.0
+            },
+            {
+              "x": 18.9,
+              "y": 13.299999999999999,
+              "r": 0.3,
+              "range_m": 3.632865881411845,
+              "vx": 0.0,
+              "vy": 0.0
+            }
+          ],
+          "on_dock": false
+        },
+        "turn": {
+          "v": 0.0,
+          "omega": -0.02982107657933563,
+          "safety_stop": false
+        },
+        "reason": "momentum"
+      },
+      "turn_rejections": {
+        "momentum": 89
+      },
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          14.666914030887371,
+          2.1065285099962128,
+          -2.4567566753360914
+        ],
+        "v": 0.0,
+        "omega": 0.8960000000000004,
+        "battery_frac": 0.5177935763888922,
+        "cell": [
+          10,
+          1
+        ],
+        "clearance_m": 0.7565467491939689,
+        "clearance_static_m": 2.100082488088694,
+        "clearance_dynamic_m": 0.7565467491939689,
+        "clearance_omni_m": 0.7565467491939689,
+        "detections": [
+          {
+            "x": 14.70931472712872,
+            "y": 4.829554564112415,
+            "r": 0.35,
+            "range_m": 2.7233561482915536,
+            "vx": 0.006802103159227189,
+            "vy": 0.48705504632221863
+          },
+          {
+            "x": 13.210374701427991,
+            "y": 2.1018793890536585,
+            "r": 0.35,
+            "range_m": 1.456546749193969,
+            "vx": -0.0,
+            "vy": -0.0
+          }
+        ],
+        "on_dock": false
+      },
+      "retreat_since": 745.52,
+      "last_progress": 797.82
+    },
+    {
+      "id": "AMR07",
+      "state": "idle",
+      "task": null,
+      "carry": null,
+      "pick": null,
+      "drop": null,
+      "goal": null,
+      "cargo_type": null,
+      "done": 2,
+      "path": [],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": 761.94,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 83,
+        "yields": 229,
+        "deadlocks_detected": 0,
+        "retreats": 4,
+        "safety_stops": 8896,
+        "msgs_sent": 10140,
+        "bytes_sent": 2082985,
+        "msgs_recv": 56424,
+        "plan_cpu_s": 0.0024858340329956263,
+        "plan_calls": 83,
+        "plan_cpu_max_s": 0.0002783329982776195,
+        "central_plans": 0,
+        "local_plans": 83,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 96,
+        "recovery_staged_paths": 2,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 3450,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 143,
+        "dynamic_obstacles_detected": 20,
+        "dynamic_reroutes": 2,
+        "task_reassignments": 10,
+        "auction_bids_sent": 29,
+        "energy_bids_suppressed": 24,
+        "energy_no_eligible_rounds": 5,
+        "nonproductive_wait_ticks": 17717,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 3376,
+        "intent_messages_sent": 2491,
+        "auction_messages_sent": 2470,
+        "coordination_messages_sent": 1803,
+        "heartbeat_messages_suppressed": 361,
+        "intent_messages_suppressed": 451,
+        "lease_renewals_suppressed": 1944,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 14,
+        "congestion_samples": 229,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 3,
+        "deferred_unknown_bids": 3,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 19,
+        "completion_certificates_relayed": 662,
+        "task_resurrections_suppressed": 13,
+        "deadline_misses": 0
+      },
+      "last_refused": {
+        "sensor": {
+          "t": 675.8599999996753,
+          "pose": [
+            21.02702071292919,
+            9.105028306223987,
+            -0.05564240833965699
+          ],
+          "v": 0.0,
+          "omega": -0.48,
+          "battery_frac": 0.7336380208329912,
+          "cell": [
+            15,
+            6
+          ],
+          "clearance_m": 0.18994078509492002,
+          "clearance_static_m": 2.6399999999999997,
+          "clearance_dynamic_m": 0.18994078509492002,
+          "clearance_omni_m": 0.18994078509492002,
+          "detections": [
+            {
+              "x": 23.071488857005,
+              "y": 9.097783266068227,
+              "r": 0.35,
+              "range_m": 2.0997455475890714,
+              "vx": 0.0,
+              "vy": -0.0
+            },
+            {
+              "x": 21.810244075556223,
+              "y": 9.156858182253432,
+              "r": 0.3,
+              "range_m": 0.83994078509492,
+              "vx": 0.0,
+              "vy": 0.0
+            }
+          ],
+          "on_dock": false
+        },
+        "turn": {
+          "v": 0.0,
+          "omega": -0.48,
+          "safety_stop": false
+        },
+        "reason": "envelope"
+      },
+      "turn_rejections": {
+        "momentum": 10,
+        "envelope": 2
+      },
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          23.09432751957648,
+          10.555113648079212,
+          1.6793446372195058
+        ],
+        "v": 0.0,
+        "omega": 0.0,
+        "battery_frac": 0.7283217013885863,
+        "cell": [
+          16,
+          7
+        ],
+        "clearance_m": 1.2185811844367493,
+        "clearance_static_m": 1.2185811844367493,
+        "clearance_dynamic_m": 2.094892213183454,
+        "clearance_omni_m": 1.2483757919136287,
+        "detections": [
+          {
+            "x": 21.797595345921074,
+            "y": 9.10092868861842,
+            "r": 0.35,
+            "range_m": 1.9483757919136289,
+            "vx": 0.0,
+            "vy": -0.0
+          },
+          {
+            "x": 25.664300039598675,
+            "y": 9.107703371777122,
+            "r": 0.35,
+            "range_m": 2.9495347534169047,
+            "vx": 0.0,
+            "vy": -0.0
+          },
+          {
+            "x": 23.099999999999998,
+            "y": 13.299999999999999,
+            "r": 0.3,
+            "range_m": 2.744892213183454,
+            "vx": 0.0,
+            "vy": 0.0
+          }
+        ],
+        "on_dock": false
+      },
+      "retreat_since": 755.94,
+      "last_progress": 776.54
+    },
+    {
+      "id": "AMR08",
+      "state": "idle",
+      "task": null,
+      "carry": null,
+      "pick": null,
+      "drop": null,
+      "goal": null,
+      "cargo_type": null,
+      "done": 2,
+      "path": [],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": -1000000000.0,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 72,
+        "yields": 163,
+        "deadlocks_detected": 0,
+        "retreats": 0,
+        "safety_stops": 0,
+        "msgs_sent": 6971,
+        "bytes_sent": 1467591,
+        "msgs_recv": 63736,
+        "plan_cpu_s": 0.0017637041164562106,
+        "plan_calls": 72,
+        "plan_cpu_max_s": 0.00024079199647530913,
+        "central_plans": 0,
+        "local_plans": 72,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 0,
+        "recovery_staged_paths": 0,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 0,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 124,
+        "dynamic_obstacles_detected": 16,
+        "dynamic_reroutes": 1,
+        "task_reassignments": 2,
+        "auction_bids_sent": 28,
+        "energy_bids_suppressed": 7,
+        "energy_no_eligible_rounds": 0,
+        "nonproductive_wait_ticks": 8336,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 2305,
+        "intent_messages_sent": 1429,
+        "auction_messages_sent": 2019,
+        "coordination_messages_sent": 1218,
+        "heartbeat_messages_suppressed": 1432,
+        "intent_messages_suppressed": 359,
+        "lease_renewals_suppressed": 1052,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 6,
+        "congestion_samples": 161,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 2,
+        "deferred_unknown_bids": 2,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 19,
+        "completion_certificates_relayed": 641,
+        "task_resurrections_suppressed": 3,
+        "deadline_misses": 0
+      },
+      "last_refused": null,
+      "turn_rejections": {},
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          41.37994821522244,
+          20.30538495127082,
+          -0.11633819626306663
+        ],
+        "v": 0.0,
+        "omega": 0.0,
+        "battery_frac": 0.9970557291666915,
+        "cell": [
+          29,
+          14
+        ],
+        "clearance_m": 1.9115371682169742,
+        "clearance_static_m": 1.9115371682169742,
+        "clearance_dynamic_m": 2.6399999999999997,
+        "clearance_omni_m": 99.0,
+        "detections": [],
+        "on_dock": false
+      },
+      "retreat_since": 0.0,
+      "last_progress": 742.0
+    },
+    {
+      "id": "AMR09",
+      "state": "idle",
+      "task": null,
+      "carry": null,
+      "pick": null,
+      "drop": null,
+      "goal": null,
+      "cargo_type": null,
+      "done": 1,
+      "path": [],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": -1000000000.0,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 16,
+        "yields": 100,
+        "deadlocks_detected": 0,
+        "retreats": 0,
+        "safety_stops": 144,
+        "msgs_sent": 5960,
+        "bytes_sent": 1302008,
+        "msgs_recv": 64717,
+        "plan_cpu_s": 0.0017177919507957995,
+        "plan_calls": 16,
+        "plan_cpu_max_s": 0.00014879199443385005,
+        "central_plans": 0,
+        "local_plans": 16,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 0,
+        "recovery_staged_paths": 0,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 115,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 66,
+        "dynamic_obstacles_detected": 7,
+        "dynamic_reroutes": 3,
+        "task_reassignments": 3,
+        "auction_bids_sent": 31,
+        "energy_bids_suppressed": 14,
+        "energy_no_eligible_rounds": 0,
+        "nonproductive_wait_ticks": 6763,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 2082,
+        "intent_messages_sent": 1109,
+        "auction_messages_sent": 1956,
+        "coordination_messages_sent": 813,
+        "heartbeat_messages_suppressed": 1655,
+        "intent_messages_suppressed": 269,
+        "lease_renewals_suppressed": 920,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 4,
+        "congestion_samples": 100,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 1,
+        "deferred_unknown_bids": 2,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 19,
+        "completion_certificates_relayed": 667,
+        "task_resurrections_suppressed": 4,
+        "deadline_misses": 0
+      },
+      "last_refused": {
+        "sensor": {
+          "t": 25.419999999999547,
+          "pose": [
+            23.09082272728783,
+            21.97405572593205,
+            1.590153060691766
+          ],
+          "v": 0.03198882602076111,
+          "omega": 0.0,
+          "battery_frac": 0.47737482638886974,
+          "cell": [
+            16,
+            15
+          ],
+          "clearance_m": 0.43193902620461455,
+          "clearance_static_m": 1.8414426081654507,
+          "clearance_dynamic_m": 0.43193902620461455,
+          "clearance_omni_m": 0.43193902620461455,
+          "detections": [
+            {
+              "x": 22.979086346393537,
+              "y": 23.1099883741942,
+              "r": 0.35,
+              "range_m": 1.1319390262046145,
+              "vx": 0.4997211274674632,
+              "vy": -0.00820145286890966
+            }
+          ],
+          "on_dock": false
+        },
+        "turn": {
+          "v": 0.0,
+          "omega": -0.48,
+          "safety_stop": false
+        },
+        "reason": "momentum"
+      },
+      "turn_rejections": {
+        "momentum": 4
+      },
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          14.680128125837717,
+          27.245428434349414,
+          2.801350613438292
+        ],
+        "v": 0.0,
+        "omega": 0.0,
+        "battery_frac": 0.43908402777791505,
+        "cell": [
+          10,
+          19
+        ],
+        "clearance_m": 2.6399999999999997,
+        "clearance_static_m": 2.6399999999999997,
+        "clearance_dynamic_m": 2.6399999999999997,
+        "clearance_omni_m": 99.0,
+        "detections": [],
+        "on_dock": false
+      },
+      "retreat_since": 0.0,
+      "last_progress": 299.52
+    },
+    {
+      "id": "AMR10",
+      "state": "idle",
+      "task": null,
+      "carry": null,
+      "pick": null,
+      "drop": null,
+      "goal": null,
+      "cargo_type": null,
+      "done": 2,
+      "path": [],
+      "coordination": {
+        "hold": false,
+        "blocked_on": null,
+        "blocked_since": null,
+        "stall_since": null,
+        "creep_until": -1000000000.0,
+        "recovery_target": null,
+        "recovery_waypoints": [],
+        "retreat_reason": null
+      },
+      "stats": {
+        "replans": 31,
+        "yields": 171,
+        "deadlocks_detected": 0,
+        "retreats": 0,
+        "safety_stops": 561,
+        "msgs_sent": 8008,
+        "bytes_sent": 1670678,
+        "msgs_recv": 63931,
+        "plan_cpu_s": 0.0021269150020089,
+        "plan_calls": 31,
+        "plan_cpu_max_s": 0.0005741660133935511,
+        "central_plans": 0,
+        "local_plans": 31,
+        "seconds_degraded": 0.0,
+        "priority_decisions": 0,
+        "priority_inheritances": 0,
+        "priority_backtracks": 0,
+        "priority_forced_moves": 0,
+        "priority_waits": 0,
+        "recovery_paths_rejected": 0,
+        "recovery_staged_paths": 0,
+        "recovery_braking_stops": 0,
+        "protective_turn_commands": 513,
+        "bios4_proceed": 0,
+        "bios4_hold": 0,
+        "bios4_yield": 0,
+        "bios4_claim": 0,
+        "bios4_reroute": 0,
+        "bios4_unstick": 0,
+        "progress_cells": 160,
+        "dynamic_obstacles_detected": 10,
+        "dynamic_reroutes": 1,
+        "task_reassignments": 2,
+        "auction_bids_sent": 33,
+        "energy_bids_suppressed": 10,
+        "energy_no_eligible_rounds": 0,
+        "nonproductive_wait_ticks": 11841,
+        "v7_passages_observed": 0,
+        "v7_passage_releases": 0,
+        "v7_empty_reserved_block_ticks": 0,
+        "v7_passage_release_uses": 0,
+        "heartbeat_messages_sent": 2819,
+        "intent_messages_sent": 1823,
+        "auction_messages_sent": 2066,
+        "coordination_messages_sent": 1300,
+        "heartbeat_messages_suppressed": 918,
+        "intent_messages_suppressed": 382,
+        "lease_renewals_suppressed": 1133,
+        "bid_rebroadcasts_suppressed": 0,
+        "decision_events": 16,
+        "congestion_samples": 168,
+        "experience_messages_sent": 0,
+        "experience_updates_received": 0,
+        "experience_guided_replans": 0,
+        "predictive_hazards_seen": 0,
+        "predictive_reroutes": 0,
+        "charger_contentions_avoided": 0,
+        "future_candidates_evaluated": 0,
+        "future_bids_sent": 0,
+        "future_bids_won": 0,
+        "future_bids_lost": 0,
+        "future_capacity_rejections": 0,
+        "stale_future_awards_rejected": 0,
+        "future_version_mismatches": 0,
+        "future_energy_rejections": 0,
+        "future_deadline_rejections": 0,
+        "future_charger_rejections": 0,
+        "future_lease_renewals": 0,
+        "future_lease_expiries": 0,
+        "future_invalidations": 0,
+        "future_promotions": 0,
+        "future_promotion_failures": 0,
+        "future_network_fallbacks": 0,
+        "future_hysteresis_prevented": 0,
+        "rejected_unknown_bids": 5,
+        "deferred_unknown_bids": 5,
+        "rejected_epoch_jumps": 0,
+        "rejected_task_conflicts": 0,
+        "rejected_task_completions": 0,
+        "rejected_directed_awards": 0,
+        "completion_certificates_accepted": 19,
+        "completion_certificates_relayed": 649,
+        "task_resurrections_suppressed": 4,
+        "deadline_misses": 0
+      },
+      "last_refused": {
+        "sensor": {
+          "t": 466.5799999998656,
+          "pose": [
+            18.99703705647887,
+            9.028817468464897,
+            -1.958278101208348
+          ],
+          "v": 0.032,
+          "omega": 0.3613088917400695,
+          "battery_frac": 0.5761118055552814,
+          "cell": [
+            13,
+            6
+          ],
+          "clearance_m": 0.800610005522998,
+          "clearance_static_m": 0.800610005522998,
+          "clearance_dynamic_m": 2.6399999999999997,
+          "clearance_omni_m": 0.44973535898259565,
+          "detections": [
+            {
+              "x": 21.774470718592355,
+              "y": 9.10757656447699,
+              "r": 0.35,
+              "range_m": 2.8009025933883525,
+              "vx": 0.0,
+              "vy": -0.0
+            },
+            {
+              "x": 20.488949673097423,
+              "y": 9.105582935101431,
+              "r": 0.35,
+              "range_m": 1.515459150250314,
+              "vx": 0.0,
+              "vy": -0.0
+            },
+            {
+              "x": 22.69139802564953,
+              "y": 9.099301068905412,
+              "r": 0.35,
+              "range_m": 3.7177459677149765,
+              "vx": 0.0,
+              "vy": -0.0
+            },
+            {
+              "x": 18.90248135388572,
+              "y": 10.227898811504978,
+              "r": 0.35,
+              "range_m": 1.1497353589825956,
+              "vx": -0.0,
+              "vy": 0.0
+            },
+            {
+              "x": 22.70839768059776,
+              "y": 10.202821108518508,
+              "r": 0.3,
+              "range_m": 3.8997254189953545,
+              "vx": 0.0,
+              "vy": 0.0
+            }
+          ],
+          "on_dock": false
+        },
+        "turn": {
+          "v": 0.0,
+          "omega": 0.1698764647682006,
+          "safety_stop": false
+        },
+        "reason": "momentum"
+      },
+      "turn_rejections": {
+        "momentum": 21
+      },
+      "pose": {
+        "t": 799.9999999995624,
+        "pose": [
+          13.210374701427991,
+          2.1018793890536585,
+          -3.1371171194717125
+        ],
+        "v": 0.0,
+        "omega": 0.0,
+        "battery_frac": 0.5652022569443361,
+        "cell": [
+          9,
+          1
+        ],
+        "clearance_m": 1.711236569690462,
+        "clearance_static_m": 1.711236569690462,
+        "clearance_dynamic_m": 2.6399999999999997,
+        "clearance_omni_m": 0.7565467491939689,
+        "detections": [
+          {
+            "x": 14.70931472712872,
+            "y": 4.829554564112415,
+            "r": 0.35,
+            "range_m": 3.1123998877521384,
+            "vx": 0.006802103159227189,
+            "vy": 0.48705504632221863
+          },
+          {
+            "x": 14.666914030887371,
+            "y": 2.1065285099962128,
+            "r": 0.35,
+            "range_m": 1.456546749193969,
+            "vx": -0.0,
+            "vy": -0.0
+          }
+        ],
+        "on_dock": false
+      },
+      "retreat_since": 0.0,
+      "last_progress": 588.66
+    }
+  ]
+}

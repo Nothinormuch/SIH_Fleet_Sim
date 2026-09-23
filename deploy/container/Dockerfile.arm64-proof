@@ -1,0 +1,12 @@
+# syntax=docker/dockerfile:1
+# An ARM64 software deployment proof, not a Raspberry Pi hardware measurement.
+FROM --platform=linux/arm64 python:3.11-slim
+
+WORKDIR /opt/sih-fleet
+ENV PYTHONUNBUFFERED=1
+
+COPY . .
+
+# Runtime and proof paths are stdlib-only; no pip download or compiler is needed.
+CMD ["python3", "deployment_acceptance.py", "--duration", "20", \
+     "--output", "/opt/sih-fleet/artifacts/deployment/arm64-acceptance.json"]

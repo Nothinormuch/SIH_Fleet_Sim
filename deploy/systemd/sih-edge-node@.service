@@ -4,19 +4,30 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+WatchdogSec=5s
+TimeoutStartSec=15s
 User=sih-fleet
 Group=sih-fleet
 WorkingDirectory=/opt/sih-fleet
 EnvironmentFile=/etc/sih-fleet/%i.env
 ExecStart=/opt/sih-fleet/.venv/bin/python /opt/sih-fleet/edge_node.py \
   --robot-id %i --robot-index ${ROBOT_INDEX} --robots ${ROBOTS} \
-  --scenario ${SCENARIO} --interface ${NETWORK_INTERFACE} \
+  --site-config ${SITE_CONFIG} --policy ${POLICY} \
+  --allocation-policy ${ALLOCATION_POLICY} \
+  --interface ${NETWORK_INTERFACE} \
   --peer-port ${PEER_PORT} --sensor-port ${SENSOR_PORT} \
   --actuator-port ${ACTUATOR_PORT} \
+  --startup-sensor-wait 10 \
+  --terminal-journal /var/lib/sih-fleet/%i-terminal.json \
   --report /var/lib/sih-fleet/%i-report.json
 Restart=on-failure
 RestartSec=2
+TimeoutStopSec=10
+StateDirectory=sih-fleet
+StateDirectoryMode=0750
+UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

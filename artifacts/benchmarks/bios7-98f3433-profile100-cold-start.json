@@ -1,0 +1,2819 @@
+{
+  "scope": "Profiled two-second cold start only; not completion, throughput or live latency evidence",
+  "amr_source_sha256": "2bbe49b506975a749a0c5eba488a37a0b63c127e4a69e0ad0f984d1d5a0ccda1",
+  "source_unchanged": true,
+  "scenario_input_sha256": "d414378f256a6bbf2fd480dfb1a3b4a4ce1e95fb050c3647945d81746f66747a",
+  "wall_seconds": 37.88898295798572,
+  "process_cpu_seconds": 37.803540999999996,
+  "result": {
+    "policy": "BIOS_PIBT.7",
+    "scenario": "capacity_fixed",
+    "seed": 0,
+    "allocation_policy": "auction_bundle",
+    "workload_id": "0e17180547c5d3ebf06c9fe27773d31a4b6fd684835b142ad2bfbd8c1dd8ccd5",
+    "sim_seconds": 2.0,
+    "robots": 100,
+    "tasks_completed": 0,
+    "tasks_announced": 200,
+    "makespan_s": 2.0,
+    "task_times": [],
+    "throughput_per_robot_hr": 0.0,
+    "contacts_robot_robot": 0,
+    "contacts_robot_human": 0,
+    "contacts_robot_rack": 0,
+    "min_separation_m": 2.844,
+    "p05_separation_m": 8.516,
+    "robot_hours": 0.05556,
+    "progress_cells": 0,
+    "bios4_unstick": 0,
+    "deadlocks_detected": 0,
+    "retreats": 0,
+    "yields": 99,
+    "replans": 104,
+    "dynamic_obstacles_detected": 0,
+    "dynamic_reroutes": 0,
+    "task_reassignments": 0,
+    "recovery_paths_rejected": 0,
+    "recovery_staged_paths": 0,
+    "recovery_braking_stops": 0,
+    "auction_bids_sent": 600,
+    "energy_bids_suppressed": 19400,
+    "energy_no_eligible_rounds": 1,
+    "nonproductive_wait_ticks": 3960,
+    "safety_stop_ticks": 0,
+    "human_yield_ticks": 0,
+    "human_work_visits": 0,
+    "human_distance_m": 0,
+    "seconds_degraded": 0.0,
+    "msgs_sent": 3070,
+    "bytes_sent": 564133,
+    "msgs_per_robot_s": 15.35,
+    "bytes_per_robot_s": 2820.7,
+    "heartbeat_messages_sent": 906,
+    "intent_messages_sent": 620,
+    "auction_messages_sent": 1097,
+    "coordination_messages_sent": 447,
+    "heartbeat_messages_suppressed": 94,
+    "intent_messages_suppressed": 68,
+    "lease_renewals_suppressed": 495,
+    "bid_rebroadcasts_suppressed": 0,
+    "decision_events": 99,
+    "congestion_samples": 0,
+    "experience_messages_sent": 0,
+    "experience_updates_received": 0,
+    "experience_guided_replans": 0,
+    "predictive_hazards_seen": 0,
+    "predictive_reroutes": 0,
+    "charger_contentions_avoided": 0,
+    "v7_passages_observed": 0,
+    "v7_passage_releases": 0,
+    "v7_empty_reserved_block_ticks": 0,
+    "v7_passage_release_uses": 0,
+    "future_candidates_evaluated": 0,
+    "future_bids_sent": 0,
+    "future_bids_won": 0,
+    "future_bids_lost": 0,
+    "future_capacity_rejections": 0,
+    "stale_future_awards_rejected": 0,
+    "future_version_mismatches": 0,
+    "future_lease_renewals": 0,
+    "future_lease_expiries": 0,
+    "future_invalidations": 0,
+    "future_promotions": 0,
+    "future_promotion_failures": 0,
+    "future_network_fallbacks": 0,
+    "future_energy_rejections": 0,
+    "future_deadline_rejections": 0,
+    "future_charger_rejections": 0,
+    "future_hysteresis_prevented": 0,
+    "rejected_unknown_bids": 0,
+    "deferred_unknown_bids": 0,
+    "rejected_epoch_jumps": 0,
+    "rejected_task_conflicts": 0,
+    "rejected_task_completions": 0,
+    "rejected_directed_awards": 0,
+    "completion_certificates_accepted": 0,
+    "completion_certificates_relayed": 0,
+    "task_resurrections_suppressed": 0,
+    "deadline_misses": 0,
+    "allocation_compute_mean_ms": 133.0353,
+    "allocation_compute_median_ms": 249.3446,
+    "allocation_compute_p95_ms": 270.5022,
+    "allocation_compute_max_ms": 289.5511,
+    "plan_cpu_total_s": 0.0546,
+    "plan_calls": 104,
+    "plan_cpu_mean_ms": 0.525,
+    "plan_cpu_max_ms": 5.116,
+    "priority_decisions": 0,
+    "priority_inheritances": 0,
+    "priority_backtracks": 0,
+    "priority_forced_moves": 0,
+    "priority_waits": 0,
+    "net_loss": 0.0,
+    "manager_killed_at": null,
+    "robot_failures": 0,
+    "completed_all": false
+  },
+  "profile": [
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 108,
+      "function": "run_scenario",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 0.028752009000000002,
+      "cumulative_seconds": 37.871286500000004
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 611,
+      "function": "step",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.06614597900000001,
+      "cumulative_seconds": 30.033106767000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3351,
+      "function": "_task_loop",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.030084349000000003,
+      "cumulative_seconds": 26.752249426000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4155,
+      "function": "_run_auction",
+      "calls": 3268,
+      "primitive_calls": 3268,
+      "self_seconds": 0.0014892750000000002,
+      "cumulative_seconds": 26.592626208000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4233,
+      "function": "_run_v3_batch_auction",
+      "calls": 3268,
+      "primitive_calls": 3268,
+      "self_seconds": 0.00445975,
+      "cumulative_seconds": 26.591136933
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4248,
+      "function": "_run_v3_batch_auction_impl",
+      "calls": 3268,
+      "primitive_calls": 3268,
+      "self_seconds": 0.21033349,
+      "cumulative_seconds": 26.586581376
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4861,
+      "function": "_task_estimate",
+      "calls": 137699,
+      "primitive_calls": 137699,
+      "self_seconds": 0.32014268100000004,
+      "cumulative_seconds": 24.059447825000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/planner.py",
+      "line": 73,
+      "function": "astar",
+      "calls": 268704,
+      "primitive_calls": 268704,
+      "self_seconds": 12.472709865,
+      "cumulative_seconds": 23.477838512
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4803,
+      "function": "_energy_feasible",
+      "calls": 20000,
+      "primitive_calls": 20000,
+      "self_seconds": 0.020260568,
+      "cumulative_seconds": 18.994140189
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4841,
+      "function": "_nearest_dock_steps",
+      "calls": 78800,
+      "primitive_calls": 78800,
+      "self_seconds": 0.208325116,
+      "cumulative_seconds": 15.068523884000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5209,
+      "function": "_energy_candidate",
+      "calls": 20000,
+      "primitive_calls": 20000,
+      "self_seconds": 0.834908744,
+      "cumulative_seconds": 7.1076256870000005
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/transport.py",
+      "line": 144,
+      "function": "send",
+      "calls": 3270,
+      "primitive_calls": 3270,
+      "self_seconds": 0.9909128580000001,
+      "cumulative_seconds": 6.409254818
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4827,
+      "function": "_energy_required",
+      "calls": 58800,
+      "primitive_calls": 58800,
+      "self_seconds": 0.022360045000000002,
+      "cumulative_seconds": 5.122170131000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 29,
+      "function": "manhattan",
+      "calls": 12866695,
+      "primitive_calls": 12866695,
+      "self_seconds": 2.65582551,
+      "cumulative_seconds": 3.895675906
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'get' of 'dict' objects>",
+      "calls": 35888332,
+      "primitive_calls": 35888332,
+      "self_seconds": 2.890513711,
+      "cumulative_seconds": 2.890513711
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/random.py",
+      "line": 119,
+      "function": "__init__",
+      "calls": 327002,
+      "primitive_calls": 327002,
+      "self_seconds": 0.066120493,
+      "cumulative_seconds": 2.388683936
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/random.py",
+      "line": 128,
+      "function": "seed",
+      "calls": 327002,
+      "primitive_calls": 327002,
+      "self_seconds": 0.20606469500000002,
+      "cumulative_seconds": 2.322563443
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<function Random.seed at 0x109e8c880>",
+      "calls": 327002,
+      "primitive_calls": 327002,
+      "self_seconds": 2.044665857,
+      "cumulative_seconds": 2.044665857
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6246,
+      "function": "_ingest",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.9296344430000001,
+      "cumulative_seconds": 1.834206148
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _heapq.heappush>",
+      "calls": 10608483,
+      "primitive_calls": 10608483,
+      "self_seconds": 1.517069003,
+      "cumulative_seconds": 1.517069003
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py",
+      "line": 185,
+      "function": "dumps",
+      "calls": 334341,
+      "primitive_calls": 334341,
+      "self_seconds": 0.22999840000000002,
+      "cumulative_seconds": 1.516951677
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.abs>",
+      "calls": 25923976,
+      "primitive_calls": 25923976,
+      "self_seconds": 1.2545274530000001,
+      "cumulative_seconds": 1.2545274530000001
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/encoder.py",
+      "line": 185,
+      "function": "encode",
+      "calls": 334341,
+      "primitive_calls": 334341,
+      "self_seconds": 0.20187844500000002,
+      "cumulative_seconds": 1.2440438820000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _heapq.heappop>",
+      "calls": 6278426,
+      "primitive_calls": 6278426,
+      "self_seconds": 1.1271610330000001,
+      "cumulative_seconds": 1.1271610330000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 56,
+      "function": "neighbors",
+      "calls": 5689171,
+      "primitive_calls": 5689171,
+      "self_seconds": 1.0751636610000002,
+      "cumulative_seconds": 1.0751636610000002
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/encoder.py",
+      "line": 207,
+      "function": "iterencode",
+      "calls": 334341,
+      "primitive_calls": 334341,
+      "self_seconds": 0.954487641,
+      "cumulative_seconds": 0.954487641
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.next>",
+      "calls": 10892619,
+      "primitive_calls": 10892619,
+      "self_seconds": 0.6719385840000001,
+      "cumulative_seconds": 0.6771416170000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 411,
+      "function": "step",
+      "calls": 100,
+      "primitive_calls": 100,
+      "self_seconds": 0.026661011000000002,
+      "cumulative_seconds": 0.6420142480000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 753,
+      "function": "sense",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.181570909,
+      "cumulative_seconds": 0.54911306
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 705,
+      "function": "_check_contacts",
+      "calls": 100,
+      "primitive_calls": 100,
+      "self_seconds": 0.221597081,
+      "cumulative_seconds": 0.538617372
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'add' of 'set' objects>",
+      "calls": 5814222,
+      "primitive_calls": 5814222,
+      "self_seconds": 0.5330484790000001,
+      "cumulative_seconds": 0.5330484790000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'append' of 'list' objects>",
+      "calls": 6862624,
+      "primitive_calls": 6862624,
+      "self_seconds": 0.503750671,
+      "cumulative_seconds": 0.503750671
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/random.py",
+      "line": 557,
+      "function": "gauss",
+      "calls": 347000,
+      "primitive_calls": 347000,
+      "self_seconds": 0.275756944,
+      "cumulative_seconds": 0.435496631
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3143,
+      "function": "_observe_dynamic_obstacles",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.21204287000000002,
+      "cumulative_seconds": 0.421737326
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 727,
+      "function": "_peer_stale_after_s",
+      "calls": 3473208,
+      "primitive_calls": 3473208,
+      "self_seconds": 0.414869857,
+      "cumulative_seconds": 0.414869857
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 2642,
+      "function": "_bios_lock",
+      "calls": 7708,
+      "primitive_calls": 7708,
+      "self_seconds": 0.12125914400000001,
+      "cumulative_seconds": 0.40950621200000004
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 2658,
+      "function": "_bios_claim",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.009556173000000001,
+      "cumulative_seconds": 0.360616995
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/priority.py",
+      "line": 44,
+      "function": "from_wire",
+      "calls": 119097,
+      "primitive_calls": 119097,
+      "self_seconds": 0.16317048,
+      "cumulative_seconds": 0.33001745000000005
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 1987,
+      "function": "_zone_contains",
+      "calls": 763092,
+      "primitive_calls": 763092,
+      "self_seconds": 0.17749740800000002,
+      "cumulative_seconds": 0.28472418
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/transport.py",
+      "line": 125,
+      "function": "_reachable",
+      "calls": 327000,
+      "primitive_calls": 327000,
+      "self_seconds": 0.10728349300000001,
+      "cumulative_seconds": 0.277671479
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 20,
+      "function": "dist",
+      "calls": 1249915,
+      "primitive_calls": 1249915,
+      "self_seconds": 0.157646707,
+      "cumulative_seconds": 0.252097728
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 106,
+      "function": "segments_min_distance",
+      "calls": 495000,
+      "primitive_calls": 495000,
+      "self_seconds": 0.09112434000000001,
+      "cumulative_seconds": 0.23549967400000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'sort' of 'list' objects>",
+      "calls": 20000,
+      "primitive_calls": 20000,
+      "self_seconds": 0.17435080900000002,
+      "cumulative_seconds": 0.217677314
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/transport.py",
+      "line": 182,
+      "function": "poll",
+      "calls": 10100,
+      "primitive_calls": 10100,
+      "self_seconds": 0.078489954,
+      "cumulative_seconds": 0.19478098700000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 115,
+      "function": "delivery_identity_body",
+      "calls": 327000,
+      "primitive_calls": 327000,
+      "self_seconds": 0.134700852,
+      "cumulative_seconds": 0.19328629
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 147,
+      "function": "encode",
+      "calls": 6340,
+      "primitive_calls": 6340,
+      "self_seconds": 0.008279652,
+      "cumulative_seconds": 0.18707885400000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'random' of '_random.Random' objects>",
+      "calls": 1001000,
+      "primitive_calls": 1001000,
+      "self_seconds": 0.173669775,
+      "cumulative_seconds": 0.173669775
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/transport.py",
+      "line": 116,
+      "function": "in_dead_zone",
+      "calls": 654000,
+      "primitive_calls": 654000,
+      "self_seconds": 0.113738775,
+      "cumulative_seconds": 0.17038798600000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.isinstance>",
+      "calls": 1635625,
+      "primitive_calls": 1635625,
+      "self_seconds": 0.150174375,
+      "cumulative_seconds": 0.15018604100000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 55,
+      "function": "segment_point_distance",
+      "calls": 495000,
+      "primitive_calls": 495000,
+      "self_seconds": 0.098627952,
+      "cumulative_seconds": 0.14437533400000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 266,
+      "function": "_validate_dict",
+      "calls": 6340,
+      "primitive_calls": 6340,
+      "self_seconds": 0.03700775,
+      "cumulative_seconds": 0.13898806600000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.hypot>",
+      "calls": 1764915,
+      "primitive_calls": 1764915,
+      "self_seconds": 0.13621381600000002,
+      "cumulative_seconds": 0.13621381600000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 805,
+      "function": "_cone_clearance",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.03241498,
+      "cumulative_seconds": 0.12508211900000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5976,
+      "function": "_broadcast",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.00916599,
+      "cumulative_seconds": 0.119027064
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.max>",
+      "calls": 1225871,
+      "primitive_calls": 1225871,
+      "self_seconds": 0.11436562900000001,
+      "cumulative_seconds": 0.11437893900000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6687,
+      "function": "_expire_peers",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.098377503,
+      "cumulative_seconds": 0.10120447
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 1444,
+      "function": "_traffic_loop",
+      "calls": 1800,
+      "primitive_calls": 1800,
+      "self_seconds": 0.0056963330000000005,
+      "cumulative_seconds": 0.101193767
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3705,
+      "function": "_vacate_if_in_the_way",
+      "calls": 3169,
+      "primitive_calls": 3169,
+      "self_seconds": 0.062317164,
+      "cumulative_seconds": 0.097772833
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.sorted>",
+      "calls": 18292,
+      "primitive_calls": 18292,
+      "self_seconds": 0.06733291500000001,
+      "cumulative_seconds": 0.096183449
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 51,
+      "function": "passable",
+      "calls": 266932,
+      "primitive_calls": 266932,
+      "self_seconds": 0.063851982,
+      "cumulative_seconds": 0.094796982
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3163,
+      "function": "<genexpr>",
+      "calls": 260321,
+      "primitive_calls": 260321,
+      "self_seconds": 0.038690882,
+      "cumulative_seconds": 0.091925426
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.round>",
+      "calls": 382591,
+      "primitive_calls": 382591,
+      "self_seconds": 0.090239155,
+      "cumulative_seconds": 0.090239155
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 689,
+      "function": "as_cell",
+      "calls": 563615,
+      "primitive_calls": 563615,
+      "self_seconds": 0.084266295,
+      "cumulative_seconds": 0.084266295
+    },
+    {
+      "file": "<string>",
+      "line": 2,
+      "function": "__init__",
+      "calls": 151074,
+      "primitive_calls": 151074,
+      "self_seconds": 0.075709515,
+      "cumulative_seconds": 0.075709515
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'digest' of '_blake2.blake2b' objects>",
+      "calls": 327000,
+      "primitive_calls": 327000,
+      "self_seconds": 0.075109748,
+      "cumulative_seconds": 0.075109748
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 845,
+      "function": "_cast",
+      "calls": 30000,
+      "primitive_calls": 30000,
+      "self_seconds": 0.043195955,
+      "cumulative_seconds": 0.071866476
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 1981,
+      "function": "_cell_zone_id",
+      "calls": 771106,
+      "primitive_calls": 771106,
+      "self_seconds": 0.069561643,
+      "cumulative_seconds": 0.069561643
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/priority.py",
+      "line": 49,
+      "function": "<genexpr>",
+      "calls": 833679,
+      "primitive_calls": 833679,
+      "self_seconds": 0.06714911600000001,
+      "cumulative_seconds": 0.06714911600000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 1791,
+      "function": "_block_conflict",
+      "calls": 1188,
+      "primitive_calls": 1188,
+      "self_seconds": 0.000829603,
+      "cumulative_seconds": 0.06485821600000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'pop' of 'dict' objects>",
+      "calls": 711570,
+      "primitive_calls": 711570,
+      "self_seconds": 0.063110962,
+      "cumulative_seconds": 0.063110962
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 1992,
+      "function": "_cell_lease_conflict",
+      "calls": 1188,
+      "primitive_calls": 1188,
+      "self_seconds": 0.0018330140000000002,
+      "cumulative_seconds": 0.063034748
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'setdefault' of 'dict' objects>",
+      "calls": 539129,
+      "primitive_calls": 539129,
+      "self_seconds": 0.058782849000000005,
+      "cumulative_seconds": 0.058782849000000005
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3049,
+      "function": "_replan",
+      "calls": 104,
+      "primitive_calls": 104,
+      "self_seconds": 0.0006995030000000001,
+      "cumulative_seconds": 0.054892209000000004
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5492,
+      "function": "_v3_bid_cost",
+      "calls": 600,
+      "primitive_calls": 600,
+      "self_seconds": 0.0008454070000000001,
+      "cumulative_seconds": 0.054225714
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 649,
+      "function": "_hits_rack",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.036330372,
+      "cumulative_seconds": 0.053431540000000007
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4732,
+      "function": "_bid_cost",
+      "calls": 600,
+      "primitive_calls": 600,
+      "self_seconds": 0.002435862,
+      "cumulative_seconds": 0.053175923
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5772,
+      "function": "_follow",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.026938842,
+      "cumulative_seconds": 0.051928405000000004
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 935,
+      "function": "_safety",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.004155524,
+      "cumulative_seconds": 0.051230823
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5693,
+      "function": "_accept_task",
+      "calls": 99,
+      "primitive_calls": 99,
+      "self_seconds": 0.0006103770000000001,
+      "cumulative_seconds": 0.050492122
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.min>",
+      "calls": 671599,
+      "primitive_calls": 671599,
+      "self_seconds": 0.050294631000000006,
+      "cumulative_seconds": 0.050308815
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.len>",
+      "calls": 617346,
+      "primitive_calls": 617346,
+      "self_seconds": 0.049578577000000006,
+      "cumulative_seconds": 0.049578577000000006
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 949,
+      "function": "_safety_base",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.011754799000000002,
+      "cumulative_seconds": 0.047075299
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5640,
+      "function": "_expire_task_claims",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.044083086,
+      "cumulative_seconds": 0.045318019
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5230,
+      "function": "<lambda>",
+      "calls": 990000,
+      "primitive_calls": 990000,
+      "self_seconds": 0.043326505,
+      "cumulative_seconds": 0.043326505
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 47,
+      "function": "in_bounds",
+      "calls": 395727,
+      "primitive_calls": 395727,
+      "self_seconds": 0.043177694,
+      "cumulative_seconds": 0.043177694
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/encoder.py",
+      "line": 105,
+      "function": "__init__",
+      "calls": 334341,
+      "primitive_calls": 334341,
+      "self_seconds": 0.042909395,
+      "cumulative_seconds": 0.042909395
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method from_bytes>",
+      "calls": 327000,
+      "primitive_calls": 327000,
+      "self_seconds": 0.040709693000000005,
+      "cumulative_seconds": 0.040709693000000005
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5255,
+      "function": "_v7_accept_pose_session",
+      "calls": 89694,
+      "primitive_calls": 89694,
+      "self_seconds": 0.027056649000000002,
+      "cumulative_seconds": 0.04047502
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4794,
+      "function": "_cargo_factor",
+      "calls": 79400,
+      "primitive_calls": 79400,
+      "self_seconds": 0.032751819,
+      "cumulative_seconds": 0.040005659000000006
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'encode' of 'str' objects>",
+      "calls": 334341,
+      "primitive_calls": 334341,
+      "self_seconds": 0.039147045000000005,
+      "cumulative_seconds": 0.039147045000000005
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 1984,
+      "function": "_is_cell_zone",
+      "calls": 763092,
+      "primitive_calls": 763092,
+      "self_seconds": 0.038929008,
+      "cumulative_seconds": 0.038929008
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6169,
+      "function": "_broadcast_completion_catalog",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.00673418,
+      "cumulative_seconds": 0.038027311
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 802,
+      "function": "_v6_edge_costs",
+      "calls": 20803,
+      "primitive_calls": 20803,
+      "self_seconds": 0.027025429,
+      "cumulative_seconds": 0.037501948
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.sin>",
+      "calls": 408826,
+      "primitive_calls": 408826,
+      "self_seconds": 0.036039720000000004,
+      "cumulative_seconds": 0.036039720000000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.cos>",
+      "calls": 410297,
+      "primitive_calls": 410297,
+      "self_seconds": 0.035520717,
+      "cumulative_seconds": 0.035520717
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4833,
+      "function": "_store_static_energy_estimate",
+      "calls": 78800,
+      "primitive_calls": 78800,
+      "self_seconds": 0.028295206000000003,
+      "cumulative_seconds": 0.034846965
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3289,
+      "function": "_safe_incoming_epoch",
+      "calls": 128603,
+      "primitive_calls": 128603,
+      "self_seconds": 0.026105742,
+      "cumulative_seconds": 0.034542363
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 38,
+      "function": "to_cell",
+      "calls": 74520,
+      "primitive_calls": 74520,
+      "self_seconds": 0.026055658000000002,
+      "cumulative_seconds": 0.034464842
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 1717,
+      "function": "_speed_limit_from_traffic",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.009738926,
+      "cumulative_seconds": 0.032652972
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'join' of 'str' objects>",
+      "calls": 334341,
+      "primitive_calls": 334341,
+      "self_seconds": 0.031997032,
+      "cumulative_seconds": 0.031997032
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6180,
+      "function": "<genexpr>",
+      "calls": 90100,
+      "primitive_calls": 90100,
+      "self_seconds": 0.021097926000000003,
+      "cumulative_seconds": 0.031012936
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.log>",
+      "calls": 337000,
+      "primitive_calls": 337000,
+      "self_seconds": 0.030277340000000003,
+      "cumulative_seconds": 0.030277340000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3080,
+      "function": "<lambda>",
+      "calls": 17410,
+      "primitive_calls": 17410,
+      "self_seconds": 0.003971504,
+      "cumulative_seconds": 0.029846421
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3325,
+      "function": "_admit_deferred_bids",
+      "calls": 39800,
+      "primitive_calls": 39800,
+      "self_seconds": 0.018537698000000002,
+      "cumulative_seconds": 0.028239898000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/topology.py",
+      "line": 111,
+      "function": "allows",
+      "calls": 17947,
+      "primitive_calls": 17947,
+      "self_seconds": 0.017840723000000003,
+      "cumulative_seconds": 0.027713723000000003
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.sqrt>",
+      "calls": 338471,
+      "primitive_calls": 338471,
+      "self_seconds": 0.027385473,
+      "cumulative_seconds": 0.027385473
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'reverse' of 'list' objects>",
+      "calls": 266882,
+      "primitive_calls": 266882,
+      "self_seconds": 0.025468746,
+      "cumulative_seconds": 0.025468746
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 732,
+      "function": "_v6_conflict_active",
+      "calls": 994,
+      "primitive_calls": 994,
+      "self_seconds": 0.0027784990000000002,
+      "cumulative_seconds": 0.024645274000000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6125,
+      "function": "_broadcast_task_catalog",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.0030020520000000003,
+      "cumulative_seconds": 0.023753389
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 226,
+      "function": "_number",
+      "calls": 33120,
+      "primitive_calls": 33120,
+      "self_seconds": 0.016425272,
+      "cumulative_seconds": 0.023666370000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4501,
+      "function": "<lambda>",
+      "calls": 59400,
+      "primitive_calls": 59400,
+      "self_seconds": 0.010652017000000001,
+      "cumulative_seconds": 0.023325184000000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5521,
+      "function": "_record_task_claim",
+      "calls": 39305,
+      "primitive_calls": 39305,
+      "self_seconds": 0.016507827000000003,
+      "cumulative_seconds": 0.022240802
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 248,
+      "function": "_cell",
+      "calls": 10368,
+      "primitive_calls": 10368,
+      "self_seconds": 0.008025928,
+      "cumulative_seconds": 0.021967454
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 738,
+      "function": "<genexpr>",
+      "calls": 30724,
+      "primitive_calls": 30724,
+      "self_seconds": 0.008673597,
+      "cumulative_seconds": 0.021751138
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6263,
+      "function": "<genexpr>",
+      "calls": 179388,
+      "primitive_calls": 179388,
+      "self_seconds": 0.018317011,
+      "cumulative_seconds": 0.018317011
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 11,
+      "function": "wrap_angle",
+      "calls": 26826,
+      "primitive_calls": 26826,
+      "self_seconds": 0.010771595,
+      "cumulative_seconds": 0.018236882000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 702,
+      "function": "_on_dock",
+      "calls": 20000,
+      "primitive_calls": 20000,
+      "self_seconds": 0.009413792,
+      "cumulative_seconds": 0.018113565
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5896,
+      "function": "_next_cell",
+      "calls": 21800,
+      "primitive_calls": 21800,
+      "self_seconds": 0.005851193,
+      "cumulative_seconds": 0.017757193
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 791,
+      "function": "_v6_track_wait",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.006671061000000001,
+      "cumulative_seconds": 0.017629631
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 16,
+      "function": "angle_diff",
+      "calls": 16826,
+      "primitive_calls": 16826,
+      "self_seconds": 0.004097669,
+      "cumulative_seconds": 0.016408452
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/settings.py",
+      "line": 61,
+      "function": "max_speed_for_clearance",
+      "calls": 11591,
+      "primitive_calls": 11591,
+      "self_seconds": 0.011220542,
+      "cumulative_seconds": 0.016170461
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 322,
+      "function": "<genexpr>",
+      "calls": 7092,
+      "primitive_calls": 7092,
+      "self_seconds": 0.004504697,
+      "cumulative_seconds": 0.015089965
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 253,
+      "function": "_cells",
+      "calls": 1240,
+      "primitive_calls": 1240,
+      "self_seconds": 0.0015584650000000002,
+      "cumulative_seconds": 0.014928945
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 240,
+      "function": "_identifier",
+      "calls": 17368,
+      "primitive_calls": 17368,
+      "self_seconds": 0.007610508,
+      "cumulative_seconds": 0.014051849000000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 234,
+      "function": "_integer",
+      "calls": 34994,
+      "primitive_calls": 34994,
+      "self_seconds": 0.009511496000000001,
+      "cumulative_seconds": 0.014032838
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 2313,
+      "function": "_bios_v2_coordinate",
+      "calls": 537,
+      "primitive_calls": 537,
+      "self_seconds": 0.009419247,
+      "cumulative_seconds": 0.013528628000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4762,
+      "function": "_task_urgency",
+      "calls": 60000,
+      "primitive_calls": 60000,
+      "self_seconds": 0.009998035,
+      "cumulative_seconds": 0.013289380000000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 255,
+      "function": "<genexpr>",
+      "calls": 7092,
+      "primitive_calls": 7092,
+      "self_seconds": 0.0013715530000000002,
+      "cumulative_seconds": 0.013182751000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 51,
+      "function": "clamp",
+      "calls": 215439,
+      "primitive_calls": 215439,
+      "self_seconds": 0.013147767000000001,
+      "cumulative_seconds": 0.013147767000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'items' of 'dict' objects>",
+      "calls": 133697,
+      "primitive_calls": 133697,
+      "self_seconds": 0.013103884000000001,
+      "cumulative_seconds": 0.013103884000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5900,
+      "function": "_future_path_cells",
+      "calls": 22988,
+      "primitive_calls": 22988,
+      "self_seconds": 0.010389807000000001,
+      "cumulative_seconds": 0.012697438
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 250,
+      "function": "<genexpr>",
+      "calls": 31104,
+      "primitive_calls": 31104,
+      "self_seconds": 0.0049057120000000004,
+      "cumulative_seconds": 0.012508903
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 744,
+      "function": "_v6_heartbeat_due",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.000556423,
+      "cumulative_seconds": 0.01225374
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 258,
+      "function": "_relative_time",
+      "calls": 13492,
+      "primitive_calls": 13492,
+      "self_seconds": 0.002636308,
+      "cumulative_seconds": 0.011582981000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5608,
+      "function": "_max_incoming_task_lease_s",
+      "calls": 29403,
+      "primitive_calls": 29403,
+      "self_seconds": 0.009079831,
+      "cumulative_seconds": 0.011128494000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'values' of 'dict' objects>",
+      "calls": 93076,
+      "primitive_calls": 93076,
+      "self_seconds": 0.010764891,
+      "cumulative_seconds": 0.010764891
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5181,
+      "function": "_consume_future_nomination",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.006005727000000001,
+      "cumulative_seconds": 0.009401657
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 2395,
+      "function": "_repair_duplicate_cell",
+      "calls": 1800,
+      "primitive_calls": 1800,
+      "self_seconds": 0.008685752,
+      "cumulative_seconds": 0.008880886000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5420,
+      "function": "_v7_pending_corridors",
+      "calls": 19800,
+      "primitive_calls": 19800,
+      "self_seconds": 0.006102482,
+      "cumulative_seconds": 0.008686313000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.floor>",
+      "calls": 149040,
+      "primitive_calls": 149040,
+      "self_seconds": 0.008409184,
+      "cumulative_seconds": 0.008409184
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/task_protocol.py",
+      "line": 44,
+      "function": "task_descriptor_hash",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.0012320200000000001,
+      "cumulative_seconds": 0.007907481000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 244,
+      "function": "id_of",
+      "calls": 28047,
+      "primitive_calls": 28047,
+      "self_seconds": 0.0039938890000000005,
+      "cumulative_seconds": 0.007312709000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/settings.py",
+      "line": 57,
+      "function": "slow_field_m",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.0026708500000000002,
+      "cumulative_seconds": 0.007257819
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6135,
+      "function": "<genexpr>",
+      "calls": 20100,
+      "primitive_calls": 20100,
+      "self_seconds": 0.004871563000000001,
+      "cumulative_seconds": 0.00718938
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 530,
+      "function": "intent",
+      "calls": 620,
+      "primitive_calls": 620,
+      "self_seconds": 0.0043985100000000004,
+      "cumulative_seconds": 0.006434948
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/task_protocol.py",
+      "line": 36,
+      "function": "_sha256",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.0006255890000000001,
+      "cumulative_seconds": 0.006433931
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'fullmatch' of 're.Pattern' objects>",
+      "calls": 16256,
+      "primitive_calls": 16256,
+      "self_seconds": 0.005586244000000001,
+      "cumulative_seconds": 0.005586244000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 289,
+      "function": "<genexpr>",
+      "calls": 7248,
+      "primitive_calls": 7248,
+      "self_seconds": 0.0014851040000000001,
+      "cumulative_seconds": 0.005178765
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 560,
+      "function": "_is_terminal_identity",
+      "calls": 39800,
+      "primitive_calls": 39800,
+      "self_seconds": 0.00491752,
+      "cumulative_seconds": 0.00491752
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 1914,
+      "function": "_v3_staging_conflict",
+      "calls": 1188,
+      "primitive_calls": 1188,
+      "self_seconds": 0.002664942,
+      "cumulative_seconds": 0.004882979
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/task_protocol.py",
+      "line": 30,
+      "function": "_canonical",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.000504298,
+      "cumulative_seconds": 0.004864825000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.atan2>",
+      "calls": 43652,
+      "primitive_calls": 43652,
+      "self_seconds": 0.00482386,
+      "cumulative_seconds": 0.00482386
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 467,
+      "function": "heartbeat",
+      "calls": 906,
+      "primitive_calls": 906,
+      "self_seconds": 0.0027849570000000002,
+      "cumulative_seconds": 0.004683481000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5953,
+      "function": "_priority_key",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.0028381580000000003,
+      "cumulative_seconds": 0.004606259000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/settings.py",
+      "line": 46,
+      "function": "stop_field_m",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.003548144,
+      "cumulative_seconds": 0.004586969000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5307,
+      "function": "_v7_observe_passages",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.004557223,
+      "cumulative_seconds": 0.004557223
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 181,
+      "function": "__init__",
+      "calls": 100,
+      "primitive_calls": 100,
+      "self_seconds": 0.001132339,
+      "cumulative_seconds": 0.004197671
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 2018,
+      "function": "_controlled_block",
+      "calls": 4243,
+      "primitive_calls": 4243,
+      "self_seconds": 0.0018744380000000002,
+      "cumulative_seconds": 0.0038073610000000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'discard' of 'set' objects>",
+      "calls": 39950,
+      "primitive_calls": 39950,
+      "self_seconds": 0.0037451520000000003,
+      "cumulative_seconds": 0.0037451520000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/transport.py",
+      "line": 106,
+      "function": "set_position",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.0034519790000000004,
+      "cumulative_seconds": 0.0034519790000000004
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3254,
+      "function": "_future_allocation_enabled",
+      "calls": 21000,
+      "primitive_calls": 21000,
+      "self_seconds": 0.0033618970000000004,
+      "cumulative_seconds": 0.0033618970000000004
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3413,
+      "function": "<genexpr>",
+      "calls": 3268,
+      "primitive_calls": 3268,
+      "self_seconds": 0.0032880440000000004,
+      "cumulative_seconds": 0.0032880440000000004
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5880,
+      "function": "_straight_run_m",
+      "calls": 1471,
+      "primitive_calls": 1471,
+      "self_seconds": 0.002241463,
+      "cumulative_seconds": 0.003221882
+    },
+    {
+      "file": "<string>",
+      "line": 26,
+      "function": "__hash__",
+      "calls": 12203,
+      "primitive_calls": 12203,
+      "self_seconds": 0.00216319,
+      "cumulative_seconds": 0.003165427
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5512,
+      "function": "_approach_crosses_task_corridor",
+      "calls": 9605,
+      "primitive_calls": 9605,
+      "self_seconds": 0.002475994,
+      "cumulative_seconds": 0.003156303
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 314,
+      "function": "<genexpr>",
+      "calls": 14496,
+      "primitive_calls": 14496,
+      "self_seconds": 0.002330253,
+      "cumulative_seconds": 0.003141123
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5461,
+      "function": "_task_corridor_directions",
+      "calls": 40303,
+      "primitive_calls": 40303,
+      "self_seconds": 0.003006462,
+      "cumulative_seconds": 0.003006462
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 262,
+      "function": "_task_id",
+      "calls": 2394,
+      "primitive_calls": 2394,
+      "self_seconds": 0.000651415,
+      "cumulative_seconds": 0.0027954720000000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 42,
+      "function": "bearing",
+      "calls": 6826,
+      "primitive_calls": 6826,
+      "self_seconds": 0.001812475,
+      "cumulative_seconds": 0.002651352
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6150,
+      "function": "<genexpr>",
+      "calls": 40300,
+      "primitive_calls": 40300,
+      "self_seconds": 0.002635095,
+      "cumulative_seconds": 0.002635095
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 505,
+      "function": "task_new",
+      "calls": 400,
+      "primitive_calls": 400,
+      "self_seconds": 0.000752734,
+      "cumulative_seconds": 0.002517627
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.isfinite>",
+      "calls": 33120,
+      "primitive_calls": 33120,
+      "self_seconds": 0.0024453350000000003,
+      "cumulative_seconds": 0.0024453350000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6072,
+      "function": "_broadcast_auction_lease",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.001300345,
+      "cumulative_seconds": 0.0023856230000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6219,
+      "function": "_intent_horizon",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.001909536,
+      "cumulative_seconds": 0.002359677
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/geometry.py",
+      "line": 33,
+      "function": "cell_center",
+      "calls": 15380,
+      "primitive_calls": 15380,
+      "self_seconds": 0.00230457,
+      "cumulative_seconds": 0.00230457
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/task_protocol.py",
+      "line": 40,
+      "function": "valid_sha256",
+      "calls": 2394,
+      "primitive_calls": 2394,
+      "self_seconds": 0.0008355080000000001,
+      "cumulative_seconds": 0.0022933560000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 61,
+      "function": "degree",
+      "calls": 2634,
+      "primitive_calls": 2634,
+      "self_seconds": 0.000814811,
+      "cumulative_seconds": 0.002134622
+    },
+    {
+      "file": "<string>",
+      "line": 13,
+      "function": "__eq__",
+      "calls": 14553,
+      "primitive_calls": 14553,
+      "self_seconds": 0.002062519,
+      "cumulative_seconds": 0.002062519
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5567,
+      "function": "_task_lease_duration",
+      "calls": 9686,
+      "primitive_calls": 9686,
+      "self_seconds": 0.001992125,
+      "cumulative_seconds": 0.001992125
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 87,
+      "function": "to_dict",
+      "calls": 6340,
+      "primitive_calls": 6340,
+      "self_seconds": 0.001977482,
+      "cumulative_seconds": 0.001977482
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 378,
+      "function": "_summarize",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 7.229400000000001e-05,
+      "cumulative_seconds": 0.00195875
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3885,
+      "function": "_v6_dynamic_clearance",
+      "calls": 3169,
+      "primitive_calls": 3169,
+      "self_seconds": 0.0015795770000000002,
+      "cumulative_seconds": 0.001904143
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 164,
+      "function": "corridors",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 0.000644145,
+      "cumulative_seconds": 0.0018620840000000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6152,
+      "function": "<lambda>",
+      "calls": 40000,
+      "primitive_calls": 40000,
+      "self_seconds": 0.0015525790000000001,
+      "cumulative_seconds": 0.0015525790000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3259,
+      "function": "_future_network_healthy",
+      "calls": 6732,
+      "primitive_calls": 6732,
+      "self_seconds": 0.0015119670000000001,
+      "cumulative_seconds": 0.0015119670000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4657,
+      "function": "_replicate_remote_batch_claims",
+      "calls": 9506,
+      "primitive_calls": 9506,
+      "self_seconds": 0.001435606,
+      "cumulative_seconds": 0.001435606
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5733,
+      "function": "_consume_crossed_straight_waypoints",
+      "calls": 2871,
+      "primitive_calls": 2871,
+      "self_seconds": 0.00117554,
+      "cumulative_seconds": 0.001388031
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3646,
+      "function": "_arrived",
+      "calls": 6979,
+      "primitive_calls": 6979,
+      "self_seconds": 0.0012472310000000001,
+      "cumulative_seconds": 0.001366989
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 588,
+      "function": "bid",
+      "calls": 600,
+      "primitive_calls": 600,
+      "self_seconds": 0.0008451680000000001,
+      "cumulative_seconds": 0.0013612750000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 2327,
+      "function": "<genexpr>",
+      "calls": 537,
+      "primitive_calls": 537,
+      "self_seconds": 0.001320886,
+      "cumulative_seconds": 0.001320886
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.sum>",
+      "calls": 83,
+      "primitive_calls": 83,
+      "self_seconds": 0.00041284300000000003,
+      "cumulative_seconds": 0.001229258
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 392,
+      "function": "agg",
+      "calls": 76,
+      "primitive_calls": 76,
+      "self_seconds": 3.1397000000000004e-05,
+      "cumulative_seconds": 0.0011980830000000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3249,
+      "function": "_auction_enabled",
+      "calls": 6268,
+      "primitive_calls": 6268,
+      "self_seconds": 0.001119227,
+      "cumulative_seconds": 0.001119227
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.hash>",
+      "calls": 12203,
+      "primitive_calls": 12203,
+      "self_seconds": 0.001002237,
+      "cumulative_seconds": 0.001002237
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 607,
+      "function": "award",
+      "calls": 297,
+      "primitive_calls": 297,
+      "self_seconds": 0.0006140820000000001,
+      "cumulative_seconds": 0.00094439
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 559,
+      "function": "block_claim",
+      "calls": 297,
+      "primitive_calls": 297,
+      "self_seconds": 0.000515672,
+      "cumulative_seconds": 0.0008195870000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 300,
+      "function": "<genexpr>",
+      "calls": 7248,
+      "primitive_calls": 7248,
+      "self_seconds": 0.0008127340000000001,
+      "cumulative_seconds": 0.0008127340000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4412,
+      "function": "<lambda>",
+      "calls": 19800,
+      "primitive_calls": 19800,
+      "self_seconds": 0.000765144,
+      "cumulative_seconds": 0.000765144
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 393,
+      "function": "<genexpr>",
+      "calls": 7676,
+      "primitive_calls": 7676,
+      "self_seconds": 0.000758706,
+      "cumulative_seconds": 0.000758706
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/scenarios.py",
+      "line": 101,
+      "function": "workload_fingerprint",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 4.0212e-05,
+      "cumulative_seconds": 0.000730542
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.iter>",
+      "calls": 6913,
+      "primitive_calls": 6913,
+      "self_seconds": 0.000711844,
+      "cumulative_seconds": 0.000711844
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/topology.py",
+      "line": 43,
+      "function": "analyse_topology",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 0.000469782,
+      "cumulative_seconds": 0.000710834
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4530,
+      "function": "<genexpr>",
+      "calls": 9605,
+      "primitive_calls": 9605,
+      "self_seconds": 0.0006990400000000001,
+      "cumulative_seconds": 0.0006990400000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5935,
+      "function": "_priority",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.000675366,
+      "cumulative_seconds": 0.000675366
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4779,
+      "function": "_auction_drop_capacity",
+      "calls": 99,
+      "primitive_calls": 99,
+      "self_seconds": 0.000629023,
+      "cumulative_seconds": 0.000660917
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 670,
+      "function": "<genexpr>",
+      "calls": 10000,
+      "primitive_calls": 10000,
+      "self_seconds": 0.0006463220000000001,
+      "cumulative_seconds": 0.0006463220000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4512,
+      "function": "<genexpr>",
+      "calls": 9605,
+      "primitive_calls": 9605,
+      "self_seconds": 0.0006031350000000001,
+      "cumulative_seconds": 0.0006031350000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 2458,
+      "function": "_track_block",
+      "calls": 1800,
+      "primitive_calls": 1800,
+      "self_seconds": 0.000550212,
+      "cumulative_seconds": 0.0005917460000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4535,
+      "function": "<genexpr>",
+      "calls": 9605,
+      "primitive_calls": 9605,
+      "self_seconds": 0.000585164,
+      "cumulative_seconds": 0.000585164
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _hashlib.openssl_sha256>",
+      "calls": 1001,
+      "primitive_calls": 1001,
+      "self_seconds": 0.0005647,
+      "cumulative_seconds": 0.0005647
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 747,
+      "function": "finalize",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 3.5840000000000003e-06,
+      "cumulative_seconds": 0.000530792
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'extend' of 'list' objects>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 0.00030187300000000003,
+      "cumulative_seconds": 0.000527083
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6100,
+      "function": "_broadcast_future_lease",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.00032741000000000004,
+      "cumulative_seconds": 0.000519582
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 6699,
+      "function": "_next_seq",
+      "calls": 3070,
+      "primitive_calls": 3070,
+      "self_seconds": 0.0005149880000000001,
+      "cumulative_seconds": 0.0005149880000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 496,
+      "function": "<genexpr>",
+      "calls": 3624,
+      "primitive_calls": 3624,
+      "self_seconds": 0.000426466,
+      "cumulative_seconds": 0.000426466
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'hexdigest' of '_hashlib.HASH' objects>",
+      "calls": 1001,
+      "primitive_calls": 1001,
+      "self_seconds": 0.00040502500000000005,
+      "cumulative_seconds": 0.00040502500000000005
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 228,
+      "function": "<genexpr>",
+      "calls": 543,
+      "primitive_calls": 543,
+      "self_seconds": 0.000237509,
+      "cumulative_seconds": 0.00039936
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 756,
+      "function": "_v6_should_broadcast_bid",
+      "calls": 600,
+      "primitive_calls": 600,
+      "self_seconds": 0.000321287,
+      "cumulative_seconds": 0.00039356600000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5618,
+      "function": "_claim_wins",
+      "calls": 1802,
+      "primitive_calls": 1802,
+      "self_seconds": 0.00035641300000000003,
+      "cumulative_seconds": 0.00035641300000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/topology.py",
+      "line": 165,
+      "function": "directed_circulation",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 0.000184558,
+      "cumulative_seconds": 0.000347625
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5919,
+      "function": "_arbitration_key",
+      "calls": 1188,
+      "primitive_calls": 1188,
+      "self_seconds": 0.000317117,
+      "cumulative_seconds": 0.000317117
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3504,
+      "function": "<genexpr>",
+      "calls": 3268,
+      "primitive_calls": 3268,
+      "self_seconds": 0.000310152,
+      "cumulative_seconds": 0.000310152
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 3517,
+      "function": "<genexpr>",
+      "calls": 3268,
+      "primitive_calls": 3268,
+      "self_seconds": 0.000283951,
+      "cumulative_seconds": 0.000283951
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 827,
+      "function": "_v6_broadcast_experience",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.00028111300000000004,
+      "cumulative_seconds": 0.00028111300000000004
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/priority.py",
+      "line": 40,
+      "function": "to_wire",
+      "calls": 1297,
+      "primitive_calls": 1297,
+      "self_seconds": 0.000262577,
+      "cumulative_seconds": 0.000262577
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 1780,
+      "function": "_schedule_holds",
+      "calls": 1188,
+      "primitive_calls": 1188,
+      "self_seconds": 0.00025708400000000003,
+      "cumulative_seconds": 0.00025708400000000003
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 749,
+      "function": "<genexpr>",
+      "calls": 4951,
+      "primitive_calls": 4951,
+      "self_seconds": 0.00022521000000000002,
+      "cumulative_seconds": 0.00022521000000000002
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 710,
+      "function": "_record_decision",
+      "calls": 99,
+      "primitive_calls": 99,
+      "self_seconds": 0.00016249800000000002,
+      "cumulative_seconds": 0.000219081
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/statistics.py",
+      "line": 158,
+      "function": "mean",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 4.8320000000000005e-06,
+      "cumulative_seconds": 0.00020970800000000002
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/statistics.py",
+      "line": 1453,
+      "function": "_sum",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 6.0924e-05,
+      "cumulative_seconds": 0.000192375
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'update' of 'dict' objects>",
+      "calls": 897,
+      "primitive_calls": 897,
+      "self_seconds": 0.000191089,
+      "cumulative_seconds": 0.000191089
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 2907,
+      "function": "_route_loop",
+      "calls": 200,
+      "primitive_calls": 200,
+      "self_seconds": 0.000160117,
+      "cumulative_seconds": 0.000169536
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/topology.py",
+      "line": 36,
+      "function": "leaving_branch",
+      "calls": 1000,
+      "primitive_calls": 1000,
+      "self_seconds": 0.000163541,
+      "cumulative_seconds": 0.000163541
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/dataclasses.py",
+      "line": 1484,
+      "function": "asdict",
+      "calls": 2,
+      "primitive_calls": 2,
+      "self_seconds": 6.377e-06,
+      "cumulative_seconds": 0.000156834
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/dataclasses.py",
+      "line": 1508,
+      "function": "_asdict_inner",
+      "calls": 228,
+      "primitive_calls": 2,
+      "self_seconds": 7.9158e-05,
+      "cumulative_seconds": 0.000148791
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 64,
+      "function": "free_cells",
+      "calls": 1916,
+      "primitive_calls": 1916,
+      "self_seconds": 0.000137408,
+      "cumulative_seconds": 0.000137408
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 4361,
+      "function": "<lambda>",
+      "calls": 600,
+      "primitive_calls": 600,
+      "self_seconds": 0.00011668400000000001,
+      "cumulative_seconds": 0.00011668400000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method time.perf_counter>",
+      "calls": 706,
+      "primitive_calls": 706,
+      "self_seconds": 0.000112644,
+      "cumulative_seconds": 0.000112644
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 584,
+      "function": "yield_to",
+      "calls": 99,
+      "primitive_calls": 99,
+      "self_seconds": 8.474300000000001e-05,
+      "cumulative_seconds": 0.000109622
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 2047,
+      "function": "_exit_apron_conflict",
+      "calls": 537,
+      "primitive_calls": 537,
+      "self_seconds": 0.00010818000000000001,
+      "cumulative_seconds": 0.00010818000000000001
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 229,
+      "function": "<genexpr>",
+      "calls": 1385,
+      "primitive_calls": 1385,
+      "self_seconds": 8.993500000000001e-05,
+      "cumulative_seconds": 8.993500000000001e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/metrics.py",
+      "line": 206,
+      "function": "to_dict",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 1.4570000000000002e-06,
+      "cumulative_seconds": 7.416600000000001e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/scenarios.py",
+      "line": 111,
+      "function": "task_row",
+      "calls": 200,
+      "primitive_calls": 200,
+      "self_seconds": 7.149700000000001e-05,
+      "cumulative_seconds": 7.149700000000001e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 254,
+      "function": "add_robot",
+      "calls": 100,
+      "primitive_calls": 100,
+      "self_seconds": 4.7868e-05,
+      "cumulative_seconds": 6.9417e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 876,
+      "function": "_v6_prediction_costs",
+      "calls": 104,
+      "primitive_calls": 104,
+      "self_seconds": 5.1547000000000006e-05,
+      "cumulative_seconds": 6.6839e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/messages.py",
+      "line": 580,
+      "function": "block_release",
+      "calls": 51,
+      "primitive_calls": 51,
+      "self_seconds": 4.3259e-05,
+      "cumulative_seconds": 5.7130000000000004e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 783,
+      "function": "_v6_finish_wait_episode",
+      "calls": 199,
+      "primitive_calls": 199,
+      "self_seconds": 5.4628000000000006e-05,
+      "cumulative_seconds": 5.4628000000000006e-05
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/statistics.py",
+      "line": 1597,
+      "function": "_exact_ratio",
+      "calls": 199,
+      "primitive_calls": 199,
+      "self_seconds": 2.2740000000000003e-05,
+      "cumulative_seconds": 4.9141e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 399,
+      "function": "<genexpr>",
+      "calls": 200,
+      "primitive_calls": 200,
+      "self_seconds": 4.6363e-05,
+      "cumulative_seconds": 4.6363e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/transport.py",
+      "line": 102,
+      "function": "register",
+      "calls": 101,
+      "primitive_calls": 101,
+      "self_seconds": 2.6915000000000002e-05,
+      "cumulative_seconds": 4.6077000000000006e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 547,
+      "function": "_ensure_task_identity",
+      "calls": 299,
+      "primitive_calls": 299,
+      "self_seconds": 4.1001e-05,
+      "cumulative_seconds": 4.1001e-05
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'pop' of 'list' objects>",
+      "calls": 534,
+      "primitive_calls": 534,
+      "self_seconds": 4.0109000000000005e-05,
+      "cumulative_seconds": 4.0109000000000005e-05
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/dataclasses.py",
+      "line": 1454,
+      "function": "fields",
+      "calls": 6,
+      "primitive_calls": 6,
+      "self_seconds": 2.2505000000000002e-05,
+      "cumulative_seconds": 3.7000000000000005e-05
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.getattr>",
+      "calls": 237,
+      "primitive_calls": 237,
+      "self_seconds": 3.0213e-05,
+      "cumulative_seconds": 3.0213e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 5914,
+      "function": "_state_for_task",
+      "calls": 99,
+      "primitive_calls": 99,
+      "self_seconds": 2.9578e-05,
+      "cumulative_seconds": 2.9578e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/world.py",
+      "line": 232,
+      "function": "__init__",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 4.624e-06,
+      "cumulative_seconds": 2.6416000000000003e-05
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'as_integer_ratio' of 'float' objects>",
+      "calls": 199,
+      "primitive_calls": 199,
+      "self_seconds": 2.6401e-05,
+      "cumulative_seconds": 2.6401e-05
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/fractions.py",
+      "line": 697,
+      "function": "forward",
+      "calls": 8,
+      "primitive_calls": 8,
+      "self_seconds": 5.667e-06,
+      "cumulative_seconds": 2.3627000000000003e-05
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/statistics.py",
+      "line": 1505,
+      "function": "<genexpr>",
+      "calls": 9,
+      "primitive_calls": 9,
+      "self_seconds": 7.999e-06,
+      "cumulative_seconds": 2.3500000000000002e-05
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'index' of 'list' objects>",
+      "calls": 181,
+      "primitive_calls": 181,
+      "self_seconds": 1.8588000000000002e-05,
+      "cumulative_seconds": 1.8588000000000002e-05
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/fractions.py",
+      "line": 711,
+      "function": "reverse",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 3.2500000000000002e-06,
+      "cumulative_seconds": 1.7958e-05
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/fractions.py",
+      "line": 206,
+      "function": "__new__",
+      "calls": 10,
+      "primitive_calls": 10,
+      "self_seconds": 1.4583e-05,
+      "cumulative_seconds": 1.7667000000000002e-05
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/fractions.py",
+      "line": 794,
+      "function": "_add",
+      "calls": 8,
+      "primitive_calls": 8,
+      "self_seconds": 8.544e-06,
+      "cumulative_seconds": 1.4625000000000001e-05
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/dataclasses.py",
+      "line": 1469,
+      "function": "<genexpr>",
+      "calls": 232,
+      "primitive_calls": 232,
+      "self_seconds": 1.2745e-05,
+      "cumulative_seconds": 1.2745e-05
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'disable' of '_lsprof.Profiler' objects>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 1.2125e-05,
+      "cumulative_seconds": 1.2125e-05
+    },
+    {
+      "file": "<frozen abc>",
+      "line": 117,
+      "function": "__instancecheck__",
+      "calls": 2,
+      "primitive_calls": 2,
+      "self_seconds": 1.624e-06,
+      "cumulative_seconds": 1.1666000000000001e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/task_allocation.py",
+      "line": 21,
+      "function": "validate_allocation_policy",
+      "calls": 101,
+      "primitive_calls": 101,
+      "self_seconds": 1.0833000000000001e-05,
+      "cumulative_seconds": 1.0833000000000001e-05
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/dataclasses.py",
+      "line": 1763,
+      "function": "replace",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 2.0000000000000003e-06,
+      "cumulative_seconds": 1.025e-05
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/topology.py",
+      "line": 49,
+      "function": "<genexpr>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 1.0125e-05,
+      "cumulative_seconds": 1.0125e-05
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _abc._abc_instancecheck>",
+      "calls": 2,
+      "primitive_calls": 2,
+      "self_seconds": 2.291e-06,
+      "cumulative_seconds": 1.0042000000000001e-05
+    },
+    {
+      "file": "<frozen abc>",
+      "line": 121,
+      "function": "__subclasscheck__",
+      "calls": 3,
+      "primitive_calls": 2,
+      "self_seconds": 1.5010000000000001e-06,
+      "cumulative_seconds": 7.751e-06
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/amr.py",
+      "line": 515,
+      "function": "_restore_terminal_records",
+      "calls": 100,
+      "primitive_calls": 100,
+      "self_seconds": 7.576000000000001e-06,
+      "cumulative_seconds": 7.576000000000001e-06
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/topology.py",
+      "line": 194,
+      "function": "<lambda>",
+      "calls": 192,
+      "primitive_calls": 192,
+      "self_seconds": 7.279e-06,
+      "cumulative_seconds": 7.279e-06
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/dataclasses.py",
+      "line": 1782,
+      "function": "_replace",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 5.0020000000000006e-06,
+      "cumulative_seconds": 6.917e-06
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/environment.py",
+      "line": 88,
+      "function": "to_json",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 6.792e-06,
+      "cumulative_seconds": 6.792e-06
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _abc._abc_subclasscheck>",
+      "calls": 3,
+      "primitive_calls": 2,
+      "self_seconds": 6.25e-06,
+      "cumulative_seconds": 6.625e-06
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/topology.py",
+      "line": 199,
+      "function": "<lambda>",
+      "calls": 170,
+      "primitive_calls": 170,
+      "self_seconds": 6.031e-06,
+      "cumulative_seconds": 6.031e-06
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.hasattr>",
+      "calls": 11,
+      "primitive_calls": 11,
+      "self_seconds": 4.751e-06,
+      "cumulative_seconds": 4.751e-06
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/fractions.py",
+      "line": 361,
+      "function": "_from_coprime_ints",
+      "calls": 9,
+      "primitive_calls": 9,
+      "self_seconds": 3.418e-06,
+      "cumulative_seconds": 4.542e-06
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 60,
+      "function": "_resolve_allocation_policy",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 2.792e-06,
+      "cumulative_seconds": 4.417e-06
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/statistics.py",
+      "line": 1623,
+      "function": "_convert",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 2.2920000000000002e-06,
+      "cumulative_seconds": 4.292000000000001e-06
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 71,
+      "function": "_announced_tasks",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 4.208e-06,
+      "cumulative_seconds": 4.208e-06
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.gcd>",
+      "calls": 25,
+      "primitive_calls": 25,
+      "self_seconds": 3.7470000000000003e-06,
+      "cumulative_seconds": 3.7470000000000003e-06
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/dataclasses.py",
+      "line": 1472,
+      "function": "_is_dataclass_instance",
+      "calls": 3,
+      "primitive_calls": 3,
+      "self_seconds": 2.2080000000000003e-06,
+      "cumulative_seconds": 2.999e-06
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _functools.reduce>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 2.25e-06,
+      "cumulative_seconds": 2.6250000000000003e-06
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method __new__ of type object at 0x105550908>",
+      "calls": 19,
+      "primitive_calls": 19,
+      "self_seconds": 2.583e-06,
+      "cumulative_seconds": 2.583e-06
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/transport.py",
+      "line": 85,
+      "function": "__init__",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 2.542e-06,
+      "cumulative_seconds": 2.542e-06
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/statistics.py",
+      "line": 327,
+      "function": "median",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 9.160000000000001e-07,
+      "cumulative_seconds": 2.209e-06
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/fractions.py",
+      "line": 842,
+      "function": "_div",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 1.376e-06,
+      "cumulative_seconds": 1.9590000000000002e-06
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/numbers.py",
+      "line": 317,
+      "function": "__float__",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 1.666e-06,
+      "cumulative_seconds": 1.833e-06
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/statistics.py",
+      "line": 1565,
+      "function": "_coerce",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 3.75e-07,
+      "cumulative_seconds": 3.75e-07
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 418,
+      "function": "<genexpr>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 2.08e-07,
+      "cumulative_seconds": 2.08e-07
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 419,
+      "function": "<genexpr>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 2.08e-07,
+      "cumulative_seconds": 2.08e-07
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.issubclass>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 1.67e-07,
+      "cumulative_seconds": 1.67e-07
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 498,
+      "function": "<genexpr>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 1.67e-07,
+      "cumulative_seconds": 1.67e-07
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 499,
+      "function": "<genexpr>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 1.2500000000000002e-07,
+      "cumulative_seconds": 1.2500000000000002e-07
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/fractions.py",
+      "line": 445,
+      "function": "denominator",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 1.2500000000000002e-07,
+      "cumulative_seconds": 1.2500000000000002e-07
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 501,
+      "function": "<genexpr>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 8.3e-08,
+      "cumulative_seconds": 8.3e-08
+    },
+    {
+      "file": "/private/tmp/bios7-release-apron.oVtcvl/src/main.py",
+      "line": 420,
+      "function": "<genexpr>",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 4.2000000000000006e-08,
+      "cumulative_seconds": 4.2000000000000006e-08
+    },
+    {
+      "file": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/fractions.py",
+      "line": 441,
+      "function": "numerator",
+      "calls": 1,
+      "primitive_calls": 1,
+      "self_seconds": 4.2000000000000006e-08,
+      "cumulative_seconds": 4.2000000000000006e-08
+    }
+  ]
+}

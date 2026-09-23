@@ -6,6 +6,14 @@ Smart Warehouses** · Bharat Electronics Limited · Software · Robotics and Dro
 A multi-robot warehouse simulation, a peer-to-peer coordination protocol, and a
 benchmark harness for decentralized AMR priority and path-conflict resolution.
 
+The **Virtual edge lab** is available from the Deployment panel or directly at
+`http://127.0.0.1:8000/edge-lab.html`. It runs independent local BIOS controllers
+against simulated robots. LAN multi-host tools and historical test evidence are
+also restored; see [the integration notes](docs/26-COLLAB-INTEGRATION.md).
+Current collaboration defaults are preserved: BIOS7 for Chokepoint and BIOS6 for
+other scenarios, with Auction V2. Manual task counts, 3D lighting and Dokploy
+deployment remain available. Lab process controls require local same-origin access.
+
 > ## 📖 Full documentation: **[`docs/README.md`](docs/README.md)**
 >
 > An eighteen-document set written against the problem statement, spined on a

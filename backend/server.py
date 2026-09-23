@@ -53,8 +53,12 @@ from src.main import run_for_dashboard            # noqa: E402
 from src.scenarios import SCENARIOS, SHOWCASE_SCENARIOS  # noqa: E402
 from src.environment import DOCK, FREE, RACK, STATION, Warehouse  # noqa: E402
 from src.task_allocation import ALLOCATION_POLICIES  # noqa: E402
+from src.edge_lab import EdgeLab  # noqa: E402
 from src.release_profile import DEFAULT_ALLOCATION_POLICY, DEFAULT_ROUTE_POLICY  # noqa: E402
 from src.release_profile import default_route_policy  # noqa: E402
+from backend.multihost_view import read_state as read_multihost_state  # noqa: E402
+
+_EDGE_LAB = EdgeLab()
 
 # Simulations are CPU-bound and a long one takes a while; serialise them so a reloading
 # browser cannot start six at once and starve the machine.
@@ -311,6 +315,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         route = unquote(parsed.path)
         try:
+            if route == "/api/edge-lab/status":
+                return self._json(200, _EDGE_LAB.status())
+            if route == "/api/multihost/status":
+                return self._json(200, read_multihost_state())
             if route == "/api/scenarios":
                 return self._api_scenarios()
             if route == "/api/train/status":
@@ -340,6 +348,8 @@ class Handler(BaseHTTPRequestHandler):
         route = unquote(parsed.path)
         self._body_read = False
         try:
+            if route.startswith("/api/edge-lab/"):
+                return self._api_edge_lab(route)
             if route == "/api/train":
                 return self._api_train_start()
             if route == "/api/train/cancel":
@@ -435,6 +445,33 @@ class Handler(BaseHTTPRequestHandler):
             remaining -= len(chunk)
 
     # ------------------------------------------------------------------ endpoints
+
+    def _api_edge_lab(self, route: str) -> None:
+        # These endpoints launch local executables. Require same-origin JSON requests.
+        origin = self.headers.get("Origin")
+        if (self.client_address[0] not in ("127.0.0.1", "::1")
+                or (origin and origin != f"http://{self.headers.get('Host')}")):
+            return self._json(403, {"error": "Edge lab controls require local same-origin access"})
+        if self.headers.get_content_type() != "application/json":
+            return self._json(415, {"error": "Content-Type must be application/json"})
+        try:
+            payload = json.loads(self._body(1024))
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a JSON object")
+            if route == "/api/edge-lab/start":
+                return self._json(202, _EDGE_LAB.start(
+                    payload.get("mode", "normal"), payload.get("profile", "interfaces"),
+                    payload.get("robots", 3), payload.get("seed", 0),
+                    payload.get("policy", DEFAULT_ROUTE_POLICY)))
+            if route == "/api/edge-lab/cut-sensor":
+                return self._json(200, _EDGE_LAB.cut_sensor(payload.get("robot")))
+            if route == "/api/edge-lab/stop":
+                return self._json(200, _EDGE_LAB.stop())
+            return self._json(404, {"error": "Unknown edge lab operation"})
+        except (ValueError, TypeError) as exc:
+            return self._json(400, {"error": str(exc)})
+        except RuntimeError as exc:
+            return self._json(409, {"error": str(exc)})
 
     def _api_scenarios_custom(self) -> None:
         if self.headers.get_content_type() != "application/json":
@@ -852,6 +889,7 @@ def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
     except KeyboardInterrupt:
         print("\n  stopping")
     finally:
+        _EDGE_LAB.close()
         httpd.server_close()
 
 

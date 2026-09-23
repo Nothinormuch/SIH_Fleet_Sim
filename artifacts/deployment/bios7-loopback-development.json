@@ -1,0 +1,339 @@
+{
+  "actuator_frames": {
+    "AMR01": 0,
+    "AMR02": 0,
+    "AMR03": 0
+  },
+  "age_scope": "same sensor token send-to-command return; includes both transports and computation, including intentionally stale commands rejected during injected sensor outage",
+  "bridge_authentication": "HMAC-SHA256, session challenge and sequence; no encryption",
+  "claim_boundary": "Measured hosts only; software physics, not physical safety certification.",
+  "command_gates": {
+    "AMR01": {
+      "accepted": 0,
+      "command_timeout_s": 0.1,
+      "invalid_commands": 0,
+      "safety_stops": 0,
+      "watchdog_stops": 0
+    },
+    "AMR02": {
+      "accepted": 0,
+      "command_timeout_s": 0.1,
+      "invalid_commands": 0,
+      "safety_stops": 0,
+      "watchdog_stops": 0
+    },
+    "AMR03": {
+      "accepted": 0,
+      "command_timeout_s": 0.1,
+      "invalid_commands": 0,
+      "safety_stops": 0,
+      "watchdog_stops": 0
+    }
+  },
+  "completed_task_ids": [],
+  "completion_events_in_window": [],
+  "config": {
+    "allocation_policy": "auction_bundle",
+    "bridge_port": 29614,
+    "duration_s": 25.0,
+    "group": "239.26.1.23",
+    "hosts": {
+      "mac": {
+        "indices": [
+          0,
+          1
+        ],
+        "ip": "127.0.0.1"
+      },
+      "windows": {
+        "indices": [
+          2
+        ],
+        "ip": "127.0.0.1"
+      }
+    },
+    "peer_port": 29615,
+    "policy": "BIOS_PIBT.7",
+    "protocol": 1,
+    "referee_ip": "127.0.0.1",
+    "robots": 3,
+    "scenario": "deployment_socket_acceptance",
+    "seed": 0,
+    "sensor_cut": {
+      "at_s": 3.0,
+      "duration_s": 2.0,
+      "robot": "AMR03"
+    },
+    "session": "99ea01529db5326dfe80da0afd0f9171",
+    "source_sha256": "4284aecf9958116171992a493450f55c2f05c142ca18549f07b91d489ebea3a0",
+    "workload_sha256": "ade9343f076a025fe2ac382e2c092cfe0123b1be8b28685e649562064b59f699"
+  },
+  "contacts": {
+    "robot-human": 0,
+    "robot-rack": 0,
+    "robot-robot": 0
+  },
+  "control_deadlines_met": false,
+  "cross_host_peer_sources_by_robot": {
+    "AMR03": []
+  },
+  "driver_udp_scope": "loopback only; trust local host processes",
+  "event_coverage": true,
+  "events": [],
+  "expected_sensor_cut_stale_motion_rejected": {
+    "AMR01": 0,
+    "AMR02": 0,
+    "AMR03": 0
+  },
+  "failure": "ConnectionResetError: [Errno 54] Connection reset by peer",
+  "failure_work_recovered": true,
+  "host_reports": {
+    "windows": {
+      "expected_stops": [],
+      "failure": null,
+      "host": "windows",
+      "missing": [],
+      "nodes": [
+        {
+          "brain": {
+            "auction_bids_sent": 0,
+            "auction_messages_sent": 0,
+            "bid_rebroadcasts_suppressed": 0,
+            "bios4_claim": 0,
+            "bios4_hold": 0,
+            "bios4_proceed": 0,
+            "bios4_reroute": 0,
+            "bios4_unstick": 0,
+            "bios4_yield": 0,
+            "bytes_sent": 347,
+            "central_plans": 0,
+            "charger_contentions_avoided": 0,
+            "completion_certificates_accepted": 0,
+            "completion_certificates_relayed": 0,
+            "congestion_samples": 0,
+            "coordination_messages_sent": 1,
+            "deadline_misses": 0,
+            "deadlocks_detected": 0,
+            "decision_events": 0,
+            "deferred_unknown_bids": 0,
+            "dynamic_obstacles_detected": 0,
+            "dynamic_reroutes": 0,
+            "energy_bids_suppressed": 0,
+            "energy_no_eligible_rounds": 0,
+            "experience_guided_replans": 0,
+            "experience_messages_sent": 0,
+            "experience_updates_received": 0,
+            "future_bids_lost": 0,
+            "future_bids_sent": 0,
+            "future_bids_won": 0,
+            "future_candidates_evaluated": 0,
+            "future_capacity_rejections": 0,
+            "future_charger_rejections": 0,
+            "future_deadline_rejections": 0,
+            "future_energy_rejections": 0,
+            "future_hysteresis_prevented": 0,
+            "future_invalidations": 0,
+            "future_lease_expiries": 0,
+            "future_lease_renewals": 0,
+            "future_network_fallbacks": 0,
+            "future_promotion_failures": 0,
+            "future_promotions": 0,
+            "future_version_mismatches": 0,
+            "heartbeat_messages_sent": 1,
+            "heartbeat_messages_suppressed": 0,
+            "intent_messages_sent": 0,
+            "intent_messages_suppressed": 0,
+            "lease_renewals_suppressed": 0,
+            "local_plans": 0,
+            "msgs_recv": 0,
+            "msgs_sent": 2,
+            "nonproductive_wait_ticks": 0,
+            "plan_calls": 0,
+            "plan_cpu_max_s": 0.0,
+            "plan_cpu_s": 0.0,
+            "predictive_hazards_seen": 0,
+            "predictive_reroutes": 0,
+            "priority_backtracks": 0,
+            "priority_decisions": 0,
+            "priority_forced_moves": 0,
+            "priority_inheritances": 0,
+            "priority_waits": 0,
+            "progress_cells": 0,
+            "rejected_directed_awards": 0,
+            "rejected_epoch_jumps": 0,
+            "rejected_task_completions": 0,
+            "rejected_task_conflicts": 0,
+            "rejected_unknown_bids": 0,
+            "replans": 0,
+            "retreats": 0,
+            "safety_stops": 0,
+            "seconds_degraded": 0.0,
+            "stale_future_awards_rejected": 0,
+            "task_reassignments": 0,
+            "task_resurrections_suppressed": 0,
+            "v7_empty_reserved_block_ticks": 0,
+            "v7_passage_release_uses": 0,
+            "v7_passage_releases": 0,
+            "v7_passages_observed": 0,
+            "yields": 0
+          },
+          "bridge": {
+            "frames": 1,
+            "invalid_frames": 0,
+            "startup_stops_ignored": 1
+          },
+          "completed_tasks": [],
+          "deployment": {
+            "scenario": "deployment_socket_acceptance",
+            "seed": 0,
+            "source": "built_in_scenario"
+          },
+          "full_cycle": {
+            "deadline_misses": 0,
+            "loop_max_ms": 0.3209160058759153,
+            "loop_mean_ms": 0.3209160058759153,
+            "loop_p95_ms": 0.3209160058759153,
+            "loop_p99_ms": 0.3209160058759153,
+            "sensor_timeouts": 0,
+            "ticks": 1
+          },
+          "hardware": {
+            "actuator_frames": 3,
+            "actuator_send_failed": 0,
+            "invalid_sensor_frames": 0,
+            "sensor_frames": 3,
+            "sensor_receive_budget_exhausted": 0
+          },
+          "late_command_stops": 0,
+          "peer_backlog_stops": 0,
+          "peer_sources": [],
+          "peer_sources_authenticated": true,
+          "phase_max_ms": {
+            "brain": 0.13295799726620317,
+            "peer_receive": 0.02274999860674143,
+            "send_and_records": 0.14208399807102978,
+            "thread_cpu": 0.28958299999999604
+          },
+          "robot_id": "AMR03",
+          "runtime": {
+            "deadline_misses": 0,
+            "loop_max_ms": 0.29604200972244143,
+            "loop_mean_ms": 0.29604200972244143,
+            "loop_p95_ms": 0.29604200972244143,
+            "loop_p99_ms": 0.29604200972244143,
+            "sensor_timeouts": 0,
+            "ticks": 1
+          },
+          "scheduling_late_ticks": 0,
+          "service_notify": {
+            "enabled": false,
+            "failed": 0,
+            "sent": 0
+          },
+          "skipped_schedule_slots": 0,
+          "stale_command_stops": 0,
+          "state": "idle",
+          "task": null,
+          "terminal_journal": {
+            "loads": 1,
+            "write_failures": 0,
+            "writes": 0
+          },
+          "transport": {
+            "auth_failed": 0,
+            "backlog_discarded": 0,
+            "bytes_recv": 0,
+            "bytes_sent": 543,
+            "malformed": 0,
+            "oversized": 0,
+            "receive_budget_exhausted": 0,
+            "receive_quarantine_polls": 0,
+            "recv": 0,
+            "replayed": 0,
+            "send_failed": 0,
+            "sent": 2,
+            "source_roster_overflow": 0
+          }
+        }
+      ],
+      "type": "report"
+    }
+  },
+  "hosts": {
+    "mac": {
+      "host": "mac",
+      "hostname": "Sakshams-MacBook-Air.local",
+      "pi_model": null,
+      "pids": {
+        "AMR01": 22334,
+        "AMR02": 22336
+      },
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "python_version": "3.14.7",
+      "type": "started"
+    },
+    "windows": {
+      "host": "windows",
+      "hostname": "Sakshams-MacBook-Air.local",
+      "pi_model": null,
+      "pids": {
+        "AMR03": 22335
+      },
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "python_version": "3.14.7",
+      "type": "started"
+    }
+  },
+  "max_referee_tick_lag_ms": 0.0,
+  "peer_messages_observed": false,
+  "physical_amr_tested": false,
+  "proof_scope": "networked_software_in_the_loop",
+  "readiness_barrier_passed": false,
+  "real_multihost": false,
+  "referee_deadline_misses": 0,
+  "referee_forwards_peer_messages": false,
+  "referee_selects_winners": false,
+  "reported_completed_after_shutdown": [],
+  "sensor_cut_evidence": {
+    "moving_before": false,
+    "pass": false,
+    "recovered": false,
+    "response_s": null,
+    "robot": "AMR03"
+  },
+  "sensor_to_motion_actuation_age_ms": {
+    "AMR01": {
+      "max": 0,
+      "p99": null,
+      "samples": 0
+    },
+    "AMR02": {
+      "max": 0,
+      "p99": null,
+      "samples": 0
+    },
+    "AMR03": {
+      "max": 0,
+      "p99": null,
+      "samples": 0
+    }
+  },
+  "simulation_time_s": 0.0,
+  "software_boundary_pass": false,
+  "source_and_workload_verified_at_startup": true,
+  "source_unchanged_at_end": true,
+  "stale_motion_accepted": 0,
+  "stale_motion_frames_rejected": {
+    "AMR01": 0,
+    "AMR02": 0,
+    "AMR03": 0
+  },
+  "success": false,
+  "tasks_announced": 3,
+  "tasks_completed": 0,
+  "unexpected_stale_motion_rejected": {
+    "AMR01": 0,
+    "AMR02": 0,
+    "AMR03": 0
+  }
+}

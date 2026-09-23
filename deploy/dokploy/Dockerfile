@@ -12,6 +12,7 @@ COPY src/ ./src/
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 COPY models/ ./models/
+COPY edge_node.py ./edge_node.py
 COPY deploy/dokploy/run.py ./deploy/dokploy/run.py
 
 EXPOSE 8000
