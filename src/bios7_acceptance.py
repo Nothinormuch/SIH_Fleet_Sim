@@ -180,11 +180,11 @@ def summarize(report: dict) -> dict:
                                     "stage": row.get("stage"), "replicate": row.get("replicate", 0),
                                     **compare_pair(base, row)})
     sih = [c for c in comparisons if c["case"] == "sih" and c["baseline"] == "stop_wait"]
-    expected_sih = sum(i["case"] == "sih" for i in report["plan"]["inputs"])
+    expected_sih = sum(i["case"] == "sih" for i in report["plan"].get("inputs", []))
     sih_pass = (all(c.get("valid_for_performance_claim") and
                     c.get("reduction_lower_bound_pct", -1) is not None and
                     c.get("reduction_lower_bound_pct", -1) >= 20 for c in sih)
-                if sih and len(sih) == expected_sih else None)
+                if sih and expected_sih > 0 and len(sih) == expected_sih else None)
     grouped = {}
     for pair in comparisons:
         key = f'{pair["case"]}:{pair["robots"]}:vs_{pair["baseline"]}'

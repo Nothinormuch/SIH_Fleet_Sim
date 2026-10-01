@@ -16,6 +16,7 @@ from src.bios7_acceptance import (
     summarize,
     validate_worker_output,
 )
+from src.bios7_study import source_manifest
 
 __all__ = [
     "CANDIDATE_CONFIGURATIONS",
@@ -25,6 +26,7 @@ __all__ = [
     "payload_hash",
     "release_cases",
     "semantic_fingerprint",
+    "source_manifest",
     "summarize",
     "validate_worker_output",
 ]
