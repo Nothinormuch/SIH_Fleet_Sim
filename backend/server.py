@@ -277,7 +277,7 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------ helpers
 
     def _send(self, code: int, body: bytes, ctype: str,
-              extra_headers: dict[str, str] | None = None) -> None:
+              extra_headers: dict[str, str] | None = None, skip_csp: bool = False) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -288,12 +288,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-            "script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; "
-            "frame-ancestors 'none'",
-        )
+        if not skip_csp:
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+                "script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; "
+                "frame-ancestors 'none'",
+            )
         for name, value in (extra_headers or {}).items():
             self.send_header(name, value)
         self.end_headers()
@@ -329,6 +330,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(
                     405, b'{"error":"use POST for simulation runs"}',
                     "application/json", {"Allow": "POST"})
+            if route == "/docs":
+                return self._static("/docs.html")
+            if route.startswith("/docs-content/"):
+                return self._serve_doc_content(route)
             return self._static(route)
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
             # Browser navigated away mid-response. Windows raises ConnectionAborted /
@@ -855,6 +860,32 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ static
 
+    def _serve_doc_content(self, route: str) -> None:
+        """Serve markdown files from the docs/ directory for the documentation page."""
+        # Extract filename from /docs-content/FILENAME.md
+        filename = route.replace("/docs-content/", "")
+        if not filename.endswith(".md"):
+            return self._json(403, {"error": "only markdown files allowed"})
+
+        # Security: prevent directory traversal
+        if ".." in filename or "/" in filename or "\\" in filename:
+            return self._json(403, {"error": "forbidden"})
+
+        docs_dir = ROOT / "docs"
+        target = (docs_dir / filename).resolve()
+
+        try:
+            target.relative_to(docs_dir.resolve())
+        except ValueError:
+            return self._json(403, {"error": "forbidden"})
+
+        if not target.is_file():
+            return self._json(404, {"error": f"not found: {filename}"})
+
+        # Use relaxed CSP for markdown content
+        self._send(200, target.read_bytes(), "text/markdown; charset=utf-8",
+                   extra_headers={"Content-Security-Policy": "default-src 'none'"})
+
     def _static(self, route: str) -> None:
         if route in ("/", ""):
             route = "/index.html"
@@ -872,7 +903,19 @@ class Handler(BaseHTTPRequestHandler):
         ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype == "application/javascript":
             ctype += "; charset=utf-8"
-        self._send(200, target.read_bytes(), ctype)
+
+        # Relax CSP for docs.html to allow inline scripts
+        if route == "/docs.html":
+            extra_headers = {
+                "Content-Security-Policy": (
+                    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+                    "script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; "
+                    "base-uri 'none'; frame-ancestors 'none'"
+                )
+            }
+            self._send(200, target.read_bytes(), ctype, extra_headers=extra_headers, skip_csp=True)
+        else:
+            self._send(200, target.read_bytes(), ctype)
 
 
 def serve(host: str = "127.0.0.1", port: int = 8000) -> None:

@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIH Fleet Coordination — Documentation</title>
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #151b2e;
+            --bg-tertiary: #1e2640;
+            --text-primary: #e8edf5;
+            --text-secondary: #a8b5cc;
+            --text-muted: #6b7a99;
+            --accent-blue: #4a9eff;
+            --accent-green: #00d084;
+            --accent-orange: #ff8c42;
+            --border-subtle: #2a3451;
+            --code-bg: #0d1117;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 1.5rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+        }
+
+        .header-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent-blue);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 3rem;
+            padding: 2rem;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 100px;
+            height: fit-content;
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+            padding: 1.5rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .sidebar h3 {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        .sidebar ul {
+            list-style: none;
+        }
+
+        .sidebar li {
+            margin-bottom: 0.5rem;
+        }
+
+        .sidebar a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            display: block;
+            padding: 0.4rem 0.75rem;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .sidebar a:hover {
+            background: var(--bg-tertiary);
+            color: var(--accent-blue);
+        }
+
+        .sidebar a.active {
+            background: var(--bg-tertiary);
+            color: var(--accent-blue);
+            font-weight: 500;
+        }
+
+        .content {
+            padding: 2rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+            min-height: 80vh;
+        }
+
+        .doc-section {
+            display: none;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        .doc-section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .doc-section h2 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--border-subtle);
+            padding-bottom: 0.5rem;
+        }
+
+        .doc-section h3 {
+            font-size: 1.5rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            color: var(--accent-blue);
+        }
+
+        .doc-section h4 {
+            font-size: 1.2rem;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-primary);
+        }
+
+        .doc-section p {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            font-size: 1rem;
+        }
+
+        .doc-section ul, .doc-section ol {
+            margin-left: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .doc-section li {
+            margin-bottom: 0.5rem;
+        }
+
+        .doc-section code {
+            background: var(--code-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: var(--accent-green);
+        }
+
+        .doc-section pre {
+            background: var(--code-bg);
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .doc-section pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-primary);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .badge-success {
+            background: rgba(0, 208, 132, 0.15);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+        }
+
+        .badge-info {
+            background: rgba(74, 158, 255, 0.15);
+            color: var(--accent-blue);
+            border: 1px solid var(--accent-blue);
+        }
+
+        .badge-warning {
+            background: rgba(255, 140, 66, 0.15);
+            color: var(--accent-orange);
+            border: 1px solid var(--accent-orange);
+        }
+
+        .info-box {
+            background: var(--bg-tertiary);
+            border-left: 3px solid var(--accent-blue);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .warning-box {
+            background: var(--bg-tertiary);
+            border-left: 3px solid var(--accent-orange);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        .success-box {
+            background: var(--bg-tertiary);
+            border-left: 3px solid var(--accent-green);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        th {
+            background: var(--bg-primary);
+            color: var(--accent-blue);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.05em;
+        }
+
+        td {
+            color: var(--text-secondary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+                max-height: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div>
+                <h1>SIH Fleet Priority Documentation</h1>
+                <div class="header-subtitle">PS26123 — Edge-AI Based Distributed Fleet Coordination</div>
+            </div>
+            <div class="nav-links">
+                <a href="/">Dashboard</a>
+                <a href="/edge-lab.html">Edge Lab</a>
+                <a href="/docs">Documentation</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <aside class="sidebar">
+            <h3>Contents</h3>
+            <ul id="nav-menu">
+                <li><a href="#overview" class="nav-link">Overview</a></li>
+                <li><a href="#problem-statement" class="nav-link">Problem Statement</a></li>
+                <li><a href="#requirements" class="nav-link">Requirements</a></li>
+                <li><a href="#architecture" class="nav-link">Architecture</a></li>
+                <li><a href="#protocol" class="nav-link">Decentralized Protocol</a></li>
+                <li><a href="#path-planning" class="nav-link">Path Planning</a></li>
+                <li><a href="#coordination" class="nav-link">Coordination Policies</a></li>
+                <li><a href="#task-allocation" class="nav-link">Task Allocation</a></li>
+                <li><a href="#safety" class="nav-link">Safety Layer</a></li>
+                <li><a href="#edge-deployment" class="nav-link">Edge Deployment</a></li>
+                <li><a href="#dashboard" class="nav-link">Dashboard</a></li>
+                <li><a href="#api" class="nav-link">API Reference</a></li>
+                <li><a href="#scenarios" class="nav-link">Scenarios</a></li>
+                <li><a href="#benchmark" class="nav-link">Benchmark & Evidence</a></li>
+                <li><a href="#testing" class="nav-link">Testing</a></li>
+                <li><a href="#findings" class="nav-link">Findings</a></li>
+                <li><a href="#limitations" class="nav-link">Limitations</a></li>
+            </ul>
+        </aside>
+
+        <main class="content">
+            <div id="doc-loading" class="loading">Loading documentation...</div>
+            <div id="doc-content"></div>
+        </main>
+    </div>
+
+    <script>
+        const docSections = {
+            'overview': { file: null, title: 'Overview' },
+            'problem-statement': { file: '00-PROBLEM-STATEMENT.md', title: 'Problem Statement' },
+            'requirements': { file: '01-REQUIREMENTS-TRACEABILITY.md', title: 'Requirements Traceability' },
+            'architecture': { file: '02-ARCHITECTURE.md', title: 'Architecture' },
+            'protocol': { file: '03-DECENTRALIZED-PROTOCOL.md', title: 'Decentralized Protocol' },
+            'path-planning': { file: '04-PATH-PLANNING.md', title: 'Path Planning' },
+            'coordination': { file: '05-COORDINATION-POLICIES.md', title: 'Coordination Policies' },
+            'task-allocation': { file: '06-TASK-ALLOCATION.md', title: 'Task Allocation' },
+            'safety': { file: '07-SAFETY.md', title: 'Safety Layer' },
+            'edge-deployment': { file: '08-EDGE-DEPLOYMENT.md', title: 'Edge Deployment' },
+            'dashboard': { file: '09-DASHBOARD.md', title: 'Dashboard' },
+            'api': { file: '10-API-REFERENCE.md', title: 'API Reference' },
+            'scenarios': { file: '11-SCENARIOS.md', title: 'Scenarios' },
+            'benchmark': { file: '12-BENCHMARK-AND-EVIDENCE.md', title: 'Benchmark and Evidence' },
+            'testing': { file: '13-TESTING.md', title: 'Testing' },
+            'findings': { file: '14-FINDINGS.md', title: 'Findings' },
+            'limitations': { file: '15-LIMITATIONS.md', title: 'Limitations' }
+        };
+
+        const docCache = {};
+
+        async function loadMarkdown(filename) {
+            if (!filename) return null;
+            if (docCache[filename]) return docCache[filename];
+
+            try {
+                const response = await fetch(`/docs-content/${filename}`);
+                if (!response.ok) throw new Error(`Failed to load ${filename}`);
+                const text = await response.text();
+                docCache[filename] = text;
+                return text;
+            } catch (error) {
+                console.error('Error loading markdown:', error);
+                return `Error loading documentation: ${error.message}`;
+            }
+        }
+
+        function parseMarkdown(markdown) {
+            if (!markdown) return '';
+
+            // Simple markdown parser
+            let html = markdown
+                // Headers
+                .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
+                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                .replace(/^# (.*$)/gim, '<h2>$1</h2>')
+                // Bold
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // Italic
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                // Code blocks
+                .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                // Inline code
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                // Links
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+                // Lists
+                .replace(/^\* (.*$)/gim, '<li>$1</li>')
+                .replace(/^- (.*$)/gim, '<li>$1</li>')
+                .replace(/^\d+\. (.*$)/gim, '<li>$1</li>')
+                // Line breaks
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+
+            // Wrap lists
+            html = html.replace(/(<li>.*?<\/li>)/gs, '<ul>$1</ul>');
+
+            // Wrap paragraphs
+            html = '<p>' + html + '</p>';
+
+            return html;
+        }
+
+        function createOverview() {
+            return `
+                <div class="doc-section active">
+                    <h2>SIH Fleet Priority — Overview</h2>
+
+                    <div class="success-box">
+                        <p><strong>Problem Statement ID:</strong> PS26123</p>
+                        <p><strong>Organization:</strong> Bharat Electronics Limited</p>
+                        <p><strong>Category:</strong> Software · Robotics and Drones</p>
+                    </div>
+
+                    <p>A multi-robot warehouse simulation, peer-to-peer coordination protocol, and benchmark harness for decentralized AMR priority and path-conflict resolution.</p>
+
+                    <h3>Key Results</h3>
+                    <div class="info-box">
+                        <span class="badge badge-success">✓ 90/90 Acceptance Runs</span>
+                        <span class="badge badge-success">✓ 0 Collisions</span>
+                        <span class="badge badge-success">✓ 88.39 Robot-Hours</span>
+                        <span class="badge badge-info">65.22% / 50.63% / 33.46% Speed Improvement</span>
+                    </div>
+
+                    <h3>System Capabilities</h3>
+                    <ul>
+                        <li><strong>Zero Dependencies:</strong> Simulation core and benchmark use stdlib only</li>
+                        <li><strong>Decentralized Coordination:</strong> BIOS_PIBT.6 with Auction V2 task allocation</li>
+                        <li><strong>Real Edge Processes:</strong> Authenticated UDP multicast with fault tolerance</li>
+                        <li><strong>3D Digital Twin:</strong> Interactive dashboard with multiple camera modes</li>
+                        <li><strong>Comprehensive Testing:</strong> Statistical evidence across 90 benchmark runs</li>
+                    </ul>
+
+                    <h3>Quick Start</h3>
+                    <pre><code>python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+python -m pytest -q
+python backend/server.py                       # http://127.0.0.1:8000</code></pre>
+
+                    <h3>Key Commands</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Command</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>python backend/server.py</code></td>
+                                <td>Start dashboard server at http://127.0.0.1:8000</td>
+                            </tr>
+                            <tr>
+                                <td><code>python edge_demo.py --robots 3</code></td>
+                                <td>Launch real edge processes with UDP multicast</td>
+                            </tr>
+                            <tr>
+                                <td><code>python benchmark.py --seeds 30</code></td>
+                                <td>Run strict SIH acceptance benchmark</td>
+                            </tr>
+                            <tr>
+                                <td><code>python fault_campaign.py</code></td>
+                                <td>Test packet loss, partitions, crash recovery</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Architecture Layers</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Layer</th>
+                                <th>Rate</th>
+                                <th>Location</th>
+                                <th>Function</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>0 — Safety</strong></td>
+                                <td>50 Hz</td>
+                                <td>Onboard, certified</td>
+                                <td>Protective stop, never network-dependent</td>
+                            </tr>
+                            <tr>
+                                <td><strong>1 — Local Traffic</strong></td>
+                                <td>10 Hz</td>
+                                <td>Onboard</td>
+                                <td>Peer intents, deadlock breaking, maneuvers</td>
+                            </tr>
+                            <tr>
+                                <td><strong>2 — Global Route</strong></td>
+                                <td>1 Hz</td>
+                                <td>Fleet manager / P2P</td>
+                                <td>Prioritized space-time A*, optimal when healthy</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="warning-box">
+                        <p><strong>Important:</strong> All benchmark results and performance claims are based on simulation evidence. Physical deployment requires additional validation including certified safety systems, localization accuracy testing, and real-world environmental validation.</p>
+                    </div>
+
+                    <h3>Navigation</h3>
+                    <p>Use the sidebar to explore detailed documentation on each subsystem. Key sections include:</p>
+                    <ul>
+                        <li><strong>Architecture:</strong> System design and component relationships</li>
+                        <li><strong>Decentralized Protocol:</strong> BIOS_PIBT coordination algorithm</li>
+                        <li><strong>Benchmark & Evidence:</strong> Statistical results and acceptance criteria</li>
+                        <li><strong>Edge Deployment:</strong> Real hardware integration guide</li>
+                        <li><strong>Limitations:</strong> Known constraints and future work</li>
+                    </ul>
+                </div>
+            `;
+        }
+
+        async function loadSection(sectionId) {
+            const loading = document.getElementById('doc-loading');
+            const content = document.getElementById('doc-content');
+
+            loading.style.display = 'block';
+            content.innerHTML = '';
+
+            if (sectionId === 'overview') {
+                content.innerHTML = createOverview();
+            } else {
+                const section = docSections[sectionId];
+                if (section && section.file) {
+                    const markdown = await loadMarkdown(section.file);
+                    const html = `
+                        <div class="doc-section active">
+                            <h2>${section.title}</h2>
+                            ${parseMarkdown(markdown)}
+                        </div>
+                    `;
+                    content.innerHTML = html;
+                } else {
+                    content.innerHTML = '<div class="doc-section active"><p>Section not found.</p></div>';
+                }
+            }
+
+            loading.style.display = 'none';
+
+            // Update active nav link
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            document.querySelector(`a[href="#${sectionId}"]`)?.classList.add('active');
+        }
+
+        // Handle navigation
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const sectionId = link.getAttribute('href').substring(1);
+                window.location.hash = sectionId;
+                loadSection(sectionId);
+            });
+        });
+
+        // Load initial section based on hash or default to overview
+        window.addEventListener('load', () => {
+            const hash = window.location.hash.substring(1) || 'overview';
+            loadSection(hash);
+        });
+
+        // Handle browser back/forward
+        window.addEventListener('hashchange', () => {
+            const hash = window.location.hash.substring(1) || 'overview';
+            loadSection(hash);
+        });
+    </script>
+</body>
+</html>
