@@ -457,6 +457,12 @@ def _free_udp() -> socket.socket:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("127.0.0.1", 0))
     sock.setblocking(False)
+    # Drain any stale packets from the kernel buffer before use
+    try:
+        while True:
+            sock.recvfrom(65536)
+    except BlockingIOError:
+        pass
     return sock
 
 
