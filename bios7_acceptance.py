@@ -5,6 +5,8 @@ This file exists as a user-friendly entry point for backward compatibility.
 The actual implementation has been moved to src/ for better project structure.
 """
 
+import subprocess
+
 from src.bios7_acceptance import (
     CANDIDATE_CONFIGURATIONS,
     compare_pair,
@@ -27,6 +29,7 @@ __all__ = [
     "release_cases",
     "semantic_fingerprint",
     "source_manifest",
+    "subprocess",
     "summarize",
     "validate_worker_output",
 ]
