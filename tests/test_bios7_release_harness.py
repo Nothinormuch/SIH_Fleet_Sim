@@ -276,7 +276,7 @@ def mock_campaign(monkeypatch, tmp_path, *, mutate_candidate=False):
         changed = mutate_candidate
         return SimpleNamespace(stdout=json.dumps(output))
 
-    monkeypatch.setattr("src.bios7_study.source_manifest", manifest)
+    monkeypatch.setattr("src.bios7_acceptance.source_manifest", manifest)
     monkeypatch.setattr("bios7_acceptance.subprocess.run", worker)
     return control, calls
 
