@@ -14,7 +14,8 @@ python -m pytest -q
 python backend/server.py                       # http://127.0.0.1:8000
 ```
 
-**Dashboard**: http://127.0.0.1:8000  
+**Live Deployment**: https://bios-sih26123.azurewebsites.net/  
+**Local Dashboard**: http://127.0.0.1:8000  
 **Documentation**: http://127.0.0.1:8000/docs
 
 ## Key Features
